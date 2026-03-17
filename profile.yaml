@@ -1,0 +1,61 @@
+name: "Marcos"
+
+target_roles:
+  - "ML Engineer"
+  - "AI Engineer"
+  - "Machine Learning Engineer"
+  - "Data Scientist (ML focus)"
+  - "MLOps Engineer"
+
+skills:
+  strong:
+    - Python
+    - RAG systems
+    - LangChain / LangGraph
+    - Vector databases (Pinecone, ChromaDB)
+    - LLM application development
+    - Prompt engineering
+    - Sentence Transformers
+    - HuggingFace ecosystem
+  working_knowledge:
+    - PyTorch
+    - TensorFlow
+    - Docker
+    - REST APIs
+    - SQL
+  learning:
+    - Kubernetes
+    - MLflow
+    - AWS SageMaker
+
+location:
+  target_countries: ["Germany"]
+  preferred_cities: ["Berlin", "Munich", "Hamburg", "Remote"]
+  remote_acceptable: true
+  eu_work_authorization: true
+
+salary:
+  minimum_annual_eur: 50000
+  target_annual_eur: 65000
+  currency: "EUR"
+
+seniority:
+  target: ["junior", "mid"]
+  exclude: ["intern", "director", "vp"]
+
+dealbreakers:
+  exclude_companies: []
+  exclude_keywords:
+    - "Unpaid"
+    - "Volunteer"
+  require_any_keyword:
+    - "machine learning"
+    - "ML"
+    - "AI"
+    - "deep learning"
+    - "NLP"
+    - "LLM"
+    - "data science"
+
+markets:
+  active: ["germany"]

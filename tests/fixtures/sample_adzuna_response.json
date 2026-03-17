@@ -1,0 +1,65 @@
+{
+  "count": 3,
+  "results": [
+    {
+      "id": "4801234567",
+      "title": "Senior ML Engineer",
+      "description": "We are looking for a Senior ML Engineer to join our AI team. You will design and deploy machine learning models at scale using Python, PyTorch, and MLflow. Remote work possible. Experience with LLMs and RAG systems is a plus.",
+      "redirect_url": "https://www.adzuna.de/jobs/details/4801234567",
+      "created": "2026-03-15T09:00:00Z",
+      "company": {
+        "__CLASS__": "Adzuna::API::Response::Company",
+        "display_name": "TechCorp GmbH"
+      },
+      "location": {
+        "__CLASS__": "Adzuna::API::Response::Location",
+        "display_name": "Berlin",
+        "area": ["Germany", "Berlin"]
+      },
+      "salary_min": 70000,
+      "salary_max": 90000,
+      "salary_is_predicted": 0,
+      "contract_type": "permanent"
+    },
+    {
+      "id": "4801234568",
+      "title": "Junior Data Scientist (ML focus)",
+      "description": "Join our data science team. Work on NLP and deep learning projects. We use Python, TensorFlow, and HuggingFace. Hybrid work model, 3 days office in Munich.",
+      "redirect_url": "https://www.adzuna.de/jobs/details/4801234568",
+      "created": "2026-03-14T14:30:00Z",
+      "company": {
+        "__CLASS__": "Adzuna::API::Response::Company",
+        "display_name": "DataVision AG"
+      },
+      "location": {
+        "__CLASS__": "Adzuna::API::Response::Location",
+        "display_name": "Munich",
+        "area": ["Germany", "Bavaria", "Munich"]
+      },
+      "salary_min": 45000,
+      "salary_max": 55000,
+      "salary_is_predicted": 0,
+      "contract_type": "permanent"
+    },
+    {
+      "id": "4801234569",
+      "title": "AI Engineer",
+      "description": "Build LLM-powered products. Work with LangChain, vector databases, and the Anthropic API. Fully remote within Germany.",
+      "redirect_url": "https://www.adzuna.de/jobs/details/4801234569",
+      "created": "2026-03-16T08:00:00Z",
+      "company": {
+        "__CLASS__": "Adzuna::API::Response::Company",
+        "display_name": "AI Startup GmbH"
+      },
+      "location": {
+        "__CLASS__": "Adzuna::API::Response::Location",
+        "display_name": "Remote (Germany)",
+        "area": ["Germany"]
+      },
+      "salary_min": null,
+      "salary_max": null,
+      "salary_is_predicted": 1,
+      "contract_type": null
+    }
+  ]
+}

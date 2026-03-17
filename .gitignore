@@ -1,0 +1,31 @@
+# Secrets
+.env
+
+# Spec Markdown
+job-scout-spec.md
+
+# Data and output
+data/
+digests/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Testing
+.pytest_cache/
+.coverage
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code local memory
+.claude/
+
+# HuggingFace model cache
+.cache/
