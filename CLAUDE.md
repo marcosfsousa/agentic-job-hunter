@@ -110,6 +110,34 @@ LLM evaluation (Claude Haiku) returns structured JSON:
 - Hard filter is deterministic and cheap — keep it that way (no LLM calls here)
 - The hard filter runs before any embedding or LLM work, eliminating ~80% of noise
 
+## Build log
+
+### Day 1 — 2026-03-17 (complete)
+
+**Environment**
+- Created `jobscout` conda environment (Python 3.11)
+- Installed all dependencies via `pip install` and `pip install -e .[dev]`
+
+**Files built**
+- `pyproject.toml` — package metadata, dependencies, pytest config (`asyncio_mode=auto`)
+- `profile.yaml` — Marcos's full search profile (Germany, ML/AI roles, €50K floor)
+- `src/jobscout/models.py` — `JobListing` (frozen dataclass), `EvaluationResult` (Pydantic, score bounded 1–10), `ScoredJob` (frozen dataclass wrapping listing + scores), `UserProfile` and sub-models (Pydantic)
+- `src/jobscout/config.py` — `AppConfig` (Pydantic), lazy singleton `get_config()`, `reset_config()` for tests; loads `profile.yaml` + env vars; required keys fail at load time, Telegram keys optional
+- `src/jobscout/adapters/base.py` — `JobAdapter` ABC (`async fetch(max_results)`, abstract `source` property), `JobScoutAdapterError` for retriable failures
+- `src/jobscout/adapters/adzuna.py` — `AdzunaAdapter`: `AdzunaJobRaw` Pydantic validation, `_infer_remote_policy()`, `_infer_seniority()`, `_parse_date()` as standalone testable helpers; paginates Adzuna Germany endpoint; discards predicted salaries (`salary_is_predicted=1`)
+- `tests/fixtures/sample_adzuna_response.json` — 3-listing fixture (senior/remote, junior/hybrid, remote/no-salary)
+- `tests/test_adapters.py` — 28 passing tests covering inference helpers, date parsing, Pydantic validation, normalization, and immutability
+
+**Key design decisions made**
+- `JobListing` is a frozen dataclass (immutable, hashable); Pydantic only for external data
+- `Literal` types for `RemotePolicy` and `Seniority` (not Enum — serializes as plain string)
+- `ScoredJob` is separate from `JobListing` to keep the listing model pure
+- Config uses a lazy singleton (not eager import-time load) to avoid breaking tests
+- Adzuna adapter does not apply salary or city filters at the API level — German listings rarely disclose salary; city filtering would drop remote roles
+- `_normalize()` and inference helpers are private but module-level for independent testability without HTTP mocking
+
+---
+
 ## Future extensions (not in scope for MVP)
 
 Do not build these during the initial sprint:
