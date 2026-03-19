@@ -65,3 +65,33 @@ End-to-end flow confirmed working through the hard filter stage.
 
 **Next: Day 3 proper**
 - `ranking/embedder.py` + `ranking/scorer.py` + `tests/test_ranking.py`
+
+---
+
+## Day 3 (session 2) — 2026-03-19
+
+**Goal:** Embed + Rank stage.
+
+**Files created**
+- `src/jobscout/ranking/embedder.py` — `ProfileEmbedder` class; eager model load; profile text from `target_roles` + `skills.strong` + `skills.working_knowledge`; profile embedding cached (invalidates on text change); jobs encoded in a single batched call; `normalize_embeddings=True` hardcoded
+- `src/jobscout/ranking/scorer.py` — `rank_jobs(jobs, profile, embedder)` function; cosine similarity via dot product on L2-normalised vectors; returns `list[ScoredJob]` sorted descending; returns early on empty input
+- `tests/test_ranking.py` — 5 tests; module-scoped embedder fixture (loads once); ML job vs Software Engineer job; asserts ranking, sort order, score range, edge cases
+
+**Files modified**
+- `src/jobscout/run.py` — return type `list[JobListing]` → `list[ScoredJob]`; embedder constructed once; filter+rank unified into single code path after if/else dedup block; `JobListing` import restored
+- `CLAUDE.md` — model updated from `all-MiniLM-L6-v2` to `multi-qa-MiniLM-L6-cos-v1`
+
+**Key decisions**
+- `multi-qa-MiniLM-L6-cos-v1` over `all-MiniLM-L6-v2`: same speed/size, trained for asymmetric semantic search (short query vs long document), 512-token limit vs 256
+- Profile text: `target_roles` + `skills.strong` + `skills.working_knowledge` only — no location/salary/seniority (hard filter handles those; pollutes semantic signal)
+- Job text: `"{title}. {description}"` only — company excluded (noise), no structural fields
+- `rank_jobs` returns all ranked results — top-N cutoff is the LLM evaluator's responsibility
+- `ProfileEmbedder` model_name is a constructor parameter (default = `multi-qa-MiniLM-L6-cos-v1`) — flexible for test injection
+
+**Post-review fixes (simplify pass)**
+- `ProfileEmbedder()` was being instantiated twice in `run.py` (once per branch) — unified to single construction before the if/else block
+- Missing `JobListing` import in `run.py` — restored
+- Duplicate filter+rank lines across dry-run and non-dry-run paths — deduplicated into single code path
+- `test_empty_input_returns_empty` was creating a new `ProfileEmbedder()` — switched to module-scoped fixture
+
+**Test count:** 83 passing

@@ -8,7 +8,9 @@ from jobscout.adapters.adzuna import AdzunaAdapter
 from jobscout.adapters.base import JobScoutAdapterError
 from jobscout.config import get_config
 from jobscout.filters.hard_filter import apply_hard_filter
-from jobscout.models import JobListing
+from jobscout.models import JobListing, ScoredJob
+from jobscout.ranking.embedder import ProfileEmbedder
+from jobscout.ranking.scorer import rank_jobs
 from jobscout.storage.db import JobDatabase
 
 logger = logging.getLogger(__name__)
@@ -22,7 +24,7 @@ _ADAPTER_REGISTRY = {
 async def run_pipeline(
     dry_run: bool = False,
     max_results: int = 100,
-) -> list[JobListing]:
+) -> list[ScoredJob]:
     """Run the full pipeline: fetch → deduplicate → filter.
 
     Args:
@@ -56,24 +58,23 @@ async def run_pipeline(
     # ------------------------------------------------------------------
     # Deduplicate (skip on dry-run)
     # ------------------------------------------------------------------
+    embedder = ProfileEmbedder()
+
     if dry_run:
         unseen = all_jobs
         logger.info("Dry-run: skipping deduplication (%d jobs)", len(unseen))
     else:
         with JobDatabase(config.db_path) as db:
             unseen = db.filter_unseen(all_jobs)
-            filtered = apply_hard_filter(unseen, config.profile)
             db.mark_seen_bulk(unseen)
 
-        logger.info("Pipeline complete — %d jobs ready for ranking", len(filtered))
-        return filtered
-
     # ------------------------------------------------------------------
-    # Hard filter
+    # Hard filter + rank
     # ------------------------------------------------------------------
     filtered = apply_hard_filter(unseen, config.profile)
-    logger.info("Pipeline complete — %d jobs ready for ranking", len(filtered))
-    return filtered
+    ranked = rank_jobs(filtered, config.profile, embedder)
+    logger.info("Pipeline complete — %d jobs ranked", len(ranked))
+    return ranked
 
 
 # ---------------------------------------------------------------------------

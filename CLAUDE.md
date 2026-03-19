@@ -23,7 +23,7 @@ Goal: fewer, higher-quality matches. This tool finds and ranks. User decides wha
 
 ## Constraints
 - **NEVER auto-apply to jobs.**
-- Use Claude Haiku for evaluation (not Sonnet); local `all-MiniLM-L6-v2` for embeddings.
+- Use Claude Haiku for evaluation (not Sonnet); local `multi-qa-MiniLM-L6-cos-v1` for embeddings (asymmetric semantic search — profile query vs job document).
 - LLM evaluation runs on top 20–30 jobs only, after hard filter and ranking reduce the pool.
 - Hard filter is deterministic and cheap — no LLM calls, ever.
 - Pipeline must be idempotent — same day = same digest.
@@ -33,6 +33,7 @@ Goal: fewer, higher-quality matches. This tool finds and ranks. User decides wha
 - Run `pytest` after any change to models, filters, or ranking
 - If modifying the LLM prompt, test with at least 5 real job listings
 - New adapter → follow `adapters/base.py` interface exactly
+- At the end of each day's build, run `/simplify` on all files created or modified that session
 
 ## Session State
 Before starting work, read `docs/session-state.md` for where we left off.
