@@ -9,7 +9,6 @@ target_roles:
 
 skills:
   strong:
-    - Python
     - RAG systems
     - LangChain / LangGraph
     - Vector databases (Pinecone, ChromaDB)
@@ -18,6 +17,7 @@ skills:
     - Sentence Transformers
     - HuggingFace ecosystem
   working_knowledge:
+    - Python
     - PyTorch
     - TensorFlow
     - Docker

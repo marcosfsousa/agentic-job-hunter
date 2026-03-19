@@ -136,6 +136,25 @@ LLM evaluation (Claude Haiku) returns structured JSON:
 - Adzuna adapter does not apply salary or city filters at the API level — German listings rarely disclose salary; city filtering would drop remote roles
 - `_normalize()` and inference helpers are private but module-level for independent testability without HTTP mocking
 
+### Day 2 — 2026-03-18 (complete)
+
+**Files built**
+- `src/jobscout/filters/hard_filter.py` — `apply_hard_filter()` with 6 private predicates: seniority, company, exclude keywords, require keywords (word-boundary regex), salary, location; runs cheapest/most-aggressive first; logs one INFO summary line
+- `src/jobscout/storage/db.py` — `JobDatabase` context manager wrapping SQLite; `filter_unseen()` deduplicates via a single batch `WHERE (id, source) IN (...)` query; `mark_seen_bulk()` uses `INSERT OR IGNORE` for idempotency; `CREATE TABLE IF NOT EXISTS` on open
+- `src/jobscout/run.py` — pipeline orchestrator; config-driven adapter registry keyed on `markets.active`; CLI flags `--dry-run` (no DB writes), `--verbose` (DEBUG logging), `--max-results N`; catches `JobScoutAdapterError` per adapter and continues; one INFO log line per stage
+- `src/jobscout/models.py` — added `MarketsConfig` and `markets` field to `UserProfile` to support config-driven adapter registry
+- `tests/test_filter.py` — 36 passing tests (all predicates, edge cases: None salary, not_specified seniority, word-boundary ML vs XML/email, case-insensitivity, description-only keyword match)
+- `tests/test_db.py` — 14 passing tests (context manager lifecycle, deduplication, cross-source ID isolation, idempotent bulk insert, timestamp recording); all use `:memory:` SQLite
+
+**Key design decisions made**
+- Hard filter predicate order: seniority → company → exclude keywords → require keywords → salary → location (most aggressive / cheapest first)
+- `not_specified` seniority and `None` salary → always pass (benefit of the doubt)
+- `require_any_keyword` uses word-boundary regex (`\b`) to prevent "ML" matching "XML" or "email"
+- `filter_unseen` uses a single batch SQL query (not N individual lookups) for 200-job scale
+- Feedback table deferred entirely — only `seen_jobs` built now; feedback added when loop is built
+- Dry-run skips all DB writes including `mark_seen_bulk` — same jobs will appear again next run
+- `markets.active` in `profile.yaml` drives adapter selection — adding a new market is a config change + new adapter file only
+
 ---
 
 ## Future extensions (not in scope for MVP)

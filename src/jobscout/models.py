@@ -94,6 +94,10 @@ class SkillsConfig(BaseModel):
     learning: list[str] = Field(default_factory=list)
 
 
+class MarketsConfig(BaseModel):
+    active: list[str] = Field(default_factory=list)
+
+
 class UserProfile(BaseModel):
     name: str
     target_roles: list[str]
@@ -102,3 +106,4 @@ class UserProfile(BaseModel):
     salary: SalaryConfig
     seniority: SeniorityConfig
     dealbreakers: DealbreakersConfig
+    markets: MarketsConfig = Field(default_factory=MarketsConfig)
