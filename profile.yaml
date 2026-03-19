@@ -29,7 +29,7 @@ skills:
     - AWS SageMaker
 
 location:
-  target_countries: ["Germany"]
+  target_countries: ["Germany", "Deutschland"]
   preferred_cities: ["Berlin", "Munich", "Hamburg", "Remote"]
   remote_acceptable: true
   eu_work_authorization: true

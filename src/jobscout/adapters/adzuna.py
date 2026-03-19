@@ -117,12 +117,12 @@ class AdzunaAdapter(JobAdapter):
             httpx.HTTPStatusError: On auth failure (401) — not retriable.
         """
         profile = self._config.profile
-        what = " ".join(profile.target_roles)
 
         base_params: dict[str, Any] = {
             "app_id": self._config.adzuna_app_id,
             "app_key": self._config.adzuna_app_key,
-            "what": what,
+            # what_or: any matching word is sufficient — hard filter handles precision
+            "what_or": "machine learning MLOps NLP AI engineer data scientist",
             "category": "it-jobs",
             "results_per_page": _RESULTS_PER_PAGE,
         }
@@ -186,6 +186,12 @@ class AdzunaAdapter(JobAdapter):
         salary_max = raw.salary_max if raw.salary_is_predicted == 0 else None
 
         location_str = raw.location.display_name
+        # All results from this adapter are Germany jobs (/de/ endpoint).
+        # Normalise to always include "Germany" so the location filter works.
+        if location_str and "germany" not in location_str.lower() and "deutschland" not in location_str.lower():
+            location_str = f"{location_str}, Germany"
+        elif not location_str:
+            location_str = "Germany"
         remote_policy = _infer_remote_policy(raw.title, raw.description, location_str)
         seniority = _infer_seniority(raw.title, raw.description)
 
