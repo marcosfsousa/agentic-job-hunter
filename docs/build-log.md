@@ -95,3 +95,67 @@ End-to-end flow confirmed working through the hard filter stage.
 - `test_empty_input_returns_empty` was creating a new `ProfileEmbedder()` — switched to module-scoped fixture
 
 **Test count:** 83 passing
+
+---
+
+## Day 4 — 2026-03-20
+
+**Goal:** LLM Evaluate stage.
+
+**Files created**
+- `src/jobscout/evaluation/prompt.py` — `SYSTEM_PROMPT` constant + `build_prompt(job, profile) -> str`; profile sections (roles, strong skills, working knowledge) + job fields (title, company, location, description)
+- `src/jobscout/evaluation/evaluator.py` — `evaluate_jobs()`: sequential calls, top-25 slice, graceful per-job failure (`llm_score=None`), `final_score = 0.4 * embedding + 0.6 * (match_score / 10)`; private `_evaluate_one()` handles API call + JSON parse + Pydantic validation
+- `tests/test_evaluation.py` — 9 tests: success path, API failure, bad JSON, top_n slicing, empty input, partial failure, prompt content
+
+**Files modified**
+- `src/jobscout/config.py` — added `llm_model: str = "claude-haiku-4-5-20251001"` (single field to swap models pipeline-wide)
+- `src/jobscout/run.py` — wired `evaluate_jobs` after `rank_jobs`; `anthropic.AsyncAnthropic` client constructed once in pipeline
+
+**Key decisions**
+- Sequential Haiku calls — predictable rate limit behaviour; parallel rejected
+- On evaluation failure: retain job with `llm_score=None`, never drop
+- Return top 25 only — delivery stage only sees evaluated jobs
+- `model` is a parameter, not hardcoded — `config.llm_model` is the single change point
+
+**Post-review fixes (simplify pass)**
+- `_SYSTEM` / `SYSTEM_PROMPT = _SYSTEM` alias removed — constant named `SYSTEM_PROMPT` directly
+- `max_tokens` reduced 512 → 256 (typical response ~100–150 tokens; 256 gives adequate buffer with lower p99 latency)
+
+**Test count:** 92 passing
+
+---
+
+## Day 5 — 2026-03-20
+
+**Goal:** Deliver stage + end-to-end smoke test.
+
+**Files created**
+- `src/jobscout/delivery/formatter.py` — `format_digest(jobs, run_date)`: filters to evaluated jobs only, renders rank/title/company/location/salary/score/skills/gaps/explanation/URL as markdown; `_format_job()` + `_format_salary()` helpers
+- `src/jobscout/delivery/writer.py` — `write_digest(content, digests_dir, run_date)`: writes `digests/YYYY-MM-DD.md`; creates dir if needed; silent overwrite on same-day re-run
+- `src/jobscout/delivery/email_sender.py` — `send_digest(content, config, run_date)`: markdown → HTML via `markdown` lib; SMTP with STARTTLS; skips silently if credentials missing; `_is_configured()` guard
+
+**Files modified**
+- `src/jobscout/config.py` — replaced Telegram fields with SMTP credentials (`smtp_host`, `smtp_port`, `smtp_user`, `smtp_password`, `email_to`, `email_from`); all optional, all from env vars; switched `anthropic_api_key` → `openai_api_key`; `llm_model` default → `gpt-4o-mini`
+- `src/jobscout/evaluation/evaluator.py` — swapped `anthropic.AsyncAnthropic` → `openai.AsyncOpenAI`; `messages.create` → `chat.completions.create`; `content[0].text` → `choices[0].message.content`
+- `src/jobscout/run.py` — wired `format_digest → write_digest → send_digest` after evaluation; `run_date = date.today()` captured once and passed to all three to prevent midnight race condition
+- `tests/test_evaluation.py` — all mocks updated to OpenAI response shape (`chat.completions.create`, `choices[0].message.content`)
+- `pyproject.toml` — replaced `python-telegram-bot` with `markdown>=3.7` and `openai>=1.0`
+
+**Key decisions**
+- Email over Telegram — user preference; HTML body via `markdown` lib, plain text fallback attached (RFC 2046 multipart/alternative)
+- `gpt-4o-mini` over Claude Haiku — Anthropic credits exhausted; gpt-4o-mini is the direct equivalent (fast, cheap, strong JSON output)
+- `run_date` captured once in `run.py` and threaded to all three delivery functions — eliminates midnight date mismatch between filename, header, and email subject
+- `server.ehlo()` removed — `starttls()` calls it internally; explicit call was a redundant round-trip
+
+**Post-review fixes (simplify pass)**
+- Redundant `server.ehlo()` removed from `email_sender.py`
+- `header +=` mutation in `format_digest` replaced with two distinct variables (`title`, `count`)
+- `run_date` passed explicitly to all delivery functions (race condition fix)
+
+**Smoke test result (dry-run, 2026-03-20)**
+```
+100 fetched → 74 hard filter → 25 evaluated (gpt-4o-mini) → digest written
+Score range: 5–9/10 | Best match: Kiwigrid ML Engineer (9/10)
+```
+
+**Test count:** 92 passing

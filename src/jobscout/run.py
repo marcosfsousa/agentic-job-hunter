@@ -3,12 +3,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+from datetime import date
 
-import anthropic
+import openai
 
 from jobscout.adapters.adzuna import AdzunaAdapter
 from jobscout.adapters.base import JobScoutAdapterError
 from jobscout.config import get_config
+from jobscout.delivery.email_sender import send_digest
+from jobscout.delivery.formatter import format_digest
+from jobscout.delivery.writer import write_digest
 from jobscout.evaluation.evaluator import evaluate_jobs
 from jobscout.filters.hard_filter import apply_hard_filter
 from jobscout.models import JobListing, ScoredJob
@@ -80,8 +84,17 @@ async def run_pipeline(
     # ------------------------------------------------------------------
     # LLM evaluate (top 25 only)
     # ------------------------------------------------------------------
-    client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
+    client = openai.AsyncOpenAI(api_key=config.openai_api_key)
     evaluated = await evaluate_jobs(ranked, config.profile, client, config.llm_model)
+
+    # ------------------------------------------------------------------
+    # Deliver
+    # ------------------------------------------------------------------
+    run_date = date.today()
+    digest = format_digest(evaluated, run_date)
+    write_digest(digest, config.digests_dir, run_date)
+    send_digest(digest, config, run_date)
+
     logger.info("Pipeline complete — %d jobs evaluated", len(evaluated))
     return evaluated
 

@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import replace
 
-import anthropic
+import openai
 
 from jobscout.evaluation.prompt import SYSTEM_PROMPT, build_prompt
 from jobscout.models import EvaluationResult, ScoredJob, UserProfile
@@ -15,11 +15,11 @@ logger = logging.getLogger(__name__)
 async def evaluate_jobs(
     jobs: list[ScoredJob],
     profile: UserProfile,
-    client: anthropic.AsyncAnthropic,
+    client: openai.AsyncOpenAI,
     model: str,
     top_n: int = 25,
 ) -> list[ScoredJob]:
-    """Evaluate top_n jobs with Claude and return them with LLM scores attached.
+    """Evaluate top_n jobs with an OpenAI model and return them with LLM scores attached.
 
     Jobs are evaluated sequentially. On any failure the job is retained with
     llm_score=None and final_score=None rather than being dropped.
@@ -27,13 +27,13 @@ async def evaluate_jobs(
     Args:
         jobs: Ranked ScoredJobs (embedding_score populated, sorted descending).
         profile: User profile for prompt construction.
-        client: Async Anthropic client.
-        model: Model ID to use (e.g. 'claude-haiku-4-5-20251001').
+        client: Async OpenAI client.
+        model: Model ID to use (e.g. 'gpt-4o-mini').
         top_n: Maximum number of jobs to evaluate and return.
 
     Returns:
         top_n ScoredJobs with llm_score, final_score, and evaluation populated
-        where Haiku succeeded.
+        where the model succeeded.
     """
     candidates = jobs[:top_n]
     results: list[ScoredJob] = []
@@ -48,17 +48,19 @@ async def evaluate_jobs(
 async def _evaluate_one(
     job: ScoredJob,
     profile: UserProfile,
-    client: anthropic.AsyncAnthropic,
+    client: openai.AsyncOpenAI,
     model: str,
 ) -> ScoredJob:
     try:
-        response = await client.messages.create(
+        response = await client.chat.completions.create(
             model=model,
             max_tokens=256,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": build_prompt(job.listing, profile)}],
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": build_prompt(job.listing, profile)},
+            ],
         )
-        raw = response.content[0].text
+        raw = response.choices[0].message.content
         evaluation = EvaluationResult.model_validate(json.loads(raw))
     except Exception as exc:
         logger.warning(

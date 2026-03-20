@@ -23,14 +23,18 @@ class AppConfig(BaseModel):
     # Required API keys — validated non-empty at load time
     adzuna_app_id: str
     adzuna_app_key: str
-    anthropic_api_key: str
+    openai_api_key: str
 
     # LLM model used for evaluation — change here to swap models pipeline-wide
-    llm_model: str = "claude-haiku-4-5-20251001"
+    llm_model: str = "gpt-4o-mini"
 
-    # Optional keys — delivery layer checks these when needed
-    telegram_bot_token: str | None = None
-    telegram_chat_id: str | None = None
+    # Optional email delivery — all must be set to enable sending
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    email_to: str | None = None      # Recipient address
+    email_from: str | None = None    # Sender address; falls back to smtp_user
 
     # Paths — default to project-root-relative locations
     db_path: Path = _PROJECT_ROOT / "data" / "jobscout.db"
@@ -38,7 +42,7 @@ class AppConfig(BaseModel):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    @field_validator("adzuna_app_id", "adzuna_app_key", "anthropic_api_key")
+    @field_validator("adzuna_app_id", "adzuna_app_key", "openai_api_key")
     @classmethod
     def must_be_non_empty(cls, v: str, info) -> str:
         if not v.strip():
@@ -99,9 +103,13 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
         profile=profile,
         adzuna_app_id=os.environ.get("ADZUNA_APP_ID", ""),
         adzuna_app_key=os.environ.get("ADZUNA_APP_KEY", ""),
-        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-        telegram_bot_token=os.environ.get("TELEGRAM_BOT_TOKEN") or None,
-        telegram_chat_id=os.environ.get("TELEGRAM_CHAT_ID") or None,
+        openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+        smtp_host=os.environ.get("SMTP_HOST") or None,
+        smtp_port=int(os.environ.get("SMTP_PORT", "587")),
+        smtp_user=os.environ.get("SMTP_USER") or None,
+        smtp_password=os.environ.get("SMTP_PASSWORD") or None,
+        email_to=os.environ.get("EMAIL_TO") or None,
+        email_from=os.environ.get("EMAIL_FROM") or None,
     )
 
     logger.debug(
