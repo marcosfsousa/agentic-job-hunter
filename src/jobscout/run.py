@@ -4,9 +4,12 @@ import argparse
 import asyncio
 import logging
 
+import anthropic
+
 from jobscout.adapters.adzuna import AdzunaAdapter
 from jobscout.adapters.base import JobScoutAdapterError
 from jobscout.config import get_config
+from jobscout.evaluation.evaluator import evaluate_jobs
 from jobscout.filters.hard_filter import apply_hard_filter
 from jobscout.models import JobListing, ScoredJob
 from jobscout.ranking.embedder import ProfileEmbedder
@@ -73,8 +76,14 @@ async def run_pipeline(
     # ------------------------------------------------------------------
     filtered = apply_hard_filter(unseen, config.profile)
     ranked = rank_jobs(filtered, config.profile, embedder)
-    logger.info("Pipeline complete — %d jobs ranked", len(ranked))
-    return ranked
+
+    # ------------------------------------------------------------------
+    # LLM evaluate (top 25 only)
+    # ------------------------------------------------------------------
+    client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
+    evaluated = await evaluate_jobs(ranked, config.profile, client, config.llm_model)
+    logger.info("Pipeline complete — %d jobs evaluated", len(evaluated))
+    return evaluated
 
 
 # ---------------------------------------------------------------------------

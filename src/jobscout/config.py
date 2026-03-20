@@ -25,6 +25,9 @@ class AppConfig(BaseModel):
     adzuna_app_key: str
     anthropic_api_key: str
 
+    # LLM model used for evaluation — change here to swap models pipeline-wide
+    llm_model: str = "claude-haiku-4-5-20251001"
+
     # Optional keys — delivery layer checks these when needed
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None
