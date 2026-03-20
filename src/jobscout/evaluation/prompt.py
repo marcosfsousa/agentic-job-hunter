@@ -10,6 +10,10 @@ JSON object with exactly these fields:
 - gaps: list of strings — skills or requirements the job needs that the profile lacks
 - explanation: one or two sentences summarising the fit
 
+Scoring rule: if the job explicitly requires a formal CS or engineering degree as a \
+mandatory qualification, reduce match_score by 2–3 points and include the degree \
+requirement in gaps.
+
 Respond with valid JSON only. No markdown, no extra text.\
 """
 

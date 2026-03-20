@@ -192,3 +192,27 @@ class TestNormalize:
         job = adapter._normalize(raw, raw_listings[0])
         with pytest.raises(FrozenInstanceError):
             job.title = "mutated"
+
+    def _make_raw_with_location(self, raw_listings: list[dict], display_name: str) -> AdzunaJobRaw:
+        entry = {**raw_listings[0], "location": {"display_name": display_name}}
+        return AdzunaJobRaw.model_validate(entry)
+
+    def test_deutschland_alone_becomes_germany(self, adapter, raw_listings):
+        raw = self._make_raw_with_location(raw_listings, "Deutschland")
+        job = adapter._normalize(raw, {})
+        assert job.location == "Germany"
+
+    def test_city_deutschland_becomes_city_germany(self, adapter, raw_listings):
+        raw = self._make_raw_with_location(raw_listings, "Berlin, Deutschland")
+        job = adapter._normalize(raw, {})
+        assert job.location == "Berlin, Germany"
+
+    def test_city_without_country_appends_germany(self, adapter, raw_listings):
+        raw = self._make_raw_with_location(raw_listings, "Hamburg")
+        job = adapter._normalize(raw, {})
+        assert job.location == "Hamburg, Germany"
+
+    def test_already_germany_unchanged(self, adapter, raw_listings):
+        raw = self._make_raw_with_location(raw_listings, "Berlin, Germany")
+        job = adapter._normalize(raw, {})
+        assert job.location == "Berlin, Germany"

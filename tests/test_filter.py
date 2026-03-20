@@ -100,6 +100,15 @@ class TestPassesSeniority:
     def test_director_drops(self):
         assert not _passes_seniority(_make_job(seniority="director"), PROFILE)
 
+    def test_senior_not_in_target_drops(self):
+        assert not _passes_seniority(_make_job(seniority="senior"), PROFILE)
+
+    def test_lead_not_in_target_drops(self):
+        assert not _passes_seniority(_make_job(seniority="lead"), PROFILE)
+
+    def test_junior_in_target_passes(self):
+        assert _passes_seniority(_make_job(seniority="junior"), PROFILE)
+
 
 # ---------------------------------------------------------------------------
 # _passes_company
@@ -266,3 +275,9 @@ class TestApplyHardFilter:
         jobs = [_make_job(title="Frontend Developer", description="React work only") for _ in range(3)]
         result = apply_hard_filter(jobs, PROFILE)
         assert result == []
+
+    def test_filters_out_senior_not_in_target(self):
+        jobs = [_make_job(id="1", seniority="senior"), _make_job(id="2", seniority="mid")]
+        result = apply_hard_filter(jobs, PROFILE)
+        assert len(result) == 1
+        assert result[0].id == "2"

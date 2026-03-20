@@ -38,7 +38,9 @@ def _passes_all(job: JobListing, profile: UserProfile) -> bool:
 def _passes_seniority(job: JobListing, profile: UserProfile) -> bool:
     if job.seniority is None or job.seniority == "not_specified":
         return True
-    return job.seniority not in profile.seniority.exclude
+    if job.seniority in profile.seniority.exclude:
+        return False
+    return job.seniority in profile.seniority.target
 
 
 def _passes_company(job: JobListing, profile: UserProfile) -> bool:

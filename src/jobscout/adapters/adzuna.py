@@ -192,6 +192,7 @@ class AdzunaAdapter(JobAdapter):
             location_str = f"{location_str}, Germany"
         elif not location_str:
             location_str = "Germany"
+        location_str = location_str.replace("Deutschland", "Germany").replace("deutschland", "Germany")
         remote_policy = _infer_remote_policy(raw.title, raw.description, location_str)
         seniority = _infer_seniority(raw.title, raw.description)
 
