@@ -28,13 +28,10 @@ class AppConfig(BaseModel):
     # LLM model used for evaluation — change here to swap models pipeline-wide
     llm_model: str = "gpt-4o-mini"
 
-    # Optional email delivery — all must be set to enable sending
-    smtp_host: str | None = None
-    smtp_port: int = 587
-    smtp_user: str | None = None
-    smtp_password: str | None = None
+    # Optional email delivery via Resend — all three must be set to enable sending
+    resend_api_key: str | None = None
     email_to: str | None = None      # Recipient address
-    email_from: str | None = None    # Sender address; falls back to smtp_user
+    email_from: str | None = None    # Verified sender address
 
     # Paths — default to project-root-relative locations
     db_path: Path = _PROJECT_ROOT / "data" / "jobscout.db"
@@ -104,10 +101,7 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
         adzuna_app_id=os.environ.get("ADZUNA_APP_ID", ""),
         adzuna_app_key=os.environ.get("ADZUNA_APP_KEY", ""),
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
-        smtp_host=os.environ.get("SMTP_HOST") or None,
-        smtp_port=int(os.environ.get("SMTP_PORT", "587")),
-        smtp_user=os.environ.get("SMTP_USER") or None,
-        smtp_password=os.environ.get("SMTP_PASSWORD") or None,
+        resend_api_key=os.environ.get("RESEND_API_KEY") or None,
         email_to=os.environ.get("EMAIL_TO") or None,
         email_from=os.environ.get("EMAIL_FROM") or None,
     )

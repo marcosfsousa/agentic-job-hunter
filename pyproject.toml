@@ -18,6 +18,7 @@ dependencies = [
     "numpy>=2.4",
     "rich>=14",
     "python-dotenv>=1.2",
+    "resend>=2.0",
 ]
 
 [project.optional-dependencies]

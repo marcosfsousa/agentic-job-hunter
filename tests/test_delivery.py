@@ -5,12 +5,12 @@ File I/O uses pytest's tmp_path fixture.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
 from datetime import date, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+import resend.exceptions
 
 from jobscout.delivery.email_sender import _is_configured, send_digest
 from jobscout.delivery.formatter import _format_salary, format_digest
@@ -67,28 +67,20 @@ def _make_scored_job(
 
 def _make_config(**overrides) -> SimpleNamespace:
     defaults = dict(
-        smtp_host="smtp.example.com",
-        smtp_port=587,
-        smtp_user="user@example.com",
-        smtp_password="secret",
+        resend_api_key="re_test123",
         email_to="to@example.com",
-        email_from="from@example.com",
+        email_from="onboarding@resend.dev",
     )
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
 
 
-@contextmanager
-def _mock_smtp(enter_side_effect=None):
-    """Patch smtplib.SMTP at the import site; yield (mock_smtp, mock_server)."""
-    with patch("jobscout.delivery.email_sender.smtplib.SMTP") as mock_smtp:
-        mock_server = MagicMock()
-        if enter_side_effect is not None:
-            mock_smtp.return_value.__enter__ = MagicMock(side_effect=enter_side_effect)
-        else:
-            mock_smtp.return_value.__enter__ = MagicMock(return_value=mock_server)
-        mock_smtp.return_value.__exit__ = MagicMock(return_value=False)
-        yield mock_smtp, mock_server
+def _mock_resend(side_effect=None):
+    """Patch resend.Emails.send (the sync call wrapped by asyncio.to_thread)."""
+    mock = MagicMock(return_value={"id": "test-email-id"})
+    if side_effect is not None:
+        mock.side_effect = side_effect
+    return patch("jobscout.delivery.email_sender.resend.Emails.send", mock)
 
 
 # ---------------------------------------------------------------------------
@@ -203,17 +195,14 @@ class TestIsConfigured:
     def test_all_fields_set_returns_true(self):
         assert _is_configured(_make_config()) is True
 
-    def test_missing_smtp_host_returns_false(self):
-        assert _is_configured(_make_config(smtp_host=None)) is False
-
-    def test_missing_smtp_user_returns_false(self):
-        assert _is_configured(_make_config(smtp_user=None)) is False
-
-    def test_missing_smtp_password_returns_false(self):
-        assert _is_configured(_make_config(smtp_password=None)) is False
+    def test_missing_resend_api_key_returns_false(self):
+        assert _is_configured(_make_config(resend_api_key=None)) is False
 
     def test_missing_email_to_returns_false(self):
         assert _is_configured(_make_config(email_to=None)) is False
+
+    def test_missing_email_from_returns_false(self):
+        assert _is_configured(_make_config(email_from=None)) is False
 
 
 # ---------------------------------------------------------------------------
@@ -221,40 +210,37 @@ class TestIsConfigured:
 # ---------------------------------------------------------------------------
 
 class TestSendDigest:
-    def test_returns_false_when_not_configured(self):
-        config = _make_config(smtp_host=None)
-        result = send_digest("content", config, run_date=_RUN_DATE)
+    async def test_returns_false_when_not_configured(self):
+        config = _make_config(resend_api_key=None)
+        result = await send_digest("content", config, run_date=_RUN_DATE)
         assert result is False
 
-    def test_returns_true_on_success(self):
+    async def test_returns_true_on_success(self):
         config = _make_config()
-        with _mock_smtp():
-            result = send_digest("content", config, run_date=_RUN_DATE)
+        with _mock_resend():
+            result = await send_digest("content", config, run_date=_RUN_DATE)
         assert result is True
 
-    def test_subject_contains_date(self):
+    async def test_params_passed_correctly(self):
         config = _make_config()
-        captured: list[str] = []
+        captured: list[dict] = []
 
-        with _mock_smtp() as (_, mock_server):
-            mock_server.sendmail.side_effect = lambda sender, to, msg_str: captured.append(msg_str)
-            send_digest("content", config, run_date=_RUN_DATE)
+        def capture(params):
+            captured.append(params)
+            return {"id": "test-id"}
+
+        with _mock_resend() as mock_send:
+            mock_send.side_effect = capture
+            await send_digest("content", config, run_date=_RUN_DATE)
 
         assert captured
-        assert "2026-03-21" in captured[0]
+        assert "2026-03-21" in captured[0]["subject"]
+        assert captured[0]["from"] == "onboarding@resend.dev"
+        assert captured[0]["to"] == ["to@example.com"]
 
-    def test_returns_false_on_smtp_exception(self):
+    async def test_returns_false_on_resend_exception(self):
         config = _make_config()
-        with _mock_smtp(enter_side_effect=Exception("conn refused")):
-            result = send_digest("content", config, run_date=_RUN_DATE)
+        exc = resend.exceptions.ResendError(500, "api_error", "Internal error", "Retry later")
+        with _mock_resend(side_effect=exc):
+            result = await send_digest("content", config, run_date=_RUN_DATE)
         assert result is False
-
-    def test_email_from_falls_back_to_smtp_user(self):
-        config = _make_config(email_from=None)
-        sent_from: list[str] = []
-
-        with _mock_smtp() as (_, mock_server):
-            mock_server.sendmail.side_effect = lambda sender, to, msg_str: sent_from.append(sender)
-            send_digest("content", config, run_date=_RUN_DATE)
-
-        assert sent_from == ["user@example.com"]

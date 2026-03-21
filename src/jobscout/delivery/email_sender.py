@@ -1,26 +1,26 @@
 from __future__ import annotations
 
+import asyncio
 import logging
-import smtplib
 from datetime import date
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 
 import markdown as md
+import resend
+import resend.exceptions
 
 from jobscout.config import AppConfig
 
 logger = logging.getLogger(__name__)
 
 
-def send_digest(content: str, config: AppConfig, run_date: date | None = None) -> bool:
-    """Send the markdown digest as an HTML email.
+async def send_digest(content: str, config: AppConfig, run_date: date | None = None) -> bool:
+    """Send the markdown digest as an HTML email via Resend.
 
-    Skips silently if any required SMTP credential is missing.
+    Skips silently if any required credential is missing.
 
     Args:
         content: Markdown string produced by format_digest().
-        config: AppConfig with SMTP credentials.
+        config: AppConfig with Resend credentials.
         run_date: Date shown in the subject line. Defaults to today.
 
     Returns:
@@ -32,24 +32,23 @@ def send_digest(content: str, config: AppConfig, run_date: date | None = None) -
         logger.info("Email delivery not configured — skipping")
         return False
 
-    sender = config.email_from or config.smtp_user
-    subject = f"JobScout Digest — {run_date.isoformat()}"
-    html_body = md.markdown(content, extensions=["tables"])
+    resend.api_key = config.resend_api_key
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = sender
-    msg["To"] = config.email_to
-    msg.attach(MIMEText(content, "plain", "utf-8"))
-    msg.attach(MIMEText(html_body, "html", "utf-8"))
+    params: resend.Emails.SendParams = {
+        "from": config.email_from,
+        "to": [config.email_to],
+        "subject": f"JobScout Digest — {run_date.isoformat()}",
+        "html": md.markdown(content, extensions=["tables"]),
+        "text": content,
+    }
 
     try:
-        with smtplib.SMTP(config.smtp_host, config.smtp_port) as server:
-            server.starttls()
-            server.login(config.smtp_user, config.smtp_password)
-            server.sendmail(sender, config.email_to, msg.as_string())
-        logger.info("Digest emailed to %s", config.email_to)
+        response = await asyncio.to_thread(resend.Emails.send, params)
+        logger.info("Digest emailed to %s (id=%s)", config.email_to, response["id"])
         return True
+    except resend.exceptions.ResendError as exc:
+        logger.warning("Failed to send digest email: %s", exc.message)
+        return False
     except Exception as exc:
         logger.warning("Failed to send digest email: %s", exc)
         return False
@@ -57,8 +56,7 @@ def send_digest(content: str, config: AppConfig, run_date: date | None = None) -
 
 def _is_configured(config: AppConfig) -> bool:
     return all([
-        config.smtp_host,
-        config.smtp_user,
-        config.smtp_password,
+        config.resend_api_key,
         config.email_to,
+        config.email_from,
     ])
