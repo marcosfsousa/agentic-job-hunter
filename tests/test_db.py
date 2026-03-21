@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from jobscout.models import JobListing
+from jobscout.models import FeedbackEntry, JobListing
 from jobscout.storage.db import JobDatabase
 
 
@@ -152,3 +152,98 @@ class TestMarkSeenBulk:
             row = d._conn.execute("SELECT first_seen FROM seen_jobs").fetchone()
         assert row is not None
         assert row[0]  # non-empty ISO timestamp
+
+
+# ---------------------------------------------------------------------------
+# upsert_feedback
+# ---------------------------------------------------------------------------
+
+class TestUpsertFeedback:
+    def _entry(self, id: str = "job-1", source: str = "adzuna_de", status: str = "applied") -> FeedbackEntry:
+        return FeedbackEntry(id=id, source=source, status=status)
+
+    def test_empty_input_is_noop(self, db):
+        with db as d:
+            d.upsert_feedback([])  # should not raise
+
+    def test_inserts_entry(self, db):
+        with db as d:
+            d.upsert_feedback([self._entry()])
+            row = d._conn.execute("SELECT id, source, status FROM feedback").fetchone()
+        assert row == ("job-1", "adzuna_de", "applied")
+
+    def test_updates_existing_status(self, db):
+        with db as d:
+            d.upsert_feedback([self._entry(status="interested")])
+            d.upsert_feedback([self._entry(status="applied")])
+            rows = d._conn.execute("SELECT status FROM feedback WHERE id='job-1'").fetchall()
+        assert len(rows) == 1
+        assert rows[0][0] == "applied"
+
+    def test_multiple_entries(self, db):
+        entries = [self._entry(id=str(i), status="rejected") for i in range(5)]
+        with db as d:
+            d.upsert_feedback(entries)
+            count = d._conn.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
+        assert count == 5
+
+    def test_creates_feedback_table_on_open(self, db):
+        with db as d:
+            rows = d._conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='feedback'"
+            ).fetchall()
+        assert len(rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# filter_feedback
+# ---------------------------------------------------------------------------
+
+class TestFilterFeedback:
+    def test_empty_input_returns_empty(self, db):
+        with db as d:
+            assert d.filter_feedback([]) == []
+
+    def test_no_feedback_returns_all(self, db):
+        jobs = [_make_job(id=str(i)) for i in range(3)]
+        with db as d:
+            result = d.filter_feedback(jobs)
+        assert result == jobs
+
+    def test_applied_job_is_excluded(self, db):
+        job = _make_job(id="job-1")
+        with db as d:
+            d.upsert_feedback([FeedbackEntry(id="job-1", source="adzuna_de", status="applied")])
+            result = d.filter_feedback([job])
+        assert result == []
+
+    def test_rejected_job_is_excluded(self, db):
+        job = _make_job(id="job-1")
+        with db as d:
+            d.upsert_feedback([FeedbackEntry(id="job-1", source="adzuna_de", status="rejected")])
+            result = d.filter_feedback([job])
+        assert result == []
+
+    def test_interested_job_is_kept(self, db):
+        job = _make_job(id="job-1")
+        with db as d:
+            d.upsert_feedback([FeedbackEntry(id="job-1", source="adzuna_de", status="interested")])
+            result = d.filter_feedback([job])
+        assert result == [job]
+
+    def test_only_excluded_jobs_removed(self, db):
+        applied = _make_job(id="job-1")
+        kept = _make_job(id="job-2")
+        with db as d:
+            d.upsert_feedback([FeedbackEntry(id="job-1", source="adzuna_de", status="applied")])
+            result = d.filter_feedback([applied, kept])
+        assert result == [kept]
+
+    def test_source_scoped_exclusion(self, db):
+        # Same id, different source — only the matching source is excluded
+        adzuna_job = _make_job(id="job-1", source="adzuna_de")
+        jsearch_job = _make_job(id="job-1", source="jsearch")
+        with db as d:
+            d.upsert_feedback([FeedbackEntry(id="job-1", source="adzuna_de", status="applied")])
+            result = d.filter_feedback([adzuna_job, jsearch_job])
+        assert result == [jsearch_job]

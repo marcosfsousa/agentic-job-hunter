@@ -28,6 +28,9 @@ class AppConfig(BaseModel):
     # LLM model used for evaluation — change here to swap models pipeline-wide
     llm_model: str = "gpt-4o-mini"
 
+    # JSearch via OpenWebNinja — optional; omit to disable this source
+    open_web_ninja_api_key: str | None = None
+
     # Optional email delivery via Resend — all three must be set to enable sending
     resend_api_key: str | None = None
     email_to: str | None = None      # Recipient address
@@ -101,6 +104,7 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
         adzuna_app_id=os.environ.get("ADZUNA_APP_ID", ""),
         adzuna_app_key=os.environ.get("ADZUNA_APP_KEY", ""),
         openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+        open_web_ninja_api_key=os.environ.get("OPEN_WEB_NINJA_API") or None,
         resend_api_key=os.environ.get("RESEND_API_KEY") or None,
         email_to=os.environ.get("EMAIL_TO") or None,
         email_from=os.environ.get("EMAIL_FROM") or None,

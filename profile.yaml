@@ -57,5 +57,3 @@ dealbreakers:
     - "LLM"
     - "data science"
 
-markets:
-  active: ["germany"]

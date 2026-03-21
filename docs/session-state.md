@@ -3,13 +3,13 @@
 **Last updated:** 2026-03-21
 
 ## Status
-- Completed through: Day 6 — delivery tests, first real pipeline run, prompt tuning
-- Last working command: `conda run -n jobscout python -m jobscout.run --verbose` (129 passed, full pipeline clean)
+- Completed through: Day 7 — Resend email, JSearch adapter, feedback loop
+- Last working command: `conda run -n jobscout pytest tests/ -q` (159 passed)
 
 ## Known issues
 - None outstanding.
 
-## Next session (Day 7)
-- [ ] Add a second job source adapter (e.g. JSearch or LinkedIn) to widen the listing pool
-- [ ] Add feedback loop to DB — allow marking jobs as "applied", "rejected", "interested" to inform future ranking
-- [ ] Consider adding a `--since` flag to run the pipeline for a specific date range
+## Next session (Day 8)
+- [ ] `--since` flag — run pipeline for a specific date range
+- [ ] Consider using `interested`/`applied` history as a positive ranking signal
+- [ ] Run full pipeline with both adapters active to confirm JSearch deduplication end-to-end

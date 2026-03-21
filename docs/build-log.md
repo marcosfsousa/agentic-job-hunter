@@ -186,3 +186,40 @@ Deduplication: second run returned 0 new jobs — idempotency confirmed
 ```
 
 **Test count:** 129 passing
+
+---
+
+## Day 7 — 2026-03-21
+
+**Goal:** Resend email delivery, JSearch second source adapter, feedback loop to DB.
+
+**Files created**
+- `src/jobscout/adapters/jsearch.py` — JSearch adapter via OpenWebNinja API; single call with `num_pages`; no salary fields; `job_is_remote=True` overrides inference
+- `src/jobscout/adapters/inference.py` — shared `_infer_remote_policy`, `_infer_seniority`, `_parse_date` extracted from both adapters
+- `tests/fixtures/sample_jsearch_response.json` — 3-listing fixture for JSearch tests
+- `docs/handoff_day7.md` — session handoff
+
+**Files modified**
+- `src/jobscout/delivery/email_sender.py` — replaced smtplib with Resend SDK; `send_digest` made `async`; `asyncio.to_thread()` wraps sync Resend call
+- `src/jobscout/adapters/adzuna.py` — removed duplicate inference helpers; imports from `inference.py`
+- `src/jobscout/storage/db.py` — added `feedback` table; `upsert_feedback`, `filter_feedback`, `_id_source_params` helper
+- `src/jobscout/models.py` — removed `MarketsConfig`; added `FeedbackStatus` and `FeedbackEntry`
+- `src/jobscout/config.py` — removed SMTP fields; added `resend_api_key`, `open_web_ninja_api_key`, `email_to`, `email_from`
+- `src/jobscout/run.py` — parallel ingest via `asyncio.gather()`; feedback sync + filter; `--apply-feedback` flag; fixed missing `await send_digest`
+- `profile.yaml` — removed `markets` block
+- `.env.example` — added Resend and JSearch entries
+- `pyproject.toml` — added `resend>=2.0`
+- `tests/test_adapters.py` — added JSearch tests (20 new)
+- `tests/test_db.py` — added feedback tests (12 new)
+- `tests/test_delivery.py` — updated SMTP mocks to Resend SDK mocks
+
+**Key decisions**
+- Key-presence gates sources: `_ADAPTER_REGISTRY` runs all adapters; each self-disables without a key. Removed `markets.active` from `profile.yaml` — it conflated source selection with user preferences and wasn't a real market selector.
+- Shared `inference.py`: three identical helpers extracted from both adapters to eliminate duplication and give keyword lists a single source of truth.
+- Feedback design: `data/feedback.yaml` → DB `feedback` table → filter step between dedup and hard filter. `applied`/`rejected` suppress future appearances; `interested` passes through. No ranking influence yet.
+- `FeedbackEntry` moved to `models.py` — all domain models belong there, not in entry points.
+
+**Bug fixed**
+- `send_digest` was called without `await` in `run.py` after being made `async` — email was silently skipped on every pipeline run.
+
+**Test count:** 159 passing

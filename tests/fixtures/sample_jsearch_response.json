@@ -1,0 +1,39 @@
+{
+  "status": "OK",
+  "request_id": "test-request-id-001",
+  "data": [
+    {
+      "job_id": "jsearch_001",
+      "job_title": "Senior ML Engineer",
+      "employer_name": "AI Startup GmbH",
+      "job_description": "Build and deploy machine learning models using PyTorch and LangChain. Remote work possible.",
+      "job_apply_link": "https://example.com/job/1",
+      "job_is_remote": false,
+      "job_posted_at_datetime_utc": "2026-03-20T09:00:00Z",
+      "job_city": "Berlin",
+      "job_country": "DE"
+    },
+    {
+      "job_id": "jsearch_002",
+      "job_title": "Junior AI Engineer",
+      "employer_name": "Tech Corp",
+      "job_description": "Work on LLM applications and AI pipelines. Hybrid work model available.",
+      "job_apply_link": "https://example.com/job/2",
+      "job_is_remote": true,
+      "job_posted_at_datetime_utc": "2026-03-19T14:00:00Z",
+      "job_city": "Munich",
+      "job_country": "DE"
+    },
+    {
+      "job_id": "jsearch_003",
+      "job_title": "Data Scientist",
+      "employer_name": "Data GmbH",
+      "job_description": "Apply machine learning techniques to solve business problems.",
+      "job_apply_link": "https://example.com/job/3",
+      "job_is_remote": false,
+      "job_posted_at_datetime_utc": null,
+      "job_city": null,
+      "job_country": "DE"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
-"""Tests for Adzuna adapter normalization logic.
+"""Tests for Adzuna and JSearch adapter normalization logic.
 
-All tests use the fixture file and test _normalize() / inference helpers
+All tests use fixture files and test _normalize() / inference helpers
 directly — no network calls are made.
 """
 import json
@@ -15,6 +15,12 @@ from jobscout.adapters.adzuna import (
     _infer_remote_policy,
     _infer_seniority,
     _parse_date,
+)
+from jobscout.adapters.jsearch import (
+    JSearchAdapter,
+    _JSearchJobRaw,
+    _infer_seniority as _jsearch_infer_seniority,
+    _parse_date as _jsearch_parse_date,
 )
 from jobscout.models import JobListing
 
@@ -216,3 +222,143 @@ class TestNormalize:
         raw = self._make_raw_with_location(raw_listings, "Berlin, Germany")
         job = adapter._normalize(raw, {})
         assert job.location == "Berlin, Germany"
+
+
+# ===========================================================================
+# JSearch adapter tests
+# ===========================================================================
+
+@pytest.fixture
+def jsearch_response() -> dict:
+    return json.loads((FIXTURES_DIR / "sample_jsearch_response.json").read_text())
+
+
+@pytest.fixture
+def jsearch_listings(jsearch_response) -> list[dict]:
+    return jsearch_response["data"]
+
+
+@pytest.fixture
+def jsearch_adapter() -> JSearchAdapter:
+    from types import SimpleNamespace
+    config = SimpleNamespace(open_web_ninja_api_key="test-key")
+    return JSearchAdapter(config=config)
+
+
+# ---------------------------------------------------------------------------
+# _JSearchJobRaw validation
+# ---------------------------------------------------------------------------
+
+class TestJSearchJobRaw:
+    def test_valid_listing(self, jsearch_listings):
+        validated = _JSearchJobRaw.model_validate(jsearch_listings[0])
+        assert validated.job_id == "jsearch_001"
+        assert validated.employer_name == "AI Startup GmbH"
+        assert validated.job_city == "Berlin"
+
+    def test_null_city_defaults_to_none(self, jsearch_listings):
+        validated = _JSearchJobRaw.model_validate(jsearch_listings[2])
+        assert validated.job_city is None
+
+    def test_null_posted_date_defaults_to_none(self, jsearch_listings):
+        validated = _JSearchJobRaw.model_validate(jsearch_listings[2])
+        assert validated.job_posted_at_datetime_utc is None
+
+    def test_missing_employer_defaults_to_unknown(self):
+        raw = {
+            "job_id": "x1",
+            "job_title": "ML Engineer",
+        }
+        validated = _JSearchJobRaw.model_validate(raw)
+        assert validated.employer_name == "Unknown"
+
+
+# ---------------------------------------------------------------------------
+# _parse_date (JSearch)
+# ---------------------------------------------------------------------------
+
+class TestJSearchParseDate:
+    def test_valid_timestamp(self):
+        assert _jsearch_parse_date("2026-03-20T09:00:00Z") == date(2026, 3, 20)
+
+    def test_none_returns_none(self):
+        assert _jsearch_parse_date(None) is None
+
+    def test_invalid_returns_none(self):
+        assert _jsearch_parse_date("not-a-date") is None
+
+
+# ---------------------------------------------------------------------------
+# _normalize via JSearch adapter
+# ---------------------------------------------------------------------------
+
+class TestJSearchNormalize:
+    def test_returns_joblisting(self, jsearch_adapter, jsearch_listings):
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[0])
+        job = jsearch_adapter._normalize(raw, jsearch_listings[0])
+        assert isinstance(job, JobListing)
+
+    def test_source_is_jsearch(self, jsearch_adapter, jsearch_listings):
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[0])
+        job = jsearch_adapter._normalize(raw, jsearch_listings[0])
+        assert job.source == "jsearch"
+
+    def test_salary_always_none(self, jsearch_adapter, jsearch_listings):
+        for listing in jsearch_listings:
+            raw = _JSearchJobRaw.model_validate(listing)
+            job = jsearch_adapter._normalize(raw, listing)
+            assert job.salary_min is None
+            assert job.salary_max is None
+
+    def test_job_is_remote_true_sets_remote_policy(self, jsearch_adapter, jsearch_listings):
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[1])  # job_is_remote=True
+        job = jsearch_adapter._normalize(raw, jsearch_listings[1])
+        assert job.remote_policy == "remote"
+
+    def test_remote_inferred_from_description(self, jsearch_adapter, jsearch_listings):
+        # First listing: job_is_remote=False but description says "Remote work possible"
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[0])
+        job = jsearch_adapter._normalize(raw, jsearch_listings[0])
+        assert job.remote_policy == "remote"
+
+    def test_seniority_inferred_from_title(self, jsearch_adapter, jsearch_listings):
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[0])  # "Senior ML Engineer"
+        job = jsearch_adapter._normalize(raw, jsearch_listings[0])
+        assert job.seniority == "senior"
+
+    def test_junior_seniority_inferred(self, jsearch_adapter, jsearch_listings):
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[1])  # "Junior AI Engineer"
+        job = jsearch_adapter._normalize(raw, jsearch_listings[1])
+        assert job.seniority == "junior"
+
+    def test_city_appends_germany(self, jsearch_adapter, jsearch_listings):
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[0])  # city="Berlin"
+        job = jsearch_adapter._normalize(raw, jsearch_listings[0])
+        assert job.location == "Berlin, Germany"
+
+    def test_no_city_defaults_to_germany(self, jsearch_adapter, jsearch_listings):
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[2])  # city=None
+        job = jsearch_adapter._normalize(raw, jsearch_listings[2])
+        assert job.location == "Germany"
+
+    def test_null_posted_date_becomes_none(self, jsearch_adapter, jsearch_listings):
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[2])
+        job = jsearch_adapter._normalize(raw, jsearch_listings[2])
+        assert job.posted_date is None
+
+    def test_posted_date_parsed(self, jsearch_adapter, jsearch_listings):
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[0])
+        job = jsearch_adapter._normalize(raw, jsearch_listings[0])
+        assert job.posted_date == date(2026, 3, 20)
+
+    def test_raw_data_stored(self, jsearch_adapter, jsearch_listings):
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[0])
+        job = jsearch_adapter._normalize(raw, jsearch_listings[0])
+        assert job.raw_data["job_id"] == "jsearch_001"
+
+    def test_joblisting_is_frozen(self, jsearch_adapter, jsearch_listings):
+        from dataclasses import FrozenInstanceError
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[0])
+        job = jsearch_adapter._normalize(raw, jsearch_listings[0])
+        with pytest.raises(FrozenInstanceError):
+            job.title = "mutated"

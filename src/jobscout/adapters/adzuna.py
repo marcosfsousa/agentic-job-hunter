@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 from pydantic import BaseModel
 
 from jobscout.adapters.base import JobAdapter, JobScoutAdapterError
+from jobscout.adapters.inference import (
+    _infer_remote_policy,
+    _infer_seniority,
+    _parse_date,
+)
 from jobscout.config import AppConfig
-from jobscout.models import JobListing, RemotePolicy, Seniority
+from jobscout.models import JobListing
 
 logger = logging.getLogger(__name__)
 
@@ -42,56 +47,6 @@ class AdzunaJobRaw(BaseModel):
     salary_max: float | None = None
     salary_is_predicted: int = 0
     contract_type: str | None = None
-
-
-# ---------------------------------------------------------------------------
-# Inference helpers — module-level so they are independently testable
-# ---------------------------------------------------------------------------
-
-def _infer_remote_policy(title: str, description: str, location: str) -> RemotePolicy:
-    """Infer remote work policy from title, description, and location text."""
-    combined = f"{title} {description} {location}".lower()
-
-    hybrid_keywords = ["hybrid", "teilweise remote", "partly remote", "partial remote"]
-    remote_keywords = ["remote", "homeoffice", "home office", "work from home", "wfh", "fully remote"]
-    onsite_keywords = ["on-site", "onsite", "vor ort", "office only", "in-office"]
-
-    # Check hybrid first — it often contains "remote" too, so order matters
-    if any(kw in combined for kw in hybrid_keywords):
-        return "hybrid"
-    if any(kw in combined for kw in remote_keywords):
-        return "remote"
-    if any(kw in combined for kw in onsite_keywords):
-        return "onsite"
-    return "not_specified"
-
-
-def _infer_seniority(title: str, description: str) -> Seniority | None:
-    """Infer seniority level from title and description text."""
-    combined = f"{title} {description}".lower()
-
-    lead_keywords = ["lead", "principal", "director", "head of", "staff engineer", "chapter lead"]
-    senior_keywords = ["senior", "sr ", "sr.", " sr "]
-    mid_keywords = ["mid-level", "mid level", "intermediate", "medior"]
-    junior_keywords = ["junior", "jr ", "jr.", "graduate", "entry-level", "entry level", "trainee", "werkstudent"]
-
-    if any(kw in combined for kw in lead_keywords):
-        return "lead"
-    if any(kw in combined for kw in senior_keywords):
-        return "senior"
-    if any(kw in combined for kw in mid_keywords):
-        return "mid"
-    if any(kw in combined for kw in junior_keywords):
-        return "junior"
-    return None
-
-
-def _parse_date(created: str) -> date | None:
-    """Parse Adzuna ISO 8601 timestamp to a date. Returns None on failure."""
-    try:
-        return datetime.fromisoformat(created.replace("Z", "+00:00")).date()
-    except (ValueError, AttributeError):
-        return None
 
 
 # ---------------------------------------------------------------------------

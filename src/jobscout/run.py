@@ -4,27 +4,54 @@ import argparse
 import asyncio
 import logging
 from datetime import date
-
+from pathlib import Path
 import openai
+import yaml
 
 from jobscout.adapters.adzuna import AdzunaAdapter
 from jobscout.adapters.base import JobScoutAdapterError
+from jobscout.adapters.jsearch import JSearchAdapter
 from jobscout.config import get_config
 from jobscout.delivery.email_sender import send_digest
 from jobscout.delivery.formatter import format_digest
 from jobscout.delivery.writer import write_digest
 from jobscout.evaluation.evaluator import evaluate_jobs
 from jobscout.filters.hard_filter import apply_hard_filter
-from jobscout.models import JobListing, ScoredJob
+from jobscout.models import FeedbackEntry, JobListing, ScoredJob
 from jobscout.ranking.embedder import ProfileEmbedder
 from jobscout.ranking.scorer import rank_jobs
 from jobscout.storage.db import JobDatabase
 
 logger = logging.getLogger(__name__)
 
-# Maps profile.yaml markets.active entries to adapter classes
+
+# ---------------------------------------------------------------------------
+# Feedback helpers
+# ---------------------------------------------------------------------------
+
+def _sync_feedback(db: "JobDatabase", feedback_path: Path) -> None:
+    """Load feedback.yaml and upsert entries into DB. No-op if file is absent."""
+    try:
+        with feedback_path.open() as f:
+            raw = yaml.safe_load(f) or []
+    except FileNotFoundError:
+        logger.info("No feedback file found at %s — skipping", feedback_path)
+        return
+    entries: list[FeedbackEntry] = []
+    for item in raw:
+        try:
+            entries.append(FeedbackEntry.model_validate(item))
+        except Exception as exc:
+            logger.warning("Skipping invalid feedback entry %s: %s", item, exc)
+    db.upsert_feedback(entries)
+    logger.info("Feedback synced: %d entries", len(entries))
+
+
+# All registered adapters run on every pipeline execution.
+# An adapter self-disables if its API key is absent from .env.
 _ADAPTER_REGISTRY = {
     "germany": AdzunaAdapter,
+    "jsearch": JSearchAdapter,
 }
 
 
@@ -42,43 +69,42 @@ async def run_pipeline(
         Filtered job listings ready for ranking.
     """
     config = get_config()
-    active_markets: list[str] = config.profile.markets.active
+    feedback_path = config.db_path.parent / "feedback.yaml"
 
     # ------------------------------------------------------------------
-    # Ingest
+    # Ingest — all registered adapters fetched concurrently.
+    # Each adapter self-disables when its API key is absent.
+    # To add/remove a source: update _ADAPTER_REGISTRY and .env.
     # ------------------------------------------------------------------
-    all_jobs: list[JobListing] = []
-
-    for market in active_markets:
-        adapter_cls = _ADAPTER_REGISTRY.get(market)
-        if adapter_cls is None:
-            logger.warning("No adapter registered for market '%s' — skipping", market)
-            continue
-
-        adapter = adapter_cls(config)
+    async def _fetch(adapter_cls) -> list[JobListing]:
         try:
-            jobs = await adapter.fetch(max_results=max_results)
-            all_jobs.extend(jobs)
+            return await adapter_cls(config).fetch(max_results=max_results)
         except JobScoutAdapterError as exc:
-            logger.warning("Adapter for '%s' failed — skipping: %s", market, exc)
+            logger.warning("%s failed — skipping: %s", adapter_cls.__name__, exc)
+            return []
+
+    results = await asyncio.gather(*(_fetch(cls) for cls in _ADAPTER_REGISTRY.values()))
+    all_jobs: list[JobListing] = [job for batch in results for job in batch]
 
     # ------------------------------------------------------------------
-    # Deduplicate (skip on dry-run)
+    # Deduplicate + feedback filter (skip on dry-run)
     # ------------------------------------------------------------------
     embedder = ProfileEmbedder()
 
     if dry_run:
-        unseen = all_jobs
-        logger.info("Dry-run: skipping deduplication (%d jobs)", len(unseen))
+        actionable = all_jobs
+        logger.info("Dry-run: skipping deduplication and feedback filter (%d jobs)", len(actionable))
     else:
         with JobDatabase(config.db_path) as db:
+            _sync_feedback(db, feedback_path)
             unseen = db.filter_unseen(all_jobs)
             db.mark_seen_bulk(unseen)
+            actionable = db.filter_feedback(unseen)
 
     # ------------------------------------------------------------------
     # Hard filter + rank
     # ------------------------------------------------------------------
-    filtered = apply_hard_filter(unseen, config.profile)
+    filtered = apply_hard_filter(actionable, config.profile)
     ranked = rank_jobs(filtered, config.profile, embedder)
 
     # ------------------------------------------------------------------
@@ -93,7 +119,7 @@ async def run_pipeline(
     run_date = date.today()
     digest = format_digest(evaluated, run_date)
     write_digest(digest, config.digests_dir, run_date)
-    send_digest(digest, config, run_date)
+    await send_digest(digest, config, run_date)
 
     logger.info("Pipeline complete — %d jobs evaluated", len(evaluated))
     return evaluated
@@ -122,6 +148,11 @@ def _parse_args() -> argparse.Namespace:
         metavar="N",
         help="Maximum listings to fetch per adapter (default: 100).",
     )
+    parser.add_argument(
+        "--apply-feedback",
+        action="store_true",
+        help="Sync feedback.yaml to DB and exit without running the pipeline.",
+    )
     return parser.parse_args()
 
 
@@ -133,4 +164,10 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)s %(name)s — %(message)s",
     )
 
-    asyncio.run(run_pipeline(dry_run=args.dry_run, max_results=args.max_results))
+    if args.apply_feedback:
+        cfg = get_config()
+        feedback_path = cfg.db_path.parent / "feedback.yaml"
+        with JobDatabase(cfg.db_path) as db:
+            _sync_feedback(db, feedback_path)
+    else:
+        asyncio.run(run_pipeline(dry_run=args.dry_run, max_results=args.max_results))
