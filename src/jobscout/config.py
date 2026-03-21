@@ -36,6 +36,9 @@ class AppConfig(BaseModel):
     email_to: str | None = None      # Recipient address
     email_from: str | None = None    # Verified sender address
 
+    # Ranking — blend weight for feedback centroid (0 = profile only, 1 = feedback only)
+    feedback_weight: float = 0.2
+
     # Paths — default to project-root-relative locations
     db_path: Path = _PROJECT_ROOT / "data" / "jobscout.db"
     digests_dir: Path = _PROJECT_ROOT / "digests"
@@ -47,6 +50,13 @@ class AppConfig(BaseModel):
     def must_be_non_empty(cls, v: str, info) -> str:
         if not v.strip():
             raise ValueError(f"{info.field_name} must not be empty")
+        return v
+
+    @field_validator("feedback_weight")
+    @classmethod
+    def feedback_weight_in_range(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"feedback_weight must be between 0 and 1, got {v}")
         return v
 
 
@@ -108,6 +118,7 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
         resend_api_key=os.environ.get("RESEND_API_KEY") or None,
         email_to=os.environ.get("EMAIL_TO") or None,
         email_from=os.environ.get("EMAIL_FROM") or None,
+        feedback_weight=float(os.environ.get("FEEDBACK_WEIGHT", "0.2")),
     )
 
     logger.debug(

@@ -48,5 +48,8 @@ class ProfileEmbedder:
 
     def encode_jobs(self, jobs: list[JobListing]) -> np.ndarray:
         """Return an (n, dim) matrix of L2-normalised job embeddings."""
-        texts = [_build_job_text(j) for j in jobs]
+        return self.encode_texts([_build_job_text(j) for j in jobs])
+
+    def encode_texts(self, texts: list[str]) -> np.ndarray:
+        """Return an (n, dim) matrix of L2-normalised embeddings for raw text strings."""
         return self._model.encode(texts, normalize_embeddings=True, show_progress_bar=False)

@@ -134,3 +134,25 @@ class TestRankJobs:
         results = rank_jobs([ML_JOB], ml_profile, embedder)
         assert len(results) == 1
         assert results[0].listing.id == "ml-1"
+
+    def test_no_feedback_docs_same_as_baseline(self, embedder, ml_profile):
+        baseline = rank_jobs([ML_JOB, SWE_JOB], ml_profile, embedder)
+        with_empty = rank_jobs([ML_JOB, SWE_JOB], ml_profile, embedder, feedback_docs=[])
+        with_none = rank_jobs([ML_JOB, SWE_JOB], ml_profile, embedder, feedback_docs=None)
+        assert [r.listing.id for r in baseline] == [r.listing.id for r in with_empty]
+        assert [r.listing.id for r in baseline] == [r.listing.id for r in with_none]
+
+    def test_feedback_centroid_boosts_similar_job(self, embedder, ml_profile):
+        # Feedback doc is ML-focused — should widen the gap between ML and SWE jobs
+        feedback_docs = [
+            "Senior ML Engineer. Deep learning, PyTorch, model deployment, LLM fine-tuning."
+        ]
+        baseline = rank_jobs([ML_JOB, SWE_JOB], ml_profile, embedder)
+        boosted = rank_jobs([ML_JOB, SWE_JOB], ml_profile, embedder, feedback_docs=feedback_docs)
+
+        baseline_gap = baseline[0].embedding_score - baseline[1].embedding_score
+        boosted_gap = boosted[0].embedding_score - boosted[1].embedding_score
+
+        # ML job should still rank first, and the gap should increase
+        assert boosted[0].listing.id == "ml-1"
+        assert boosted_gap > baseline_gap

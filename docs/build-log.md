@@ -223,3 +223,42 @@ Deduplication: second run returned 0 new jobs — idempotency confirmed
 - `send_digest` was called without `await` in `run.py` after being made `async` — email was silently skipped on every pipeline run.
 
 **Test count:** 159 passing
+
+---
+
+## Day 8 — 2026-03-21
+
+**Goal:** Feedback centroid ranking signal — use `interested` history to boost similar new jobs.
+
+**Files modified**
+- `src/jobscout/config.py` — added `feedback_weight: float = 0.2` to `AppConfig`; loaded from `FEEDBACK_WEIGHT` env var; `@field_validator` enforces range `[0, 1]`
+- `src/jobscout/storage/db.py` — added nullable `title TEXT` and `description TEXT` columns to `seen_jobs`; `mark_seen_bulk` now stores job text; new `get_interested_descriptions()` method (JOIN on feedback table, returns `"{title}. {description}"` strings)
+- `src/jobscout/ranking/embedder.py` — added `encode_texts(list[str])` method; `encode_jobs` refactored to delegate to it
+- `src/jobscout/ranking/scorer.py` — `rank_jobs` accepts `feedback_docs: list[str] | None` and `feedback_weight: float`; computes centroid of feedback embeddings, normalises, and blends: `(1 - w) * profile_score + w * centroid_score`
+- `src/jobscout/run.py` — loads `feedback_docs` from DB inside context block; passes to `rank_jobs` with `config.feedback_weight`; `send_digest` now skipped on `--dry-run`; email format fixed (`nl2br` extension + Score/Location/Remote on separate lines)
+- `src/jobscout/delivery/formatter.py` — Score/Location/Remote split into separate lines (were string-concatenated into one)
+- `src/jobscout/delivery/email_sender.py` — added `nl2br` to markdown extensions so single newlines render as `<br>` in HTML
+- `tests/test_db.py` — 4 new tests: text storage in `mark_seen_bulk`, `get_interested_descriptions` join correctness, NULL guard
+- `tests/test_ranking.py` — 2 new tests: no-op with empty feedback docs, centroid widens score gap
+
+**Key decisions**
+- `interested` only in centroid — `applied` may reflect necessity not preference
+- `feedback_weight` lives in `AppConfig` (pipeline config, not user preference) — overridable via env var
+- No threshold: 0.2 weight limits noise from sparse data; activates from first `interested` job
+- Job text stored in `seen_jobs` (nullable columns) — no migration needed for fresh DB; backward compatible schema
+- `--dry-run` now skips email delivery (previously sent real emails)
+- `encode_jobs` delegates to `encode_texts` — single encode call site in embedder
+
+**Bug fixed**
+- `--dry-run` was sending real emails — guarded `send_digest` with `if not dry_run`
+
+**Schema change**
+- `seen_jobs` table has new nullable columns — delete `data/jobscout.db` and rebuild when upgrading
+
+**Smoke test result (2026-03-21)**
+```
+156 jobs stored — 0 NULL titles/descriptions — feedback table empty (no feedback.yaml yet)
+Email delivered with corrected per-line formatting
+```
+
+**Test count:** 166 passing

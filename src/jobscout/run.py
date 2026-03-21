@@ -93,6 +93,7 @@ async def run_pipeline(
 
     if dry_run:
         actionable = all_jobs
+        feedback_docs: list[str] = []
         logger.info("Dry-run: skipping deduplication and feedback filter (%d jobs)", len(actionable))
     else:
         with JobDatabase(config.db_path) as db:
@@ -100,12 +101,20 @@ async def run_pipeline(
             unseen = db.filter_unseen(all_jobs)
             db.mark_seen_bulk(unseen)
             actionable = db.filter_feedback(unseen)
+            feedback_docs = db.get_interested_descriptions()
+
+    if feedback_docs:
+        logger.info("Feedback centroid: %d interested job(s) loaded", len(feedback_docs))
 
     # ------------------------------------------------------------------
     # Hard filter + rank
     # ------------------------------------------------------------------
     filtered = apply_hard_filter(actionable, config.profile)
-    ranked = rank_jobs(filtered, config.profile, embedder)
+    ranked = rank_jobs(
+        filtered, config.profile, embedder,
+        feedback_docs=feedback_docs,
+        feedback_weight=config.feedback_weight,
+    )
 
     # ------------------------------------------------------------------
     # LLM evaluate (top 25 only)
@@ -119,7 +128,8 @@ async def run_pipeline(
     run_date = date.today()
     digest = format_digest(evaluated, run_date)
     write_digest(digest, config.digests_dir, run_date)
-    await send_digest(digest, config, run_date)
+    if not dry_run:
+        await send_digest(digest, config, run_date)
 
     logger.info("Pipeline complete — %d jobs evaluated", len(evaluated))
     return evaluated

@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS seen_jobs (
     id          TEXT NOT NULL,
     source      TEXT NOT NULL,
     first_seen  TEXT NOT NULL,
+    title       TEXT,
+    description TEXT,
     PRIMARY KEY (id, source)
 )
 """
@@ -112,15 +114,28 @@ class JobDatabase:
         logger.debug("filter_feedback: %d → %d actionable jobs", len(jobs), len(result))
         return result
 
+    def get_interested_descriptions(self) -> list[str]:
+        """Return job texts for all 'interested' feedback entries that have stored text."""
+        conn = self._require_conn()
+        rows = conn.execute(
+            "SELECT s.title, s.description"
+            " FROM seen_jobs s"
+            " JOIN feedback f ON s.id = f.id AND s.source = f.source"
+            " WHERE f.status = 'interested'"
+            "   AND s.description IS NOT NULL",
+        ).fetchall()
+        return [f"{title}. {desc}" for title, desc in rows]
+
     def mark_seen_bulk(self, jobs: list[JobListing]) -> None:
-        """Record jobs as seen. Safe to call multiple times on the same jobs."""
+        """Record jobs as seen with their text. Safe to call multiple times on the same jobs."""
         if not jobs:
             return
         conn = self._require_conn()
         now = datetime.now(timezone.utc).isoformat()
         conn.executemany(
-            "INSERT OR IGNORE INTO seen_jobs (id, source, first_seen) VALUES (?, ?, ?)",
-            [(j.id, j.source, now) for j in jobs],
+            "INSERT OR IGNORE INTO seen_jobs (id, source, first_seen, title, description)"
+            " VALUES (?, ?, ?, ?, ?)",
+            [(j.id, j.source, now, j.title, j.description) for j in jobs],
         )
         conn.commit()
         logger.debug("mark_seen_bulk: recorded %d jobs", len(jobs))

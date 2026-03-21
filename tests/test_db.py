@@ -247,3 +247,63 @@ class TestFilterFeedback:
             d.upsert_feedback([FeedbackEntry(id="job-1", source="adzuna_de", status="applied")])
             result = d.filter_feedback([adzuna_job, jsearch_job])
         assert result == [jsearch_job]
+
+
+# ---------------------------------------------------------------------------
+# mark_seen_bulk — text storage
+# ---------------------------------------------------------------------------
+
+class TestMarkSeenBulkText:
+    def test_stores_title_and_description(self, db):
+        job = _make_job(id="job-1", title="ML Engineer", description="Machine learning role.")
+        with db as d:
+            d.mark_seen_bulk([job])
+            row = d._conn.execute("SELECT title, description FROM seen_jobs WHERE id='job-1'").fetchone()
+        assert row == ("ML Engineer", "Machine learning role.")
+
+    def test_idempotent_does_not_overwrite(self, db):
+        job = _make_job(id="job-1", title="ML Engineer", description="Machine learning role.")
+        with db as d:
+            d.mark_seen_bulk([job])
+            d.mark_seen_bulk([job])
+            count = d._conn.execute("SELECT COUNT(*) FROM seen_jobs WHERE id='job-1'").fetchone()[0]
+        assert count == 1
+
+
+# ---------------------------------------------------------------------------
+# get_interested_descriptions
+# ---------------------------------------------------------------------------
+
+class TestGetInterestedDescriptions:
+    def test_returns_empty_when_no_feedback(self, db):
+        job = _make_job(id="job-1")
+        with db as d:
+            d.mark_seen_bulk([job])
+            result = d.get_interested_descriptions()
+        assert result == []
+
+    def test_returns_text_for_interested_only(self, db):
+        interested = _make_job(id="job-1", title="ML Engineer", description="ML role.")
+        applied = _make_job(id="job-2", title="SWE", description="Backend role.")
+        rejected = _make_job(id="job-3", title="PM", description="Product role.")
+        with db as d:
+            d.mark_seen_bulk([interested, applied, rejected])
+            d.upsert_feedback([
+                FeedbackEntry(id="job-1", source="adzuna_de", status="interested"),
+                FeedbackEntry(id="job-2", source="adzuna_de", status="applied"),
+                FeedbackEntry(id="job-3", source="adzuna_de", status="rejected"),
+            ])
+            result = d.get_interested_descriptions()
+        assert result == ["ML Engineer. ML role."]
+
+    def test_returns_empty_when_interested_job_has_no_text(self, db):
+        # Simulate a legacy row with NULL description (e.g. pre-schema-update)
+        with db as d:
+            d._conn.execute(
+                "INSERT OR IGNORE INTO seen_jobs (id, source, first_seen) VALUES (?, ?, ?)",
+                ("job-x", "adzuna_de", "2026-01-01T00:00:00+00:00"),
+            )
+            d._conn.commit()
+            d.upsert_feedback([FeedbackEntry(id="job-x", source="adzuna_de", status="interested")])
+            result = d.get_interested_descriptions()
+        assert result == []

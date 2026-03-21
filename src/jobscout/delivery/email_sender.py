@@ -38,7 +38,7 @@ async def send_digest(content: str, config: AppConfig, run_date: date | None = N
         "from": config.email_from,
         "to": [config.email_to],
         "subject": f"JobScout Digest — {run_date.isoformat()}",
-        "html": md.markdown(content, extensions=["tables"]),
+        "html": md.markdown(content, extensions=["tables", "nl2br"]),
         "text": content,
     }
 
