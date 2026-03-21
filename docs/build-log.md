@@ -159,3 +159,30 @@ Score range: 5–9/10 | Best match: Kiwigrid ML Engineer (9/10)
 ```
 
 **Test count:** 92 passing
+
+---
+
+## Day 6 — 2026-03-21
+
+**Goal:** Delivery tests, first real pipeline run, deduplication verification, evaluation prompt tuning.
+
+**Files created**
+- `tests/test_delivery.py` — 29 tests covering `formatter.py`, `writer.py`, `email_sender.py`; `_mock_smtp()` context manager helper; `tmp_path` for file I/O; no network calls
+
+**Files modified**
+- `src/jobscout/evaluation/prompt.py` — tightened `matching_skills` instruction: prefer distinctive skills over generic ones (e.g. RAG systems over Python/Docker), prefer strong-list skills when both tiers match, only include skills the job specifically calls for
+
+**Key decisions**
+- `_mock_smtp(enter_side_effect=None)` context manager extracts the repeated 4-line SMTP patch setup shared across `TestSendDigest` tests
+- `_make_scored_job` in `test_delivery.py` takes `salary_min`/`salary_max` kwargs — avoids manual `JobListing` reconstruction for the no-salary test case
+- Prompt tuning: rewrote the `matching_skills` field description only; no changes to `build_prompt()`, profile format, or evaluator — the two-tier profile (`Strong skills` / `Working knowledge`) already gives the LLM the signal it needs
+- Validated prompt change with a live 5-job eval: Merantix Momentum NLP went from `[Python, PyTorch, TensorFlow]` → `[RAG systems, LangChain, Vector DBs, LLM dev, Prompt eng]`
+
+**First real pipeline run (2026-03-21)**
+```
+100 fetched → 25 passed hard filter → 25 evaluated (gpt-4o-mini) → digest written
+Score range: 3–10/10 | Best match: Freenow ML Engineer (10/10), Dropbox ML Engineer (9/10)
+Deduplication: second run returned 0 new jobs — idempotency confirmed
+```
+
+**Test count:** 129 passing
