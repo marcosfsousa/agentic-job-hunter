@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from typing import Literal
 
 import httpx
 from pydantic import BaseModel
 
-from jobscout.adapters.base import JobAdapter, JobScoutAdapterError
+from jobscout.adapters.base import JobAdapter, JobScoutAdapterError, filter_by_since
 from jobscout.adapters.inference import (
     _infer_remote_policy,
     _infer_seniority,
@@ -17,6 +18,41 @@ from jobscout.models import JobListing
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.openwebninja.com/jsearch/search"
+
+
+_DatePostedBucket = Literal["today", "3days", "week", "month"]
+
+
+def _since_to_date_posted(since: date) -> _DatePostedBucket:
+    """Map a since date to the nearest JSearch date_posted enum value.
+
+    JSearch only accepts fixed buckets: today, 3days, week, month.
+    We pick the tightest bucket that still covers the requested date.
+    """
+    days = (date.today() - since).days
+    if days <= 0:
+        return "today"
+    if days <= 3:
+        return "3days"
+    if days <= 7:
+        return "week"
+    return "month"
+
+
+def _highlights_to_text(highlights: dict | None) -> str:
+    """Flatten JSearch job_highlights dict into plain text.
+
+    job_highlights looks like:
+        {"Qualifications": ["5+ years...", "Python"], "Responsibilities": [...]}
+    Returns each section joined with semicolons, sections separated by newlines.
+    """
+    if not highlights:
+        return ""
+    parts = []
+    for section, items in highlights.items():
+        if isinstance(items, list) and items:
+            parts.append(f"{section}: " + "; ".join(str(i) for i in items))
+    return "\n".join(parts)
 _RESULTS_PER_PAGE = 10
 _MAX_PAGES = 20  # JSearch API hard limit; also caps free-tier quota usage
 
@@ -29,7 +65,8 @@ class _JSearchJobRaw(BaseModel):
     job_id: str
     job_title: str
     employer_name: str = "Unknown"
-    job_description: str = ""
+    job_description: str | None = None
+    job_highlights: dict | None = None
     job_apply_link: str = ""
     job_is_remote: bool = False
     job_posted_at_datetime_utc: str | None = None
@@ -48,11 +85,18 @@ class JSearchAdapter(JobAdapter):
     def source(self) -> str:
         return "jsearch"
 
-    async def fetch(self, max_results: int = 100) -> list[JobListing]:
+    async def fetch(self, max_results: int = 100, since: date | None = None) -> list[JobListing]:
         """Fetch and normalise up to ``max_results`` listings from JSearch.
 
         Uses ``num_pages`` to retrieve multiple pages in a single API call,
         minimising quota usage on free-tier plans.
+
+        Args:
+            max_results: Upper bound on listings to return.
+            since: If provided, maps to the nearest date_posted bucket
+                (today/3days/week/month) to tighten the API query, then
+                enforces the exact cutoff in a post-filter. Listings with
+                no posted_date are always kept.
 
         Raises:
             JobScoutAdapterError: On rate-limiting (429) or server errors (5xx).
@@ -67,7 +111,7 @@ class JSearchAdapter(JobAdapter):
         params = {
             "query": "machine learning engineer in Germany",
             "country": "de",
-            "date_posted": "week",
+            "date_posted": _since_to_date_posted(since) if since is not None else "week",
             "employment_types": "FULLTIME",
             "page": 1,
             "num_pages": num_pages,
@@ -100,6 +144,11 @@ class JSearchAdapter(JobAdapter):
                 listing_id = raw.get("job_id", "<unknown>")
                 logger.warning("Skipping JSearch listing %s: %s", listing_id, exc)
 
+        if since is not None:
+            before = len(collected)
+            collected = filter_by_since(collected, since)
+            logger.debug("JSearchAdapter --since filter: %d → %d listings", before, len(collected))
+
         logger.info("JSearchAdapter fetched %d listings", len(collected))
         return collected
 
@@ -109,8 +158,11 @@ class JSearchAdapter(JobAdapter):
         if "germany" not in location.lower() and "deutschland" not in location.lower():
             location = f"{location}, Germany"
 
+        description = raw.job_description or _highlights_to_text(raw.job_highlights) or ""
+        if not raw.job_description and raw.job_highlights:
+            logger.debug("JSearch listing %s: used job_highlights fallback", raw.job_id)
         remote_policy = "remote" if raw.job_is_remote else _infer_remote_policy(
-            raw.job_title, raw.job_description, location
+            raw.job_title, description, location
         )
 
         return JobListing(
@@ -118,12 +170,12 @@ class JSearchAdapter(JobAdapter):
             source=self.source,
             title=raw.job_title,
             company=raw.employer_name,
-            description=raw.job_description,
+            description=description,
             location=location,
             remote_policy=remote_policy,
             salary_min=None,
             salary_max=None,
-            seniority=_infer_seniority(raw.job_title, raw.job_description),
+            seniority=_infer_seniority(raw.job_title, description),
             url=raw.job_apply_link,
             posted_date=_parse_date(raw.job_posted_at_datetime_utc),
             fetched_at=datetime.now(timezone.utc),

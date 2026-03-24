@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 import httpx
 from pydantic import BaseModel
 
-from jobscout.adapters.base import JobAdapter, JobScoutAdapterError
+from jobscout.adapters.base import JobAdapter, JobScoutAdapterError, filter_by_since
 from jobscout.adapters.inference import (
     _infer_remote_policy,
     _infer_seniority,
@@ -60,12 +60,19 @@ class AdzunaAdapter(JobAdapter):
     def source(self) -> str:
         return "adzuna_de"
 
-    async def fetch(self, max_results: int = 100) -> list[JobListing]:
+    async def fetch(self, max_results: int = 100, since: date | None = None) -> list[JobListing]:
         """Fetch and normalise up to ``max_results`` listings from Adzuna Germany.
 
         Paginates from page 1 until an under-full page is returned or
         ``max_results`` is reached. Skips individual malformed listings with
         a warning rather than aborting the entire batch.
+
+        Args:
+            max_results: Upper bound on listings to return.
+            since: If provided, only keep listings posted on or after this date.
+                Passed to the API as ``max_days_old`` to reduce pages fetched,
+                then enforced precisely in a post-filter. Listings with no
+                posted_date are always kept.
 
         Raises:
             JobScoutAdapterError: On rate-limiting (429) or server errors (5xx).
@@ -81,6 +88,9 @@ class AdzunaAdapter(JobAdapter):
             "category": "it-jobs",
             "results_per_page": _RESULTS_PER_PAGE,
         }
+
+        if since is not None:
+            base_params["max_days_old"] = (date.today() - since).days
 
         collected: list[JobListing] = []
         page = 1
@@ -130,6 +140,11 @@ class AdzunaAdapter(JobAdapter):
                     break
 
                 page += 1
+
+        if since is not None:
+            before = len(collected)
+            collected = filter_by_since(collected, since)
+            logger.debug("AdzunaAdapter --since filter: %d → %d listings", before, len(collected))
 
         logger.info("AdzunaAdapter fetched %d listings", len(collected))
         return collected

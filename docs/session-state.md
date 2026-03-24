@@ -1,15 +1,14 @@
 # Session State
 
-**Last updated:** 2026-03-21
+**Last updated:** 2026-03-24
 
 ## Status
-- Completed through: Day 8 — Feedback centroid ranking signal, email format fix, dry-run email guard
-- Last working command: `conda run -n jobscout python -m jobscout.run --verbose` (166 tests passing, 156 jobs stored, email delivered)
+- Completed through: Day 9 — JSearch null description fix, email score threshold, job ID in digest, `--since` flag, skip email when no matches
+- Last working command: `conda run -n jobscout python -m jobscout.run` (185 tests passing, pipeline ran end-to-end, email delivered)
 
 ## Known issues
 - None outstanding.
 
-## Next session (Day 9)
-- [ ] `--since` flag — run pipeline for a specific date range
-- [ ] Run full pipeline with both adapters active to confirm JSearch deduplication end-to-end
-- [ ] Create `data/feedback.yaml` with first `interested` entries and verify centroid boost is active (`get_interested_descriptions` returns > 0)
+## Next session (Day 10)
+- [ ] Triage the Apple "Quality Engineer - Machine Learning" false positive — consider adding audio/QA keywords to `dealbreakers.exclude_keywords` or tightening `require_any_keyword`
+- [ ] Review accumulated `feedback.yaml` entries and add first `interested` jobs to activate centroid boost more strongly

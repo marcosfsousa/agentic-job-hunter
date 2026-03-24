@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import date
 
 from jobscout.config import AppConfig
 from jobscout.models import JobListing
+
+
+def filter_by_since(listings: list[JobListing], since: date) -> list[JobListing]:
+    """Return listings posted on or after ``since``. Listings with no posted_date are kept."""
+    return [j for j in listings if j.posted_date is None or j.posted_date >= since]
 
 
 class JobScoutAdapterError(Exception):
@@ -35,7 +41,7 @@ class JobAdapter(ABC):
             def source(self) -> str:
                 return "adzuna_de"
 
-            async def fetch(self, max_results: int = 100) -> list[JobListing]:
+            async def fetch(self, max_results: int = 100, since: date | None = None) -> list[JobListing]:
                 results = []
                 async with httpx.AsyncClient() as client:
                     # paginate until max_results reached ...
@@ -60,7 +66,7 @@ class JobAdapter(ABC):
         """
 
     @abstractmethod
-    async def fetch(self, max_results: int = 100) -> list[JobListing]:
+    async def fetch(self, max_results: int = 100, since: date | None = None) -> list[JobListing]:
         """Fetch, paginate, and normalise job listings from this source.
 
         Args:
@@ -69,6 +75,8 @@ class JobAdapter(ABC):
                 Default (100) is appropriate for production daily runs.
                 Pass a smaller value during development or ``--dry-run`` mode
                 to avoid exhausting free-tier API quotas.
+            since: If provided, only return listings posted on or after this
+                date. Listings with no posted_date are always kept.
 
         Returns:
             A flat list of normalised ``JobListing`` objects. May be empty if

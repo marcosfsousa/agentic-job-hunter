@@ -262,3 +262,35 @@ Email delivered with corrected per-line formatting
 ```
 
 **Test count:** 166 passing
+
+---
+
+## Day 9 — 2026-03-24
+
+**Goal:** JSearch null description fix, email score threshold, job ID in digest, `--since` flag, misc pipeline fixes.
+
+**Files modified**
+- `src/jobscout/adapters/base.py` — added `filter_by_since(listings, since)` shared helper; updated `fetch()` abstract signature to accept `since: date | None = None`
+- `src/jobscout/adapters/jsearch.py` — `job_description: str | None = None` (was `str = ""`); added `job_highlights: dict | None = None`; `_highlights_to_text()` fallback when description is null; `_since_to_date_posted()` maps a date to JSearch's fixed `date_posted` buckets; post-filter via `filter_by_since()`; `_DatePostedBucket` Literal type
+- `src/jobscout/adapters/adzuna.py` — `since` param; passes `max_days_old` to API to reduce pages fetched; post-filter via `filter_by_since()`
+- `src/jobscout/models.py` — added `email_min_score: int = Field(default=7, ge=1, le=10)` to `UserProfile`
+- `src/jobscout/delivery/formatter.py` — added `**ID:** {id} | **Source:** {source}` line to each job card
+- `src/jobscout/run.py` — email now filtered to `evaluation.match_score >= email_min_score`; file digest still contains all evaluated jobs; email skipped entirely (with INFO log) when no jobs qualify; `--since YYYY-MM-DD` CLI flag; `since` threaded to all adapter `fetch()` calls
+- `profile.yaml` — added `email_min_score: 7`
+- `tests/fixtures/sample_jsearch_response.json` — added jsearch_004 (null description + highlights) and jsearch_005 (both null)
+- `tests/test_adapters.py` — tests for null description, highlights fallback, `_since_to_date_posted` mapping, `filter_by_since` post-filter behaviour
+- `tests/test_delivery.py` — test for ID/source in digest output
+
+**Key decisions**
+- JSearch null description: allow `None`, fall back to `job_highlights` dict (flattened to text), then `""` — keeps listing in pipeline rather than dropping it; 35/53 JSearch listings were being dropped before this fix
+- Email threshold in `profile.yaml` (`email_min_score`): user-tunable preference; file digest always contains full archive; only email is filtered
+- Email skip guard: `send_digest` not called when `email_jobs` is empty — avoids sending "No evaluated matches" emails
+- `filter_by_since` extracted to `base.py`: identical post-filter logic was duplicated across both adapters; shared helper eliminates duplication and is tested directly
+- `--since` uses the tightest available JSearch `date_posted` bucket; Adzuna gets `max_days_old` to reduce pages fetched; both apply an exact post-filter on `posted_date` regardless
+- Jobs with `posted_date = None` always pass the `--since` filter (conservative — don't discard potentially good jobs)
+
+**Bugs fixed**
+- JSearch dropped 35/53 listings due to `job_description: null` failing Pydantic `str` validation
+- Pipeline could send up to 3 emails per day if run multiple times (investigated; caused by running verbose + non-verbose runs in same session — no code bug, operational issue)
+
+**Test count:** 185 passing

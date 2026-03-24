@@ -34,6 +34,33 @@
       "job_posted_at_datetime_utc": null,
       "job_city": null,
       "job_country": "DE"
+    },
+    {
+      "job_id": "jsearch_004",
+      "job_title": "ML Engineer",
+      "employer_name": "No Desc GmbH",
+      "job_description": null,
+      "job_highlights": {
+        "Qualifications": ["3+ years Python", "PyTorch experience"],
+        "Responsibilities": ["Train and deploy NLP models", "Collaborate with product team"]
+      },
+      "job_apply_link": "https://example.com/job/4",
+      "job_is_remote": false,
+      "job_posted_at_datetime_utc": "2026-03-21T10:00:00Z",
+      "job_city": "Hamburg",
+      "job_country": "DE"
+    },
+    {
+      "job_id": "jsearch_005",
+      "job_title": "AI Researcher",
+      "employer_name": "Ghost GmbH",
+      "job_description": null,
+      "job_highlights": null,
+      "job_apply_link": "https://example.com/job/5",
+      "job_is_remote": false,
+      "job_posted_at_datetime_utc": "2026-03-21T11:00:00Z",
+      "job_city": "Frankfurt",
+      "job_country": "DE"
     }
   ]
 }

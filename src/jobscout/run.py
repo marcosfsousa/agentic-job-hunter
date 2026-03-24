@@ -58,12 +58,14 @@ _ADAPTER_REGISTRY = {
 async def run_pipeline(
     dry_run: bool = False,
     max_results: int = 100,
+    since: date | None = None,
 ) -> list[ScoredJob]:
     """Run the full pipeline: fetch → deduplicate → filter.
 
     Args:
         dry_run: If True, skip all database writes.
         max_results: Maximum listings to fetch per adapter.
+        since: If provided, only keep listings posted on or after this date.
 
     Returns:
         Filtered job listings ready for ranking.
@@ -76,9 +78,12 @@ async def run_pipeline(
     # Each adapter self-disables when its API key is absent.
     # To add/remove a source: update _ADAPTER_REGISTRY and .env.
     # ------------------------------------------------------------------
+    if since is not None:
+        logger.info("Running with --since %s — filtering to jobs posted on or after that date", since)
+
     async def _fetch(adapter_cls) -> list[JobListing]:
         try:
-            return await adapter_cls(config).fetch(max_results=max_results)
+            return await adapter_cls(config).fetch(max_results=max_results, since=since)
         except JobScoutAdapterError as exc:
             logger.warning("%s failed — skipping: %s", adapter_cls.__name__, exc)
             return []
@@ -129,7 +134,13 @@ async def run_pipeline(
     digest = format_digest(evaluated, run_date)
     write_digest(digest, config.digests_dir, run_date)
     if not dry_run:
-        await send_digest(digest, config, run_date)
+        min_score = config.profile.email_min_score
+        email_jobs = [j for j in evaluated if j.evaluation and j.evaluation.match_score >= min_score]
+        if email_jobs:
+            email_digest = format_digest(email_jobs, run_date)
+            await send_digest(email_digest, config, run_date)
+        else:
+            logger.info("Email skipped — no jobs scored >= %d/10", min_score)
 
     logger.info("Pipeline complete — %d jobs evaluated", len(evaluated))
     return evaluated
@@ -163,6 +174,13 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Sync feedback.yaml to DB and exit without running the pipeline.",
     )
+    parser.add_argument(
+        "--since",
+        type=date.fromisoformat,
+        metavar="YYYY-MM-DD",
+        default=None,
+        help="Only include jobs posted on or after this date (e.g. 2026-03-21).",
+    )
     return parser.parse_args()
 
 
@@ -180,4 +198,4 @@ if __name__ == "__main__":
         with JobDatabase(cfg.db_path) as db:
             _sync_feedback(db, feedback_path)
     else:
-        asyncio.run(run_pipeline(dry_run=args.dry_run, max_results=args.max_results))
+        asyncio.run(run_pipeline(dry_run=args.dry_run, max_results=args.max_results, since=args.since))

@@ -113,3 +113,4 @@ class UserProfile(BaseModel):
     salary: SalaryConfig
     seniority: SeniorityConfig
     dealbreakers: DealbreakersConfig
+    email_min_score: int = Field(default=7, ge=1, le=10)

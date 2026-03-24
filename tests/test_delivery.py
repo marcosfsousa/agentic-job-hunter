@@ -140,6 +140,11 @@ class TestFormatDigest:
         )
         assert "**Salary:**" not in result
 
+    def test_job_section_contains_id_and_source(self):
+        result = format_digest([_make_scored_job("abc-123")], run_date=_RUN_DATE)
+        assert "**ID:** abc-123" in result
+        assert "**Source:** test" in result
+
 
 # ---------------------------------------------------------------------------
 # TestFormatSalary

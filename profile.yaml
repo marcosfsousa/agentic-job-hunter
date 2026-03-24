@@ -57,3 +57,7 @@ dealbreakers:
     - "LLM"
     - "data science"
 
+# Minimum LLM match score (1–10) to include a job in the email digest.
+# Jobs below this threshold are still written to the daily digest file.
+email_min_score: 7
+

@@ -4,11 +4,12 @@ All tests use fixture files and test _normalize() / inference helpers
 directly — no network calls are made.
 """
 import json
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
+from jobscout.adapters.base import filter_by_since
 from jobscout.adapters.adzuna import (
     AdzunaAdapter,
     AdzunaJobRaw,
@@ -19,6 +20,8 @@ from jobscout.adapters.adzuna import (
 from jobscout.adapters.jsearch import (
     JSearchAdapter,
     _JSearchJobRaw,
+    _highlights_to_text,
+    _since_to_date_posted,
     _infer_seniority as _jsearch_infer_seniority,
     _parse_date as _jsearch_parse_date,
 )
@@ -272,6 +275,34 @@ class TestJSearchJobRaw:
         validated = _JSearchJobRaw.model_validate(raw)
         assert validated.employer_name == "Unknown"
 
+    def test_null_description_is_accepted(self, jsearch_listings):
+        # jsearch_004 has job_description: null — must not raise
+        validated = _JSearchJobRaw.model_validate(jsearch_listings[3])
+        assert validated.job_description is None
+        assert validated.job_highlights is not None
+
+
+class TestHighlightsToText:
+    def test_flattens_sections_into_text(self):
+        highlights = {
+            "Qualifications": ["Python", "PyTorch"],
+            "Responsibilities": ["Train models"],
+        }
+        result = _highlights_to_text(highlights)
+        assert "Qualifications: Python; PyTorch" in result
+        assert "Responsibilities: Train models" in result
+
+    def test_none_returns_empty_string(self):
+        assert _highlights_to_text(None) == ""
+
+    def test_empty_dict_returns_empty_string(self):
+        assert _highlights_to_text({}) == ""
+
+    def test_skips_non_list_values(self):
+        result = _highlights_to_text({"Note": "see website", "Skills": ["Python"]})
+        assert "Skills: Python" in result
+        assert "Note" not in result
+
 
 # ---------------------------------------------------------------------------
 # _parse_date (JSearch)
@@ -362,3 +393,93 @@ class TestJSearchNormalize:
         job = jsearch_adapter._normalize(raw, jsearch_listings[0])
         with pytest.raises(FrozenInstanceError):
             job.title = "mutated"
+
+    def test_null_description_falls_back_to_highlights(self, jsearch_adapter, jsearch_listings):
+        # jsearch_004: job_description=null, job_highlights has content
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[3])
+        job = jsearch_adapter._normalize(raw, jsearch_listings[3])
+        assert "PyTorch" in job.description
+        assert "NLP models" in job.description
+
+    def test_null_description_and_null_highlights_uses_empty_string(self, jsearch_adapter, jsearch_listings):
+        # jsearch_005: both null — must still produce a valid JobListing
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[4])
+        job = jsearch_adapter._normalize(raw, jsearch_listings[4])
+        assert job.description == ""
+
+
+# ===========================================================================
+# --since flag: _since_to_date_posted mapping
+# ===========================================================================
+
+class TestSinceDatePosted:
+    def test_today(self):
+        assert _since_to_date_posted(date.today()) == "today"
+
+    def test_future_date_treated_as_today(self):
+        assert _since_to_date_posted(date.today() + timedelta(days=1)) == "today"
+
+    def test_one_day_ago(self):
+        assert _since_to_date_posted(date.today() - timedelta(days=1)) == "3days"
+
+    def test_three_days_ago(self):
+        assert _since_to_date_posted(date.today() - timedelta(days=3)) == "3days"
+
+    def test_four_days_ago(self):
+        assert _since_to_date_posted(date.today() - timedelta(days=4)) == "week"
+
+    def test_seven_days_ago(self):
+        assert _since_to_date_posted(date.today() - timedelta(days=7)) == "week"
+
+    def test_eight_days_ago(self):
+        assert _since_to_date_posted(date.today() - timedelta(days=8)) == "month"
+
+
+# ===========================================================================
+# --since flag: post-filter behaviour (shared across adapters via JobListing)
+# ===========================================================================
+
+class TestSincePostFilter:
+    """Tests the posted_date >= since filter logic that both adapters apply."""
+
+    def _make_listing(self, posted_date: date | None) -> "JobListing":
+        return JobListing(
+            id="x",
+            source="test",
+            title="ML Engineer",
+            company="Test GmbH",
+            description="desc",
+            location="Berlin, Germany",
+            remote_policy="not_specified",
+            salary_min=None,
+            salary_max=None,
+            seniority=None,
+            url="https://example.com",
+            posted_date=posted_date,
+            fetched_at=datetime.now(timezone.utc),
+            raw_data={},
+        )
+
+    def test_job_on_since_date_is_kept(self):
+        since = date(2026, 3, 20)
+        job = self._make_listing(date(2026, 3, 20))
+        result = filter_by_since([job], since)
+        assert len(result) == 1
+
+    def test_job_after_since_date_is_kept(self):
+        since = date(2026, 3, 20)
+        job = self._make_listing(date(2026, 3, 22))
+        result = filter_by_since([job], since)
+        assert len(result) == 1
+
+    def test_job_before_since_date_is_dropped(self):
+        since = date(2026, 3, 20)
+        job = self._make_listing(date(2026, 3, 19))
+        result = filter_by_since([job], since)
+        assert len(result) == 0
+
+    def test_job_with_no_posted_date_is_kept(self):
+        since = date(2026, 3, 20)
+        job = self._make_listing(None)
+        result = filter_by_since([job], since)
+        assert len(result) == 1
