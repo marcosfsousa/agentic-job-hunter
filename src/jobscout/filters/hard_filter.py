@@ -23,6 +23,7 @@ def apply_hard_filter(jobs: list[JobListing], profile: UserProfile) -> list[JobL
 def _passes_all(job: JobListing, profile: UserProfile) -> bool:
     return (
         _passes_seniority(job, profile)
+        and _passes_experience(job, profile)
         and _passes_company(job, profile)
         and _passes_exclude_keywords(job, profile)
         and _passes_require_keywords(job, profile)
@@ -41,6 +42,28 @@ def _passes_seniority(job: JobListing, profile: UserProfile) -> bool:
     if job.seniority in profile.seniority.exclude:
         return False
     return job.seniority in profile.seniority.target
+
+
+_YEARS_EXP_RE = re.compile(
+    r"(\d+)\s*\+?\s*(?:"
+    r"(?:to\s*\d+\s*)?years?\s+(?:of\s+)?(?:professional\s+|work\s+|industry\s+|relevant\s+)?(?:experience|expertise)"
+    r"|jahre\s+(?:berufs)?erfahrung"
+    r"|jahre\s+(?:relevante[r]?\s+)?(?:berufs)?erfahrung"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _passes_experience(job: JobListing, profile: UserProfile) -> bool:
+    max_years = profile.seniority.max_years_experience
+    if max_years >= 99:
+        return True
+    text = f"{job.title} {job.description}"
+    matches = _YEARS_EXP_RE.findall(text)
+    # Keep the job unless ALL stated requirements exceed the limit — benefit of the doubt
+    if not matches:
+        return True
+    return min(int(y) for y in matches) <= max_years
 
 
 def _passes_company(job: JobListing, profile: UserProfile) -> bool:

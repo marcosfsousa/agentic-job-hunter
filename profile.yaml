@@ -67,6 +67,7 @@ salary:
 seniority:
   target: ["junior", "mid"]
   exclude: ["intern", "director", "vp"]
+  max_years_experience: 4
 
 dealbreakers:
   exclude_companies: []
@@ -79,6 +80,7 @@ dealbreakers:
     - "Big Data"
     - "Recommendation Engine"
     - "Computer Vision"
+    - "Robotics"
   require_any_keyword:
     - "machine learning"
     - "ML"
@@ -96,4 +98,3 @@ dealbreakers:
 # Minimum LLM match score (1–10) to include a job in the email digest.
 # Jobs below this threshold are still written to the daily digest file.
 email_min_score: 5
-

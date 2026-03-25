@@ -13,6 +13,7 @@ from jobscout.filters.hard_filter import (
     apply_hard_filter,
     _passes_company,
     _passes_exclude_keywords,
+    _passes_experience,
     _passes_location,
     _passes_require_keywords,
     _passes_salary,
@@ -281,3 +282,47 @@ class TestApplyHardFilter:
         result = apply_hard_filter(jobs, PROFILE)
         assert len(result) == 1
         assert result[0].id == "2"
+
+
+# ---------------------------------------------------------------------------
+# _passes_experience
+# ---------------------------------------------------------------------------
+
+def _profile_with_max_years(max_years: int) -> UserProfile:
+    return _make_profile(seniority=SeniorityConfig(
+        target=["junior", "mid"], exclude=["intern"], max_years_experience=max_years
+    ))
+
+
+class TestPassesExperience:
+    def test_passes_when_no_limit_set(self):
+        job = _make_job(description="5+ years of professional experience required.")
+        assert _passes_experience(job, _make_profile()) is True
+
+    def test_passes_when_years_within_limit(self):
+        job = _make_job(description="3+ years of experience with Python.")
+        assert _passes_experience(job, _profile_with_max_years(4)) is True
+
+    def test_fails_when_years_exceed_limit(self):
+        job = _make_job(description="5+ years of professional experience required.")
+        assert _passes_experience(job, _profile_with_max_years(4)) is False
+
+    def test_fails_for_varied_phrasing(self):
+        phrasings = [
+            "Minimum 6 years of work experience.",
+            "You have 7 years of industry experience.",
+            "At least 5 years of relevant experience.",
+            "8+ years of expertise in ML.",
+        ]
+        for desc in phrasings:
+            job = _make_job(description=desc)
+            assert _passes_experience(job, _profile_with_max_years(4)) is False, desc
+
+    def test_passes_when_no_experience_mentioned(self):
+        job = _make_job(description="Build LLM applications with LangChain.")
+        assert _passes_experience(job, _profile_with_max_years(4)) is True
+
+    def test_passes_with_range_where_minimum_is_within_limit(self):
+        # "3 to 7 years" — minimum is 3, within limit of 4
+        job = _make_job(description="3 to 7 years of experience preferred.")
+        assert _passes_experience(job, _profile_with_max_years(4)) is True

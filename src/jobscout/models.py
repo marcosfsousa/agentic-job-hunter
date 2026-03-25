@@ -84,6 +84,7 @@ class SalaryConfig(BaseModel):
 class SeniorityConfig(BaseModel):
     target: list[str]
     exclude: list[str]
+    max_years_experience: int = 99
 
 
 class LocationConfig(BaseModel):
