@@ -3,13 +3,12 @@
 **Last updated:** 2026-03-24
 
 ## Status
-- Completed through: Day 9 — JSearch null description fix, email score threshold, job ID in digest, `--since` flag, skip email when no matches
-- Last working command: `conda run -n jobscout python -m jobscout.run` (185 tests passing, pipeline ran end-to-end, email delivered)
+- Completed through: Day 10 — cross-source dedup, false positive triage, feedback seeding
+- Last working command: `conda run -n jobscout python -m jobscout.run` (196 tests passing)
 
 ## Known issues
-- None outstanding.
+- Centroid boost is weakly activated — only one `interested` entry in `feedback.yaml`. More signal needed as pipeline runs accumulate.
 
-## Next session (Day 10)
-- [ ] Implement cross-source + within-source deduplication — full plan in `docs/plan-cross-source-dedup.md`
-- [ ] Triage the Apple "Quality Engineer - Machine Learning" false positive — consider adding audio/QA keywords to `dealbreakers.exclude_keywords` or tightening `require_any_keyword`
-- [ ] Review accumulated `feedback.yaml` entries and add first `interested` jobs to activate centroid boost more strongly
+## Next session (Day 11)
+- [ ] Investigate why few `interested` listings are accumulating — check if pipeline is surfacing enough quality matches or if scoring thresholds are too aggressive
+- [ ] Consider adding a `--feedback` flag or interactive review mode to make it easier to mark jobs after reading the digest

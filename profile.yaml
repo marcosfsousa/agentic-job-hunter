@@ -48,6 +48,8 @@ dealbreakers:
   exclude_keywords:
     - "Unpaid"
     - "Volunteer"
+    - "audio"
+    - "QA"
   require_any_keyword:
     - "machine learning"
     - "ML"

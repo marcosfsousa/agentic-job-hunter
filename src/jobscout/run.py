@@ -16,6 +16,7 @@ from jobscout.delivery.email_sender import send_digest
 from jobscout.delivery.formatter import format_digest
 from jobscout.delivery.writer import write_digest
 from jobscout.evaluation.evaluator import evaluate_jobs
+from jobscout.filters.dedup import deduplicate_listings
 from jobscout.filters.hard_filter import apply_hard_filter
 from jobscout.models import FeedbackEntry, JobListing, ScoredJob
 from jobscout.ranking.embedder import ProfileEmbedder
@@ -105,6 +106,7 @@ async def run_pipeline(
             _sync_feedback(db, feedback_path)
             unseen = db.filter_unseen(all_jobs)
             db.mark_seen_bulk(unseen)
+            unseen = deduplicate_listings(unseen)
             actionable = db.filter_feedback(unseen)
             feedback_docs = db.get_interested_descriptions()
 
