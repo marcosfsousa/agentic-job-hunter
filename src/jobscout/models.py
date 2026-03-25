@@ -107,6 +107,9 @@ class SkillsConfig(BaseModel):
 
 class UserProfile(BaseModel):
     name: str
+    background: str = ""
+    ideal_role: str = ""
+    deprioritise: list[str] = Field(default_factory=list)
     target_roles: list[str]
     skills: SkillsConfig
     location: LocationConfig

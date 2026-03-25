@@ -1,11 +1,32 @@
 name: "Marcos"
 
+background: >
+  2.5 years software engineering and tech lead experience (enterprise, client-facing projects).
+  3 months hands-on AI engineering: built RAG pipelines, NLP systems, LLM fine-tuning workflows,
+  and agentic applications. Strong on the application layer; weaker on MLOps, cloud infrastructure,
+  and classical ML. Not a researcher — a builder.
+
+ideal_role: >
+  Building and deploying LLM-based applications, RAG pipelines, or NLP systems — not model research
+  or classical ML. End-to-end ownership from prototype to deployed interface. Consulting-adjacent
+  or product-facing. Small-to-mid size company, or a specialist AI/consulting unit within a larger
+  company where individual contributions are visible.
+
+deprioritise:
+  - "Requires fluent German as a stated condition"
+  - "Focused primarily on recommendation systems, forecasting, or classical ML pipelines"
+  - "Heavy MLOps, Kubernetes, or cloud infrastructure as core job requirements"
+  - "Primarily model research or academic role"
+  - "Senior-level role requiring 5+ years dedicated ML engineering experience"
+
 target_roles:
   - "ML Engineer"
   - "AI Engineer"
   - "Machine Learning Engineer"
-  - "Data Scientist (ML focus)"
-  - "MLOps Engineer"
+  - "AI Application Engineer"
+  - "GenAI Engineer"
+  - "LLM Engineer"
+  - "AI Software Engineer"
 
 skills:
   strong:
@@ -16,15 +37,19 @@ skills:
     - Prompt engineering
     - Sentence Transformers
     - HuggingFace ecosystem
+    - "NLP pipelines"
+    - "agentic systems"
+    - "OpenAI API"
   working_knowledge:
     - Python
-    - PyTorch
-    - TensorFlow
     - Docker
     - REST APIs
     - SQL
+    - "Streamlit"
+    - "scikit-learn"
   learning:
-    - Kubernetes
+    - PyTorch
+    - TensorFlow
     - MLflow
     - AWS SageMaker
 
@@ -50,6 +75,10 @@ dealbreakers:
     - "Volunteer"
     - "audio"
     - "QA"
+    - "Kubernetes"
+    - "Big Data"
+    - "Recommendation Engine"
+    - "Computer Vision"
   require_any_keyword:
     - "machine learning"
     - "ML"
@@ -58,8 +87,13 @@ dealbreakers:
     - "NLP"
     - "LLM"
     - "data science"
+    - "RAG"
+    - "LangChain"
+    - "agentic"
+    - "generative AI"
+    - "LLM application"
 
 # Minimum LLM match score (1–10) to include a job in the email digest.
 # Jobs below this threshold are still written to the daily digest file.
-email_min_score: 7
+email_min_score: 5
 

@@ -343,3 +343,19 @@ Email delivered with corrected per-line formatting
 - `feedback_path` moved to `AppConfig` property — was duplicated in 3 places in `run.py`
 
 **Test count:** 201 passing
+
+**Also this session — LLM scoring calibration**
+
+Root cause: gpt-4o-mini was inflating scores (8–9 for mediocre fits) because the profile sent to the evaluator was too thin — just a skills list, no experience context, no ideal role description, no penalisation rules.
+
+**Files modified (second pass)**
+- `profile.yaml` — added `background`, `ideal_role`, `deprioritise` free-text fields; expanded `target_roles` (added `AI Application Engineer`, `GenAI Engineer`, `LLM Engineer`, `AI Software Engineer`); expanded `skills.strong` (NLP pipelines, agentic systems, OpenAI API); moved PyTorch/TensorFlow to `learning`; added `Kubernetes`, `Big Data`, `Recommendation Engine`, `Computer Vision` to `exclude_keywords`; expanded `require_any_keyword`; lowered `email_min_score` to 5
+- `src/jobscout/models.py` — added `background: str`, `ideal_role: str`, `deprioritise: list[str]` optional fields to `UserProfile`
+- `src/jobscout/evaluation/prompt.py` — full rewrite: explicit 3-step scoring process (base score → adjustments → cap); base score of 6 for reasonable overlap, 4 for weak overlap; degree penalty split into -2 (hard mandatory) vs -1 (comparable accepted); removed German language penalty (candidate targets Germany and speaks German); added -1 for MLOps/cloud as core, -1 for senior level, -1 for non-tech company without AI unit; boosts for LLM/RAG ownership (+1), specialist AI unit (+1), explicit LangChain/RAG/vector DB in stack (+1); `build_prompt()` now injects `background`, `ideal_role`, and `deprioritise` from profile; cap at 9
+
+**Key decisions**
+- `--review` surfaces all 18 `seen_jobs` entries but user only had context for 8 (the digest jobs) — known gap, fix deferred: will store evaluated job IDs at pipeline time so `--review` can filter to digest-only jobs
+- German language penalty removed from prompt: candidate targets Germany and speaks German; penalising all German-requirement roles would incorrectly downrank valid fits like ML Reply
+- Degree penalty split: "CS or comparable" is -1 not -2 — ML Reply uses this phrasing and should score ~8, which validated the calibration
+- Stack boost (+1 for LangChain/RAG/vector DB explicitly named) added to create ceiling room — without it, most roles cap at 7 even with both other boosts
+- Validated calibration by manually scoring ML Reply JD: expected ~8, confirmed the rules produce that result after fixes
