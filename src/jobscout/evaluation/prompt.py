@@ -11,7 +11,7 @@ below 5 means poor fit)
 specific job particularly values or emphasises. Prefer distinctive skills \
 (e.g. RAG systems, LangChain, domain-specific frameworks) over generic ones \
 (e.g. Python, Docker, SQL). When both strong and working-knowledge skills match, \
-prefer skills from the strong list. Only include a skill the job explicitly calls for — no padding.Return at most 5. \
+prefer skills from the strong list. Only include a skill the job explicitly calls for — no padding. Return at most 5. \
 - gaps: list of strings — skills or requirements the job needs that the profile lacks
 - explanation: one or two sentences summarising the fit and calling out any \
 score-affecting factors

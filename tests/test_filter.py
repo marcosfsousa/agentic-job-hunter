@@ -326,3 +326,15 @@ class TestPassesExperience:
         # "3 to 7 years" — minimum is 3, within limit of 4
         job = _make_job(description="3 to 7 years of experience preferred.")
         assert _passes_experience(job, _profile_with_max_years(4)) is True
+
+    def test_fails_german_berufserfahrung(self):
+        job = _make_job(description="5 Jahre Berufserfahrung erforderlich.")
+        assert _passes_experience(job, _profile_with_max_years(4)) is False
+
+    def test_fails_german_relevante_berufserfahrung(self):
+        job = _make_job(description="Mindestens 6 Jahre relevante Berufserfahrung.")
+        assert _passes_experience(job, _profile_with_max_years(4)) is False
+
+    def test_passes_german_within_limit(self):
+        job = _make_job(description="3 Jahre Berufserfahrung gewünscht.")
+        assert _passes_experience(job, _profile_with_max_years(4)) is True

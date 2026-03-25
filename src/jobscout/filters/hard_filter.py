@@ -47,20 +47,22 @@ def _passes_seniority(job: JobListing, profile: UserProfile) -> bool:
 _YEARS_EXP_RE = re.compile(
     r"(\d+)\s*\+?\s*(?:"
     r"(?:to\s*\d+\s*)?years?\s+(?:of\s+)?(?:professional\s+|work\s+|industry\s+|relevant\s+)?(?:experience|expertise)"
-    r"|jahre\s+(?:berufs)?erfahrung"
-    r"|jahre\s+(?:relevante[r]?\s+)?(?:berufs)?erfahrung"
+    r"|jahre\s+(?:(?:berufs)?erfahrung|(?:relevante[r]?\s+)?(?:berufs)?erfahrung)"
     r")",
     re.IGNORECASE,
 )
 
 
+def _job_text(job: JobListing) -> str:
+    return f"{job.title} {job.description}"
+
+
 def _passes_experience(job: JobListing, profile: UserProfile) -> bool:
     max_years = profile.seniority.max_years_experience
-    if max_years >= 99:
+    if max_years is None:
         return True
-    text = f"{job.title} {job.description}"
-    matches = _YEARS_EXP_RE.findall(text)
-    # Keep the job unless ALL stated requirements exceed the limit — benefit of the doubt
+    matches = _YEARS_EXP_RE.findall(_job_text(job))
+    # Keep the job if the minimum stated requirement is within the limit
     if not matches:
         return True
     return min(int(y) for y in matches) <= max_years
@@ -76,14 +78,14 @@ def _passes_company(job: JobListing, profile: UserProfile) -> bool:
 def _passes_exclude_keywords(job: JobListing, profile: UserProfile) -> bool:
     if not profile.dealbreakers.exclude_keywords:
         return True
-    text = f"{job.title} {job.description}".lower()
+    text = _job_text(job).lower()
     return not any(kw.lower() in text for kw in profile.dealbreakers.exclude_keywords)
 
 
 def _passes_require_keywords(job: JobListing, profile: UserProfile) -> bool:
     if not profile.dealbreakers.require_any_keyword:
         return True
-    text = f"{job.title} {job.description}".lower()
+    text = _job_text(job).lower()
     return any(
         re.search(rf"\b{re.escape(kw.lower())}\b", text)
         for kw in profile.dealbreakers.require_any_keyword
