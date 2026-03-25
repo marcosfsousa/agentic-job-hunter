@@ -45,6 +45,10 @@ class AppConfig(BaseModel):
 
     model_config = {"arbitrary_types_allowed": True}
 
+    @property
+    def feedback_path(self) -> Path:
+        return self.db_path.parent / "feedback.yaml"
+
     @field_validator("adzuna_app_id", "adzuna_app_key", "openai_api_key")
     @classmethod
     def must_be_non_empty(cls, v: str, info) -> str:

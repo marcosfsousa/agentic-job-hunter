@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from types import TracebackType
 
@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS seen_jobs (
     source      TEXT NOT NULL,
     first_seen  TEXT NOT NULL,
     title       TEXT,
+    company     TEXT,
     description TEXT,
     PRIMARY KEY (id, source)
 )
@@ -50,6 +51,14 @@ class JobDatabase:
         self._conn = sqlite3.connect(str(self._db_path))
         self._conn.execute(_CREATE_SEEN_JOBS)
         self._conn.execute(_CREATE_FEEDBACK)
+        try:
+            self._conn.execute("ALTER TABLE seen_jobs ADD COLUMN company TEXT")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc):
+                raise
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_seen_jobs_first_seen ON seen_jobs(first_seen)"
+        )
         self._conn.commit()
         logger.debug("JobDatabase opened: %s", self._db_path)
         return self
@@ -121,10 +130,21 @@ class JobDatabase:
             "SELECT s.title, s.description"
             " FROM seen_jobs s"
             " JOIN feedback f ON s.id = f.id AND s.source = f.source"
-            " WHERE f.status = 'interested'"
+            " WHERE f.status IN ('interested', 'applied')"
             "   AND s.description IS NOT NULL",
         ).fetchall()
         return [f"{title}. {desc}" for title, desc in rows]
+
+    def get_unreviewed_for_date(self, dt: date) -> list[tuple[str, str, str, str]]:
+        """Return (id, source, title, company) for jobs first seen on `dt` with no feedback entry."""
+        conn = self._require_conn()
+        rows = conn.execute(
+            "SELECT id, source, title, company FROM seen_jobs"
+            " WHERE DATE(first_seen) = ?"
+            " AND (id, source) NOT IN (SELECT id, source FROM feedback)",
+            (dt.isoformat(),),
+        ).fetchall()
+        return [(id_, src, title or "", company or "") for id_, src, title, company in rows]
 
     def mark_seen_bulk(self, jobs: list[JobListing]) -> None:
         """Record jobs as seen with their text. Safe to call multiple times on the same jobs."""
@@ -133,9 +153,9 @@ class JobDatabase:
         conn = self._require_conn()
         now = datetime.now(timezone.utc).isoformat()
         conn.executemany(
-            "INSERT OR IGNORE INTO seen_jobs (id, source, first_seen, title, description)"
-            " VALUES (?, ?, ?, ?, ?)",
-            [(j.id, j.source, now, j.title, j.description) for j in jobs],
+            "INSERT OR IGNORE INTO seen_jobs (id, source, first_seen, title, company, description)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            [(j.id, j.source, now, j.title, j.company, j.description) for j in jobs],
         )
         conn.commit()
         logger.debug("mark_seen_bulk: recorded %d jobs", len(jobs))

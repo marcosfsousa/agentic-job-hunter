@@ -282,7 +282,7 @@ class TestGetInterestedDescriptions:
             result = d.get_interested_descriptions()
         assert result == []
 
-    def test_returns_text_for_interested_only(self, db):
+    def test_returns_text_for_interested_and_applied(self, db):
         interested = _make_job(id="job-1", title="ML Engineer", description="ML role.")
         applied = _make_job(id="job-2", title="SWE", description="Backend role.")
         rejected = _make_job(id="job-3", title="PM", description="Product role.")
@@ -294,7 +294,7 @@ class TestGetInterestedDescriptions:
                 FeedbackEntry(id="job-3", source="adzuna_de", status="rejected"),
             ])
             result = d.get_interested_descriptions()
-        assert result == ["ML Engineer. ML role."]
+        assert set(result) == {"ML Engineer. ML role.", "SWE. Backend role."}
 
     def test_returns_empty_when_interested_job_has_no_text(self, db):
         # Simulate a legacy row with NULL description (e.g. pre-schema-update)
@@ -307,3 +307,67 @@ class TestGetInterestedDescriptions:
             d.upsert_feedback([FeedbackEntry(id="job-x", source="adzuna_de", status="interested")])
             result = d.get_interested_descriptions()
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# get_unreviewed_for_date
+# ---------------------------------------------------------------------------
+
+class TestGetUnreviewedForDate:
+    TARGET_DATE = date(2026, 3, 25)
+    OTHER_DATE = date(2026, 3, 24)
+
+    def _insert_job(self, d, job_id: str, dt: date, source: str = "adzuna_de") -> None:
+        d._conn.execute(
+            "INSERT OR IGNORE INTO seen_jobs (id, source, first_seen, title, company)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (job_id, source, f"{dt.isoformat()}T10:00:00+00:00", f"Role {job_id}", f"Company {job_id}"),
+        )
+        d._conn.commit()
+
+    def test_returns_unlabeled_jobs_for_date(self, db):
+        with db as d:
+            self._insert_job(d, "job-1", self.TARGET_DATE)
+            self._insert_job(d, "job-2", self.TARGET_DATE)
+            result = d.get_unreviewed_for_date(self.TARGET_DATE)
+        assert len(result) == 2
+        ids = {r[0] for r in result}
+        assert ids == {"job-1", "job-2"}
+
+    def test_excludes_jobs_with_any_feedback_status(self, db):
+        with db as d:
+            self._insert_job(d, "job-1", self.TARGET_DATE)
+            self._insert_job(d, "job-2", self.TARGET_DATE)
+            self._insert_job(d, "job-3", self.TARGET_DATE)
+            self._insert_job(d, "job-4", self.TARGET_DATE)
+            d.upsert_feedback([
+                FeedbackEntry(id="job-1", source="adzuna_de", status="applied"),
+                FeedbackEntry(id="job-2", source="adzuna_de", status="rejected"),
+                FeedbackEntry(id="job-3", source="adzuna_de", status="skipped"),
+            ])
+            result = d.get_unreviewed_for_date(self.TARGET_DATE)
+        assert len(result) == 1
+        assert result[0][0] == "job-4"
+
+    def test_returns_empty_for_different_date(self, db):
+        with db as d:
+            self._insert_job(d, "job-1", self.OTHER_DATE)
+            result = d.get_unreviewed_for_date(self.TARGET_DATE)
+        assert result == []
+
+    def test_returns_empty_when_all_have_feedback(self, db):
+        with db as d:
+            self._insert_job(d, "job-1", self.TARGET_DATE)
+            d.upsert_feedback([FeedbackEntry(id="job-1", source="adzuna_de", status="interested")])
+            result = d.get_unreviewed_for_date(self.TARGET_DATE)
+        assert result == []
+
+    def test_result_includes_title_and_company(self, db):
+        with db as d:
+            self._insert_job(d, "job-1", self.TARGET_DATE)
+            result = d.get_unreviewed_for_date(self.TARGET_DATE)
+        job_id, source, title, company = result[0]
+        assert job_id == "job-1"
+        assert source == "adzuna_de"
+        assert title == "Role job-1"
+        assert company == "Company job-1"

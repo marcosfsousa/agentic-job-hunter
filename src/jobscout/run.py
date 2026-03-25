@@ -30,6 +30,57 @@ logger = logging.getLogger(__name__)
 # Feedback helpers
 # ---------------------------------------------------------------------------
 
+def _run_review(review_date: date) -> None:
+    """Interactively label jobs from a given date and write feedback to yaml + DB."""
+    config = get_config()
+    feedback_path = config.feedback_path
+
+    with JobDatabase(config.db_path) as db:
+        jobs = db.get_unreviewed_for_date(review_date)
+        if not jobs:
+            print(f"No jobs to review for {review_date.isoformat()}.")
+            return
+
+        print(f"\nReviewing {len(jobs)} job(s) from {review_date.isoformat()}.")
+        print("Labels: [a]pplied  [r]ejected  [i]nterested  [s]kip\n")
+
+        status_map = {"a": "applied", "r": "rejected", "i": "interested", "s": "skipped"}
+        yaml_entries: list[dict] = []
+        all_entries: list[FeedbackEntry] = []
+
+        for idx, (job_id, source, title, company) in enumerate(jobs, start=1):
+            label_str = f"{title} — {company}" if company else title
+            while True:
+                raw = input(f"{idx}. {label_str}\n   [a/r/i/s]: ").strip().lower()
+                if raw in ("a", "r", "i", "s"):
+                    break
+                print("   Please enter a, r, i, or s.")
+
+            status = status_map[raw]
+            entry = FeedbackEntry(id=job_id, source=source, status=status)
+            all_entries.append(entry)
+            if status != "skipped":
+                yaml_entries.append({"id": job_id, "source": source, "status": status})
+
+        # Write a/r/i entries to feedback.yaml
+        if yaml_entries:
+            try:
+                existing = yaml.safe_load(feedback_path.read_text(encoding="utf-8")) or []
+            except FileNotFoundError:
+                existing = []
+            feedback_path.write_text(
+                yaml.dump(existing + yaml_entries, default_flow_style=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+
+        # Upsert all (including skipped) to DB
+        db.upsert_feedback(all_entries)
+
+    labeled = sum(1 for e in all_entries if e.status != "skipped")
+    skipped = len(all_entries) - labeled
+    print(f"\nDone — {labeled} labeled, {skipped} skipped.")
+
+
 def _sync_feedback(db: "JobDatabase", feedback_path: Path) -> None:
     """Load feedback.yaml and upsert entries into DB. No-op if file is absent."""
     try:
@@ -72,7 +123,7 @@ async def run_pipeline(
         Filtered job listings ready for ranking.
     """
     config = get_config()
-    feedback_path = config.db_path.parent / "feedback.yaml"
+    feedback_path = config.feedback_path
 
     # ------------------------------------------------------------------
     # Ingest — all registered adapters fetched concurrently.
@@ -183,6 +234,13 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Only include jobs posted on or after this date (e.g. 2026-03-21).",
     )
+    parser.add_argument(
+        "--review",
+        nargs="?",
+        const="today",
+        metavar="YYYY-MM-DD",
+        help="Interactively label jobs from a given date (default: today).",
+    )
     return parser.parse_args()
 
 
@@ -196,8 +254,10 @@ if __name__ == "__main__":
 
     if args.apply_feedback:
         cfg = get_config()
-        feedback_path = cfg.db_path.parent / "feedback.yaml"
         with JobDatabase(cfg.db_path) as db:
-            _sync_feedback(db, feedback_path)
+            _sync_feedback(db, cfg.feedback_path)
+    elif args.review is not None:
+        review_date = date.today() if args.review == "today" else date.fromisoformat(args.review)
+        _run_review(review_date)
     else:
         asyncio.run(run_pipeline(dry_run=args.dry_run, max_results=args.max_results, since=args.since))

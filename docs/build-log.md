@@ -294,3 +294,52 @@ Email delivered with corrected per-line formatting
 - Pipeline could send up to 3 emails per day if run multiple times (investigated; caused by running verbose + non-verbose runs in same session — no code bug, operational issue)
 
 **Test count:** 185 passing
+
+---
+
+## Day 10 — 2026-03-24
+
+**Goal:** Cross-source deduplication, false positive triage from digest review.
+
+**Files created**
+- `src/jobscout/filters/dedup.py` — `_fingerprint(title, company)` normaliser + `deduplicate_listings()`
+- `tests/test_dedup.py` — 11 tests covering fingerprint normalisation, cross-source dedup, within-source dedup, longest-description selection, abbreviation expansion, punctuation stripping, location exclusion
+- `docs/plan-cross-source-dedup.md` — design doc for dedup approach
+
+**Files modified**
+- `src/jobscout/run.py` — wired `deduplicate_listings` into pipeline after `mark_seen_bulk`; import added
+- `profile.yaml` — added `"audio"` and `"QA"` to `dealbreakers.exclude_keywords` after triage of first real digests
+
+**Key decisions**
+- Fingerprint on `title + company` only — location excluded because remote jobs have inconsistent location data, and same role in two cities is likely one hire
+- All unseen jobs marked seen *before* dedup — ensures neither variant of a duplicate resurfaces on the next run; best listing (longest description) is selected for the current run
+- Abbreviation expansion (`sr→senior`, `ml→machine learning`, etc.) at fingerprint time prevents the same role with abbreviated vs full titles from being treated as distinct
+- `"audio"` and `"QA"` added as hard excludes after reviewing real digest output and finding them as consistent false positives
+
+**Test count:** 196 passing
+
+---
+
+## Day 11 — 2026-03-25
+
+**Goal:** Fix dormant feedback centroid signal; add `--review` interactive labeling mode.
+
+**Files created**
+- *(none)*
+
+**Files modified**
+- `src/jobscout/models.py` — added `"skipped"` to `FeedbackStatus` Literal
+- `src/jobscout/config.py` — added `feedback_path` property to `AppConfig` (eliminates 3 duplicated path expressions)
+- `src/jobscout/storage/db.py` — extended `get_interested_descriptions()` to include `applied` status; added `company TEXT` column to `seen_jobs` with `ALTER TABLE` migration; added `first_seen` index; added `get_unreviewed_for_date(dt)` method; updated `mark_seen_bulk` to store `company`
+- `src/jobscout/run.py` — implemented `_run_review(review_date)`; added `--review [YYYY-MM-DD]` CLI flag; replaced all inline `feedback_path` expressions with `config.feedback_path`; hoisted `status_map` outside loop
+- `tests/test_db.py` — renamed `test_returns_text_for_interested_only` → `test_returns_text_for_interested_and_applied`; updated assertion to include `applied` entries; added `TestGetUnreviewedForDate` (5 tests)
+
+**Key decisions**
+- `applied` added to centroid signal — user's workflow is apply-or-reject (never `interested`), so `applied` is the only available positive signal; semantically stronger than `interested` anyway
+- `skipped` tracked in DB only, not written to `feedback.yaml` — keeps yaml clean for human review; skip is an ephemeral cursor state, not meaningful feedback
+- `--review` reads from `seen_jobs` (title + company), not the digest file — avoids fragile markdown parsing; user reads digest side-by-side
+- DB connection held open during interactive loop — safe for single-user local SQLite; context manager guarantees cleanup
+- `ALTER TABLE ADD COLUMN` migration re-raises on any `OperationalError` that isn't "duplicate column name" — avoids silently swallowing unrelated DB errors
+- `feedback_path` moved to `AppConfig` property — was duplicated in 3 places in `run.py`
+
+**Test count:** 201 passing

@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 RemotePolicy = Literal["remote", "hybrid", "onsite", "not_specified"]
 Seniority = Literal["junior", "mid", "senior", "lead", "not_specified"]
-FeedbackStatus = Literal["applied", "rejected", "interested"]
+FeedbackStatus = Literal["applied", "rejected", "interested", "skipped"]
 
 
 # ---------------------------------------------------------------------------
