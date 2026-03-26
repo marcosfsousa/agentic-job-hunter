@@ -32,6 +32,15 @@ CREATE TABLE IF NOT EXISTS feedback (
 )
 """
 
+_CREATE_DIGEST_JOBS = """
+CREATE TABLE IF NOT EXISTS digest_jobs (
+    id          TEXT NOT NULL,
+    source      TEXT NOT NULL,
+    digest_date TEXT NOT NULL,
+    PRIMARY KEY (id, source, digest_date)
+)
+"""
+
 
 def _id_source_params(jobs: list[JobListing]) -> tuple[str, list]:
     """Build SQL placeholders and flat params for (id, source) IN (...) queries."""
@@ -51,6 +60,7 @@ class JobDatabase:
         self._conn = sqlite3.connect(str(self._db_path))
         self._conn.execute(_CREATE_SEEN_JOBS)
         self._conn.execute(_CREATE_FEEDBACK)
+        self._conn.execute(_CREATE_DIGEST_JOBS)
         try:
             self._conn.execute("ALTER TABLE seen_jobs ADD COLUMN company TEXT")
         except sqlite3.OperationalError as exc:
@@ -142,6 +152,32 @@ class JobDatabase:
             "SELECT id, source, title, company FROM seen_jobs"
             " WHERE DATE(first_seen) = ?"
             " AND (id, source) NOT IN (SELECT id, source FROM feedback)",
+            (dt.isoformat(),),
+        ).fetchall()
+        return [(id_, src, title or "", company or "") for id_, src, title, company in rows]
+
+    def mark_in_digest(self, ids_sources: list[tuple[str, str]], digest_date: date) -> None:
+        """Record which jobs appeared in the digest for a given date. Idempotent."""
+        if not ids_sources:
+            return
+        conn = self._require_conn()
+        digest_iso = digest_date.isoformat()
+        conn.executemany(
+            "INSERT OR IGNORE INTO digest_jobs (id, source, digest_date) VALUES (?, ?, ?)",
+            [(id_, src, digest_iso) for id_, src in ids_sources],
+        )
+        conn.commit()
+        logger.debug("mark_in_digest: recorded %d jobs for %s", len(ids_sources), digest_date)
+
+    def get_unreviewed_for_digest(self, dt: date) -> list[tuple[str, str, str, str]]:
+        """Return (id, source, title, company) for digest jobs on `dt` with no feedback."""
+        conn = self._require_conn()
+        rows = conn.execute(
+            "SELECT s.id, s.source, s.title, s.company"
+            " FROM seen_jobs s"
+            " JOIN digest_jobs d ON s.id = d.id AND s.source = d.source"
+            " WHERE d.digest_date = ?"
+            " AND (s.id, s.source) NOT IN (SELECT id, source FROM feedback)",
             (dt.isoformat(),),
         ).fetchall()
         return [(id_, src, title or "", company or "") for id_, src, title, company in rows]

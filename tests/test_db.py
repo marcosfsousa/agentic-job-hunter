@@ -371,3 +371,78 @@ class TestGetUnreviewedForDate:
         assert source == "adzuna_de"
         assert title == "Role job-1"
         assert company == "Company job-1"
+
+
+# ---------------------------------------------------------------------------
+# mark_in_digest / get_unreviewed_for_digest
+# ---------------------------------------------------------------------------
+
+class TestDigestTracking:
+    TARGET_DATE = date(2026, 3, 26)
+    OTHER_DATE = date(2026, 3, 25)
+
+    def _insert_job(self, d, job_id: str, dt: date, source: str = "adzuna_de") -> None:
+        d._conn.execute(
+            "INSERT OR IGNORE INTO seen_jobs (id, source, first_seen, title, company)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (job_id, source, f"{dt.isoformat()}T10:00:00+00:00", f"Role {job_id}", f"Company {job_id}"),
+        )
+        d._conn.commit()
+
+    def test_mark_in_digest_inserts_rows(self, db):
+        with db as d:
+            self._insert_job(d, "job-1", self.TARGET_DATE)
+            self._insert_job(d, "job-2", self.TARGET_DATE)
+            d.mark_in_digest([("job-1", "adzuna_de"), ("job-2", "adzuna_de")], self.TARGET_DATE)
+            count = d._conn.execute("SELECT COUNT(*) FROM digest_jobs").fetchone()[0]
+        assert count == 2
+
+    def test_mark_in_digest_is_idempotent(self, db):
+        with db as d:
+            self._insert_job(d, "job-1", self.TARGET_DATE)
+            d.mark_in_digest([("job-1", "adzuna_de")], self.TARGET_DATE)
+            d.mark_in_digest([("job-1", "adzuna_de")], self.TARGET_DATE)
+            count = d._conn.execute("SELECT COUNT(*) FROM digest_jobs").fetchone()[0]
+        assert count == 1
+
+    def test_mark_in_digest_empty_is_noop(self, db):
+        with db as d:
+            d.mark_in_digest([], self.TARGET_DATE)
+            count = d._conn.execute("SELECT COUNT(*) FROM digest_jobs").fetchone()[0]
+        assert count == 0
+
+    def test_get_unreviewed_for_digest_returns_digest_jobs(self, db):
+        with db as d:
+            self._insert_job(d, "job-1", self.TARGET_DATE)
+            self._insert_job(d, "job-2", self.TARGET_DATE)  # seen but not in digest
+            d.mark_in_digest([("job-1", "adzuna_de")], self.TARGET_DATE)
+            result = d.get_unreviewed_for_digest(self.TARGET_DATE)
+        assert len(result) == 1
+        assert result[0][0] == "job-1"
+
+    def test_get_unreviewed_for_digest_excludes_reviewed(self, db):
+        with db as d:
+            self._insert_job(d, "job-1", self.TARGET_DATE)
+            self._insert_job(d, "job-2", self.TARGET_DATE)
+            d.mark_in_digest([("job-1", "adzuna_de"), ("job-2", "adzuna_de")], self.TARGET_DATE)
+            d.upsert_feedback([FeedbackEntry(id="job-1", source="adzuna_de", status="applied")])
+            result = d.get_unreviewed_for_digest(self.TARGET_DATE)
+        assert len(result) == 1
+        assert result[0][0] == "job-2"
+
+    def test_get_unreviewed_for_digest_returns_empty_for_untracked_date(self, db):
+        with db as d:
+            self._insert_job(d, "job-1", self.OTHER_DATE)
+            result = d.get_unreviewed_for_digest(self.TARGET_DATE)
+        assert result == []
+
+    def test_get_unreviewed_for_digest_includes_title_and_company(self, db):
+        with db as d:
+            self._insert_job(d, "job-1", self.TARGET_DATE)
+            d.mark_in_digest([("job-1", "adzuna_de")], self.TARGET_DATE)
+            result = d.get_unreviewed_for_digest(self.TARGET_DATE)
+        job_id, source, title, company = result[0]
+        assert job_id == "job-1"
+        assert source == "adzuna_de"
+        assert title == "Role job-1"
+        assert company == "Company job-1"

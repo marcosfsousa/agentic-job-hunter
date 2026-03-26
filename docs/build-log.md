@@ -359,3 +359,27 @@ Root cause: gpt-4o-mini was inflating scores (8–9 for mediocre fits) because t
 - Degree penalty split: "CS or comparable" is -1 not -2 — ML Reply uses this phrasing and should score ~8, which validated the calibration
 - Stack boost (+1 for LangChain/RAG/vector DB explicitly named) added to create ceiling room — without it, most roles cap at 7 even with both other boosts
 - Validated calibration by manually scoring ML Reply JD: expected ~8, confirmed the rules produce that result after fixes
+
+---
+
+## Day 12 — 2026-03-26
+
+**Goal:** Fix `--review` to only surface jobs that appeared in the digest (scored >= `email_min_score`), not all `seen_jobs`.
+
+**Files created**
+- *(none)*
+
+**Files modified**
+- `src/jobscout/storage/db.py` — added `_CREATE_DIGEST_JOBS` DDL (`digest_jobs` table: `id, source, digest_date`, PK on all three); table created in `__enter__`; added `mark_in_digest(ids_sources, digest_date)` — bulk insert, idempotent; added `get_unreviewed_for_digest(dt)` — JOINs `seen_jobs` with `digest_jobs`, excludes rows with any feedback entry
+- `src/jobscout/run.py` — `_run_review` now calls `get_unreviewed_for_digest` instead of `get_unreviewed_for_date`; empty result prints a clear message and exits (no fallback to seen_jobs); pipeline calls `mark_in_digest` after computing `email_jobs`, inside `if not dry_run` block, before `send_digest`
+- `tests/test_db.py` — added `TestDigestTracking` (7 tests): insert, idempotent, empty noop, digest-only filtering, excludes reviewed, untracked date returns empty, title/company fields
+
+**Key decisions**
+- "In digest" = `email_jobs` (jobs scoring >= `email_min_score`), not all LLM-evaluated jobs — these are what get emailed and what the user has context to review
+- `mark_in_digest` accepts `list[tuple[str, str]]` (id, source pairs), not `list[ScoredJob]` — keeps storage layer free of domain model imports; unwrapping done at call site in `run.py`
+- `mark_in_digest` called before `send_digest` — digest jobs are recorded regardless of whether email delivery succeeds
+- Empty result on `--review`: prints "No digest jobs recorded for {date}. Either no jobs met the score threshold, or this date predates digest tracking." and exits — no fallback to `get_unreviewed_for_date` (that would show jobs the user never saw, reintroducing the bug)
+- Schema migration safe: `CREATE TABLE IF NOT EXISTS` — existing DBs get the new table on next open, old digest dates simply return empty from `get_unreviewed_for_digest`
+- `digest_date.isoformat()` hoisted out of list comprehension in `mark_in_digest` — computed once per call
+
+**Test count:** 217 passing

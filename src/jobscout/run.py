@@ -36,9 +36,10 @@ def _run_review(review_date: date) -> None:
     feedback_path = config.feedback_path
 
     with JobDatabase(config.db_path) as db:
-        jobs = db.get_unreviewed_for_date(review_date)
+        jobs = db.get_unreviewed_for_digest(review_date)
         if not jobs:
-            print(f"No jobs to review for {review_date.isoformat()}.")
+            print(f"No digest jobs recorded for {review_date.isoformat()}.")
+            print("Either no jobs met the score threshold, or this date predates digest tracking.")
             return
 
         print(f"\nReviewing {len(jobs)} job(s) from {review_date.isoformat()}.")
@@ -189,6 +190,8 @@ async def run_pipeline(
     if not dry_run:
         min_score = config.profile.email_min_score
         email_jobs = [j for j in evaluated if j.evaluation and j.evaluation.match_score >= min_score]
+        with JobDatabase(config.db_path) as db:
+            db.mark_in_digest([(j.listing.id, j.listing.source) for j in email_jobs], run_date)
         if email_jobs:
             email_digest = format_digest(email_jobs, run_date)
             await send_digest(email_digest, config, run_date)
