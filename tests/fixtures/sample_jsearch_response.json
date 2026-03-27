@@ -61,6 +61,17 @@
       "job_posted_at_datetime_utc": "2026-03-21T11:00:00Z",
       "job_city": "Frankfurt",
       "job_country": "DE"
+    },
+    {
+      "job_id": "jsearch_006",
+      "job_title": "ML Engineer",
+      "employer_name": "Acme AG",
+      "job_description": "Machine learning role in Berlin.",
+      "job_apply_link": "https://www.stepstone.de/stellenangebote/ml-engineer-12345.html",
+      "job_is_remote": false,
+      "job_posted_at_datetime_utc": "2026-03-21T08:00:00Z",
+      "job_city": "Berlin",
+      "job_country": "DE"
     }
   ]
 }

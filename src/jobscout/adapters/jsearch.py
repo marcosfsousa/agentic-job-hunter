@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timezone
 from typing import Literal
+from urllib.parse import urlencode, urlparse
 
 import httpx
 from pydantic import BaseModel
@@ -55,6 +56,23 @@ def _highlights_to_text(highlights: dict | None) -> str:
     return "\n".join(parts)
 _RESULTS_PER_PAGE = 10
 _MAX_PAGES = 20  # JSearch API hard limit; also caps free-tier quota usage
+
+# Job boards known to block direct links (Cloudflare / login walls).
+# For these, _resolve_url constructs a Google search URL instead so the
+# link in the digest is always clickable.
+_BLOCKED_DOMAINS = {"stepstone.de", "xing.com", "monster.de"}
+
+
+def _resolve_url(apply_link: str, title: str, company: str) -> str:
+    """Return apply_link, or a Google fallback if the domain blocks scrapers."""
+    if not apply_link:
+        return apply_link
+    host = urlparse(apply_link).hostname or ""
+    if host.startswith("www."):
+        host = host[4:]
+    if host in _BLOCKED_DOMAINS:
+        return "https://www.google.com/search?" + urlencode({"q": f"{title} {company} site:{host}"})
+    return apply_link
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +194,7 @@ class JSearchAdapter(JobAdapter):
             salary_min=None,
             salary_max=None,
             seniority=_infer_seniority(raw.job_title, description),
-            url=raw.job_apply_link,
+            url=_resolve_url(raw.job_apply_link, raw.job_title, raw.employer_name),
             posted_date=_parse_date(raw.job_posted_at_datetime_utc),
             fetched_at=datetime.now(timezone.utc),
             raw_data=raw_dict,

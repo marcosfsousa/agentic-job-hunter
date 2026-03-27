@@ -20,7 +20,9 @@ from jobscout.adapters.adzuna import (
 from jobscout.adapters.jsearch import (
     JSearchAdapter,
     _JSearchJobRaw,
+    _BLOCKED_DOMAINS,
     _highlights_to_text,
+    _resolve_url,
     _since_to_date_posted,
     _infer_seniority as _jsearch_infer_seniority,
     _parse_date as _jsearch_parse_date,
@@ -406,6 +408,58 @@ class TestJSearchNormalize:
         raw = _JSearchJobRaw.model_validate(jsearch_listings[4])
         job = jsearch_adapter._normalize(raw, jsearch_listings[4])
         assert job.description == ""
+
+    def test_blocked_domain_uses_google_fallback(self, jsearch_adapter, jsearch_listings):
+        from urllib.parse import unquote
+        # jsearch_006: apply link points to stepstone.de — must be replaced
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[5])
+        job = jsearch_adapter._normalize(raw, jsearch_listings[5])
+        decoded = unquote(job.url)
+        assert "google.com/search" in decoded
+        assert "site:stepstone.de" in decoded
+
+    def test_unblocked_domain_keeps_apply_link(self, jsearch_adapter, jsearch_listings):
+        # jsearch_001: apply link is a plain example.com — must pass through unchanged
+        raw = _JSearchJobRaw.model_validate(jsearch_listings[0])
+        job = jsearch_adapter._normalize(raw, jsearch_listings[0])
+        assert job.url == "https://example.com/job/1"
+
+
+# ===========================================================================
+# _resolve_url
+# ===========================================================================
+
+class TestResolveUrl:
+    def test_stepstone_replaced(self):
+        from urllib.parse import unquote
+        url = _resolve_url("https://www.stepstone.de/job/123", "ML Engineer", "Acme AG")
+        decoded = unquote(url)
+        assert "google.com/search" in decoded
+        assert "site:stepstone.de" in decoded
+
+    def test_xing_replaced(self):
+        from urllib.parse import unquote
+        url = _resolve_url("https://www.xing.com/jobs/123", "Data Scientist", "Corp GmbH")
+        decoded = unquote(url)
+        assert "google.com/search" in decoded
+        assert "site:xing.com" in decoded
+
+    def test_monster_replaced(self):
+        from urllib.parse import unquote
+        url = _resolve_url("https://monster.de/job/abc", "AI Engineer", "Lab GmbH")
+        decoded = unquote(url)
+        assert "google.com/search" in decoded
+        assert "site:monster.de" in decoded
+
+    def test_linkedin_kept(self):
+        url = _resolve_url("https://www.linkedin.com/jobs/view/123", "Engineer", "Co")
+        assert url == "https://www.linkedin.com/jobs/view/123"
+
+    def test_empty_link_kept(self):
+        assert _resolve_url("", "Title", "Company") == ""
+
+    def test_blocked_domains_constant_has_expected_entries(self):
+        assert {"stepstone.de", "xing.com", "monster.de"} <= _BLOCKED_DOMAINS
 
 
 # ===========================================================================
