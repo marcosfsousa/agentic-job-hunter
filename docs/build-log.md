@@ -2,8 +2,6 @@
 
 Chronological record of what was built each session.
 
----
-
 ## Day 1 — 2026-03-17
 
 **Goal:** Project setup, data model, first adapter.
@@ -383,3 +381,27 @@ Root cause: gpt-4o-mini was inflating scores (8–9 for mediocre fits) because t
 - `digest_date.isoformat()` hoisted out of list comprehension in `mark_in_digest` — computed once per call
 
 **Test count:** 217 passing
+
+---
+
+## Day 13 — 2026-03-27
+
+**Goal:** GitHub Actions daily scheduler + blocked job board URL fix.
+
+**Files created**
+- `.github/workflows/daily_run.yml` — cron `0 6 * * *` (7am CET) + `workflow_dispatch`; pip + HuggingFace model caching; pytest on non-schedule runs; `git commit [skip ci]` + push to persist `data/jobscout.db` and `data/feedback.yaml`; Resend failure email on `if: failure()`; `concurrency` guard to prevent overlapping runs; Node.js 24 opt-in (`FORCE_JAVASCRIPT_ACTIONS_TO_NODE24`)
+
+**Files modified**
+- `.gitignore` — replaced `data/` with `data/*` + `!data/jobscout.db` + `!data/feedback.yaml` so DB and feedback file are tracked by git
+- `src/jobscout/adapters/jsearch.py` — added `_BLOCKED_DOMAINS` (`stepstone.de`, `xing.com`, `monster.de`) and `_resolve_url()` which substitutes a Google search URL (`site:{domain}`) for apply links from boards that block direct access
+- `tests/fixtures/sample_jsearch_response.json` — added jsearch_006 fixture with a StepStone apply URL
+- `tests/test_adapters.py` — added `TestResolveUrl` (6 tests) and two new cases in `TestJSearchNormalize`
+
+**Key decisions**
+- DB persistence via git commit-back — simple, no extra infra, no secrets in data
+- HuggingFace cache keyed on model name only (stable); kept warm by daily runs
+- `pytest` skipped on `schedule` trigger (code unchanged between daily runs)
+- `job_google_link` from JSearch is undocumented/unreliable — constructed Google search URL from title + company + `site:domain` instead
+- Blocked domain list is small and unlikely to grow; LinkedIn/Indeed work fine as direct links
+
+---
