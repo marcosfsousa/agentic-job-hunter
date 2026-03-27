@@ -1,0 +1,86 @@
+name: Daily Job Scout
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 7am CET (UTC+1); drifts to 8am local in summer (CEST)
+  workflow_dispatch:       # allow manual trigger from GitHub UI
+
+concurrency:
+  group: daily-job-scout
+  cancel-in-progress: false  # let the running job finish; don't drop in-flight pipeline work
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # required to push data commit-back
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Cache HuggingFace model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: huggingface-multi-qa-MiniLM
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        if: github.event_name != 'schedule'
+        run: pytest
+
+      - name: Run pipeline
+        env:
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPEN_WEB_NINJA_API: ${{ secrets.OPEN_WEB_NINJA_API }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: python -m jobscout.run --verbose
+
+      - name: Commit data changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/jobscout.db data/feedback.yaml
+          git diff --cached --quiet || git commit -m "chore: update job data [skip ci]"
+          git push
+
+      - name: Notify on failure
+        if: failure()
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: |
+          python -c "
+          import os, resend
+          api_key = os.environ.get('RESEND_API_KEY', '')
+          to = os.environ.get('EMAIL_TO', '')
+          frm = os.environ.get('EMAIL_FROM', '')
+          if not all([api_key, to, frm]):
+              print('Email not configured — skipping failure notification')
+              exit(0)
+          resend.api_key = api_key
+          resend.Emails.send({
+              'from': frm,
+              'to': [to],
+              'subject': 'JobScout pipeline failed',
+              'text': 'The daily JobScout pipeline failed.\nCheck: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}',
+          })
+          print('Failure notification sent')
+          "

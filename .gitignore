@@ -4,8 +4,10 @@
 # Spec Markdown
 job-scout-spec.md
 
-# Data and output
-data/
+# Data and output — track DB and feedback, ignore everything else
+data/*
+!data/jobscout.db
+!data/feedback.yaml
 digests/
 
 # Python
