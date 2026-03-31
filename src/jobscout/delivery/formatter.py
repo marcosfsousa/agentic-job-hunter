@@ -46,7 +46,7 @@ def _format_job(rank: int, job: ScoredJob) -> str:
     lines = [
         f"## {rank}. {listing.title} — {listing.company}",
         f"**ID:** {listing.id} | **Source:** {listing.source}",
-        f"**Score:** {ev.match_score}/10",
+        f"**Score:** {ev.match_score}/10 | **Embedding:** {job.embedding_score:.3f}",
         f"**Location:** {listing.location}",
         f"**Remote:** {listing.remote_policy}",
     ]

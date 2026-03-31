@@ -39,6 +39,9 @@ class AppConfig(BaseModel):
     # Ranking — blend weight for feedback centroid (0 = profile only, 1 = feedback only)
     feedback_weight: float = 0.2
 
+    # Minimum cosine similarity a job must reach to proceed to LLM evaluation — avoids wasting tokens on poor matches.
+    embedding_min_score: float = 0.30
+
     # Paths — default to project-root-relative locations
     db_path: Path = _PROJECT_ROOT / "data" / "jobscout.db"
     digests_dir: Path = _PROJECT_ROOT / "digests"
@@ -123,6 +126,7 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
         email_to=os.environ.get("EMAIL_TO") or None,
         email_from=os.environ.get("EMAIL_FROM") or None,
         feedback_weight=float(os.environ.get("FEEDBACK_WEIGHT", "0.2")),
+        embedding_min_score=float(os.environ.get("EMBEDDING_MIN_SCORE", "0.30")),
     )
 
     logger.debug(

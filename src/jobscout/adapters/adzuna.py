@@ -84,7 +84,7 @@ class AdzunaAdapter(JobAdapter):
             "app_id": self._config.adzuna_app_id,
             "app_key": self._config.adzuna_app_key,
             # what_or: any matching word is sufficient — hard filter handles precision
-            "what_or": "machine learning MLOps NLP AI engineer data scientist",
+            "what_or": "LLM RAG generative AI engineer NLP LangChain agentic machine learning",
             "category": "it-jobs",
             "results_per_page": _RESULTS_PER_PAGE,
         }

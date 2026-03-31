@@ -61,6 +61,8 @@ async def _evaluate_one(
             ],
         )
         raw = response.choices[0].message.content
+        if raw is None:
+            raise ValueError("model returned empty content")
         evaluation = EvaluationResult.model_validate(json.loads(raw))
     except Exception as exc:
         logger.warning(

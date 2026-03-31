@@ -97,7 +97,7 @@ dealbreakers:
 
 # Minimum LLM match score (1–10) to include a job in the email digest.
 # Jobs below this threshold are still written to the daily digest file.
-email_min_score: 5
+email_min_score: 4
 
 # Search queries sent to JSearch (one API call per query).
 # Deduplication handles overlap — tune queries to target different supply segments.

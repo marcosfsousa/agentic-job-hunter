@@ -176,10 +176,16 @@ async def run_pipeline(
     )
 
     # ------------------------------------------------------------------
-    # LLM evaluate (top 25 only)
+    # LLM evaluate (top 25 only, above embedding floor)
     # ------------------------------------------------------------------
+    floor = config.embedding_min_score
+    above_floor = [j for j in ranked if j.embedding_score >= floor]
+    dropped = len(ranked) - len(above_floor)
+    if dropped:
+        logger.info("Embedding floor %.2f dropped %d job(s) before LLM evaluation", floor, dropped)
+
     client = openai.AsyncOpenAI(api_key=config.openai_api_key)
-    evaluated = await evaluate_jobs(ranked, config.profile, client, config.llm_model)
+    evaluated = await evaluate_jobs(above_floor, config.profile, client, config.llm_model)
 
     # ------------------------------------------------------------------
     # Deliver

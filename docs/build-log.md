@@ -440,3 +440,25 @@ Root cause: gpt-4o-mini was inflating scores (8–9 for mediocre fits) because t
 - `test_fingerprint_stored_on_insert` wrong expected value: `_ABBREV` expands `ML` → `machine learning`, giving `"machine learning engineer|acme gmbh"` not `"ml engineer|acme gmbh"`.
 
 **Test count:** 229 passing
+
+---
+
+## Day 15 — 2026-03-31
+
+**Goal:** Scoring calibration monitoring, Adzuna query tightening, email threshold tuning, embedding score floor.
+
+**Files modified**
+- `src/jobscout/adapters/adzuna.py` — Tightened `what_or` query: removed `MLOps` and `data scientist` (classical ML noise), replaced with `"LLM RAG generative AI engineer NLP LangChain agentic machine learning"` to better target Marcos's stack
+- `profile.yaml` — Lowered `email_min_score` from 5 → 4 (temporary); scores are compressed low due to German language requirement dominating LLM penalties
+- `src/jobscout/config.py` — Added `embedding_min_score: float = 0.30` field, overridable via `EMBEDDING_MIN_SCORE` env var
+- `src/jobscout/run.py` — Added embedding score floor: jobs below `embedding_min_score` are dropped before LLM evaluation, with a log line showing how many were cut
+- `src/jobscout/delivery/formatter.py` — Digest score line now shows both LLM and embedding scores (`Score: 4/10 | Embedding: 0.342`) for empirical calibration
+- `src/jobscout/evaluation/evaluator.py` — Fixed Pylance error: added `None` guard on `response.choices[0].message.content` before passing to `json.loads`
+
+**Key decisions**
+- Embedding floor set at 0.30 (conservative default): two false positives (Data Scientist — Telespazio, Full Stack PropTech) reached LLM evaluation despite zero skill overlap; root cause was no floor + small hard-filter pool (29 jobs → all 25 LLM slots filled including weak matches)
+- Embedding scores logged to digest (not just internal): enables empirical tuning of the floor threshold after a week of runs
+- `email_min_score` lowered temporarily: all 25 evaluated jobs scored ≤6/10 this run; German language requirement systematically penalises otherwise relevant roles
+- Review `email_min_score` scheduled for 2026-04-07
+
+**Test count:** 229 passing
