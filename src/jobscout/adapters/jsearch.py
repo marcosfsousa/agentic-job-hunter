@@ -104,15 +104,15 @@ class JSearchAdapter(JobAdapter):
         return "jsearch"
 
     async def fetch(self, max_results: int = 100, since: date | None = None) -> list[JobListing]:
-        """Fetch and normalise up to ``max_results`` listings from JSearch.
+        """Fetch and normalise listings from JSearch across all configured queries.
 
-        Uses ``num_pages`` to retrieve multiple pages in a single API call,
-        minimising quota usage on free-tier plans.
+        Runs each query in ``profile.jsearch_queries`` sequentially. ``max_results``
+        is the per-query cap; overlap across queries is handled by downstream dedup.
 
         Args:
-            max_results: Upper bound on listings to return.
+            max_results: Upper bound on listings to fetch per query.
             since: If provided, maps to the nearest date_posted bucket
-                (today/3days/week/month) to tighten the API query, then
+                (today/3days/week/month) to tighten each API query, then
                 enforces the exact cutoff in a post-filter. Listings with
                 no posted_date are always kept.
 
@@ -124,10 +124,33 @@ class JSearchAdapter(JobAdapter):
             logger.info("JSearchAdapter: no API key configured — skipping")
             return []
 
+        queries = self._config.profile.jsearch_queries
+        all_collected: list[JobListing] = []
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for query in queries:
+                batch = await self._fetch_query(query, max_results, since, client)
+                all_collected.extend(batch)
+
+        logger.info(
+            "JSearchAdapter fetched %d listings across %d queries",
+            len(all_collected),
+            len(queries),
+        )
+        return all_collected
+
+    async def _fetch_query(
+        self,
+        query: str,
+        max_results: int,
+        since: date | None,
+        client: httpx.AsyncClient,
+    ) -> list[JobListing]:
+        """Fetch listings for a single JSearch query string."""
         num_pages = min(max(1, (max_results + _RESULTS_PER_PAGE - 1) // _RESULTS_PER_PAGE), _MAX_PAGES)
 
         params = {
-            "query": "machine learning engineer in Germany",
+            "query": query,
             "country": "de",
             "date_posted": _since_to_date_posted(since) if since is not None else "week",
             "employment_types": "FULLTIME",
@@ -136,20 +159,19 @@ class JSearchAdapter(JobAdapter):
         }
         headers = {"x-api-key": self._config.open_web_ninja_api_key}
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            logger.debug("Fetching JSearch (num_pages=%d, max=%d)", num_pages, max_results)
-            try:
-                response = await client.get(_BASE_URL, params=params, headers=headers)
-            except httpx.TimeoutException as exc:
-                raise JobScoutAdapterError("JSearch request timed out") from exc
-            except httpx.ConnectError as exc:
-                raise JobScoutAdapterError("Could not connect to JSearch API") from exc
+        logger.debug("Fetching JSearch query=%r (num_pages=%d, max=%d)", query, num_pages, max_results)
+        try:
+            response = await client.get(_BASE_URL, params=params, headers=headers)
+        except httpx.TimeoutException as exc:
+            raise JobScoutAdapterError(f"JSearch request timed out (query={query!r})") from exc
+        except httpx.ConnectError as exc:
+            raise JobScoutAdapterError(f"Could not connect to JSearch API (query={query!r})") from exc
 
-            if response.status_code == 429:
-                raise JobScoutAdapterError("JSearch rate limit reached (429). Quota exhausted.")
-            if response.status_code >= 500:
-                raise JobScoutAdapterError(f"JSearch server error {response.status_code}")
-            response.raise_for_status()
+        if response.status_code == 429:
+            raise JobScoutAdapterError("JSearch rate limit reached (429). Quota exhausted.")
+        if response.status_code >= 500:
+            raise JobScoutAdapterError(f"JSearch server error {response.status_code}")
+        response.raise_for_status()
 
         raw_listings: list[dict] = response.json().get("data", [])
         collected: list[JobListing] = []
@@ -165,9 +187,12 @@ class JSearchAdapter(JobAdapter):
         if since is not None:
             before = len(collected)
             collected = filter_by_since(collected, since)
-            logger.debug("JSearchAdapter --since filter: %d → %d listings", before, len(collected))
+            logger.debug(
+                "JSearchAdapter --since filter (query=%r): %d → %d listings",
+                query, before, len(collected),
+            )
 
-        logger.info("JSearchAdapter fetched %d listings", len(collected))
+        logger.debug("JSearch query=%r returned %d listings", query, len(collected))
         return collected
 
     def _normalize(self, raw: _JSearchJobRaw, raw_dict: dict) -> JobListing:

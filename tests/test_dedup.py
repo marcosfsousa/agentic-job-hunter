@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from jobscout.filters.dedup import _fingerprint, deduplicate_listings
+from jobscout.filters.dedup import job_fingerprint, deduplicate_listings
 from jobscout.models import JobListing
 
 
@@ -93,15 +93,15 @@ def test_tiebreak_first_in_list_kept():
 # ---------------------------------------------------------------------------
 
 def test_abbreviation_sr_ml():
-    assert _fingerprint("Sr ML Engineer", "DeepMind") == _fingerprint("Senior Machine Learning Engineer", "DeepMind")
+    assert job_fingerprint("Sr ML Engineer", "DeepMind") == job_fingerprint("Senior Machine Learning Engineer", "DeepMind")
 
 
 def test_abbreviation_jr():
-    assert _fingerprint("Jr NLP Engineer", "Acme") == _fingerprint("Junior Natural Language Processing Engineer", "Acme")
+    assert job_fingerprint("Jr NLP Engineer", "Acme") == job_fingerprint("Junior Natural Language Processing Engineer", "Acme")
 
 
 def test_punctuation_stripped():
-    assert _fingerprint("ML-Engineer", "Acme") == _fingerprint("ML Engineer", "Acme")
+    assert job_fingerprint("ML-Engineer", "Acme") == job_fingerprint("ML Engineer", "Acme")
 
 
 def test_location_ignored():

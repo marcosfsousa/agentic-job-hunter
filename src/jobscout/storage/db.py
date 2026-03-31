@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from types import TracebackType
 
+from jobscout.filters.dedup import job_fingerprint
 from jobscout.models import FeedbackEntry, JobListing
 
 logger = logging.getLogger(__name__)
@@ -66,9 +67,29 @@ class JobDatabase:
         except sqlite3.OperationalError as exc:
             if "duplicate column name" not in str(exc):
                 raise
+        try:
+            self._conn.execute("ALTER TABLE seen_jobs ADD COLUMN fingerprint TEXT")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc):
+                raise
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_seen_jobs_first_seen ON seen_jobs(first_seen)"
         )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_seen_jobs_fingerprint ON seen_jobs(fingerprint)"
+        )
+        # Backfill fingerprints for existing rows that pre-date this migration.
+        rows = self._conn.execute(
+            "SELECT id, source, title, company FROM seen_jobs"
+            " WHERE fingerprint IS NULL AND title IS NOT NULL"
+        ).fetchall()
+        if rows:
+            self._conn.executemany(
+                "UPDATE seen_jobs SET fingerprint = ? WHERE id = ? AND source = ?",
+                [(job_fingerprint(title, company), id_, source)
+                 for id_, source, title, company in rows],
+            )
+            logger.debug("Backfilled fingerprints for %d existing rows", len(rows))
         self._conn.commit()
         logger.debug("JobDatabase opened: %s", self._db_path)
         return self
@@ -89,17 +110,42 @@ class JobDatabase:
     # ------------------------------------------------------------------
 
     def filter_unseen(self, jobs: list[JobListing]) -> list[JobListing]:
-        """Return only jobs not yet recorded in seen_jobs."""
+        """Return only jobs not yet recorded in seen_jobs.
+
+        Two-step check:
+        1. Filter by (id, source) — fast indexed lookup.
+        2. Filter remaining by title+company fingerprint — catches jobs that
+           re-enter with a new ID (e.g. JSearch ID instability). Jobs caught at
+           this step are discarded; the existing DB record is left unchanged.
+        """
         if not jobs:
             return []
         conn = self._require_conn()
+
+        # Step 1: ID check — fast indexed lookup, handles the common case.
         placeholders, flat_params = _id_source_params(jobs)
         rows = conn.execute(
             f"SELECT id, source FROM seen_jobs WHERE (id, source) IN ({placeholders})",
             flat_params,
         ).fetchall()
-        seen = set(rows)
-        unseen = [j for j in jobs if (j.id, j.source) not in seen]
+        seen_by_id = set(rows)
+        id_unseen = [j for j in jobs if (j.id, j.source) not in seen_by_id]
+
+        if not id_unseen:
+            logger.debug("filter_unseen: %d → 0 unseen jobs", len(jobs))
+            return []
+
+        # Step 2: fingerprint check — catches the same job re-entering with a new ID
+        # (confirmed behaviour with JSearch, which does not always return stable IDs).
+        fps = [job_fingerprint(j.title, j.company) for j in id_unseen]
+        fp_placeholders = ",".join("?" for _ in fps)
+        fp_rows = conn.execute(
+            f"SELECT fingerprint FROM seen_jobs WHERE fingerprint IN ({fp_placeholders})",
+            fps,
+        ).fetchall()
+        seen_by_fp = {row[0] for row in fp_rows}
+        unseen = [j for j, fp in zip(id_unseen, fps) if fp not in seen_by_fp]
+
         logger.debug("filter_unseen: %d → %d unseen jobs", len(jobs), len(unseen))
         return unseen
 
@@ -189,9 +235,14 @@ class JobDatabase:
         conn = self._require_conn()
         now = datetime.now(timezone.utc).isoformat()
         conn.executemany(
-            "INSERT OR IGNORE INTO seen_jobs (id, source, first_seen, title, company, description)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            [(j.id, j.source, now, j.title, j.company, j.description) for j in jobs],
+            "INSERT OR IGNORE INTO seen_jobs"
+            " (id, source, first_seen, title, company, description, fingerprint)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                (j.id, j.source, now, j.title, j.company, j.description,
+                 job_fingerprint(j.title, j.company))
+                for j in jobs
+            ],
         )
         conn.commit()
         logger.debug("mark_seen_bulk: recorded %d jobs", len(jobs))

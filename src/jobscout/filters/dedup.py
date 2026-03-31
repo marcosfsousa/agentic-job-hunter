@@ -17,7 +17,7 @@ _ABBREV = {
 }
 
 
-def _fingerprint(title: str, company: str) -> str:
+def job_fingerprint(title: str, company: str | None) -> str:
     def normalize(s: str) -> str:
         s = s.lower()
         s = s.translate(str.maketrans(string.punctuation, " " * len(string.punctuation)))
@@ -25,14 +25,14 @@ def _fingerprint(title: str, company: str) -> str:
             s = re.sub(pattern, replacement, s)
         return " ".join(s.split())
 
-    return f"{normalize(title)}|{normalize(company)}"
+    return f"{normalize(title)}|{normalize(company or '')}"
 
 
 def deduplicate_listings(jobs: list[JobListing]) -> list[JobListing]:
     """Return one listing per title+company fingerprint, keeping the longest description."""
     groups: dict[str, list[JobListing]] = {}
     for job in jobs:
-        key = _fingerprint(job.title, job.company)
+        key = job_fingerprint(job.title, job.company)
         groups.setdefault(key, []).append(job)
 
     winners: list[JobListing] = []

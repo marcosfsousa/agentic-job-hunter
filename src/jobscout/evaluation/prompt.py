@@ -20,25 +20,38 @@ Scoring — use this process:
 1. Start at 6 if the role has reasonable skill overlap with the candidate profile \
 (mentions LLMs, AI applications, or related tools). Start at 4 if overlap is weak \
 or the role is tangentially related. Start at 2 if it is a poor fit on its face.
-2. Apply adjustments (each applies independently; do not double-count):
-   - REDUCE by 2 pts: degree is a hard mandatory requirement with no alternative \
-path stated (include in gaps)
-   - REDUCE by 1 pt: degree is preferred but "comparable experience" or equivalent \
-is explicitly accepted (include in gaps)
-   - REDUCE by 2 pts: role is primarily model research, classical ML \
-(forecasting, RecSys, CV), or academic — not LLM application building
-   - REDUCE by 1 pt: role requires 5+ years dedicated ML experience, or salary \
-band is clearly above €80k
-   - REDUCE by 1 pt: MLOps, Kubernetes, or cloud infrastructure are core \
-requirements, not secondary
-   - REDUCE by 1 pt: AI role embedded in a non-tech company with no apparent \
-specialist AI unit or team
+2. Apply adjustments in two strict phases — boosts first, penalties second. \
+Penalties are applied to the boosted score; boosts do not offset penalties.
+   2a. Boosts (apply first):
    - BOOST by 1 pt: role is explicitly LLM/RAG/NLP application engineering with \
 end-to-end ownership
    - BOOST by 1 pt: small-to-mid company or specialist AI unit where individual \
 contributions are visible
    - BOOST by 1 pt: stack explicitly mentions LangChain, LangGraph, RAG, or a \
 vector database as a core tool (not just a nice-to-have)
+   2b. Hard penalties (apply to the boosted score; each applies independently; \
+do not double-count):
+   - REDUCE by 2 pts: degree is a hard mandatory requirement with no alternative \
+path stated (include in gaps)
+   - REDUCE by 1 pt: degree is preferred but "comparable experience" or equivalent \
+is explicitly accepted (include in gaps)
+   - REDUCE by 2 pts: role is primarily model research, classical ML \
+(forecasting, RecSys, CV), or academic — not LLM application building
+   - REDUCE by 2 pts: role requires fluent German as a stated condition (include in gaps)
+   - REDUCE by 1 pt: role requires 2–4 years of AI/ML-specific industry experience \
+(candidate has 3 months hands-on AI engineering; do NOT apply if the requirement \
+is for general software engineering or "relevant industry experience" — candidate \
+has 2.5 years professional SWE experience which satisfies those)
+   - REDUCE by 2 pts: role requires 5+ years of AI/ML-specific industry experience \
+(do NOT apply if the requirement is general SWE — candidate's 2.5 years SWE \
+still falls short of 5+ but that is a different, lesser gap)
+   - REDUCE by 1 pt: MLOps, Kubernetes, or cloud infrastructure are core \
+requirements, not secondary
+   - REDUCE by 1 pt: role requires strong or extensive cloud platform experience \
+(AWS, GCP, or Azure) as a core competency (include in gaps)
+   - REDUCE by 1 pt: AI role embedded in a non-tech company with no apparent \
+specialist AI unit or team
+   - REDUCE by 1 pt: salary band is clearly above €80k
 3. Cap at 9. A 9 means near-perfect fit. An 8 means strong realistic fit. \
 A 6–7 means worth applying despite some gaps. Below 5 means poor fit.
 

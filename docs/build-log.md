@@ -405,3 +405,38 @@ Root cause: gpt-4o-mini was inflating scores (8–9 for mediocre fits) because t
 - Blocked domain list is small and unlikely to grow; LinkedIn/Indeed work fine as direct links
 
 ---
+
+## Day 14 — 2026-03-31
+
+**Goal:** Scoring calibration review, JSearch ID stability investigation, fingerprint-based DB dedup, multi-query JSearch.
+
+**Files modified**
+- `src/jobscout/evaluation/prompt.py` — Full scoring rubric rewrite:
+  - German language promoted from soft `deprioritise` signal to hard `-2 pts` penalty
+  - Experience penalty split: `-1 pt` for 2–4yr AI/ML-specific, `-2 pts` for 5+yr; both clarified as AI/ML-specific (general SWE experience does NOT trigger penalty — candidate has 2.5yr SWE)
+  - Cloud platform penalty added: `-1 pt` for strong/extensive AWS/GCP/Azure as core competency
+  - Step 2 restructured into `2a. Boosts (apply first)` and `2b. Hard penalties (apply to boosted score; boosts do not offset penalties)`
+- `src/jobscout/filters/dedup.py` — `_fingerprint` renamed to `job_fingerprint` (now public); `company` param typed as `str | None`; `normalize()` handles `None` via `company or ''`
+- `src/jobscout/storage/db.py` — Added `fingerprint TEXT` column to `seen_jobs` with index; backfill on `__enter__` for all NULL-fingerprint rows; `filter_unseen` upgraded to two-step check (ID lookup then fingerprint check); `mark_seen_bulk` now stores fingerprint column
+- `src/jobscout/adapters/jsearch.py` — Multi-query support: `fetch()` iterates `profile.jsearch_queries` and calls `_fetch_query` per query; single shared `httpx.AsyncClient` across all queries (avoids repeated TLS handshakes); `_fetch_query` now accepts `client` as a parameter
+- `src/jobscout/models.py` — Added `jsearch_queries: list[str]` to `UserProfile` with default `["machine learning engineer in Germany"]`
+- `profile.yaml` — Added `jsearch_queries` section with 3 targeted queries replacing the old broad query
+- `tests/test_db.py` — 4 new fingerprint tests: `test_fingerprint_blocks_same_job_with_new_id`, `test_fingerprint_does_not_block_different_job_same_source`, `test_fingerprint_stored_on_insert`, `test_backfill_sets_fingerprint_for_legacy_rows`; existing tests updated with distinct titles to avoid fingerprint collisions
+- `tests/test_dedup.py` — Import updated from `_fingerprint` to `job_fingerprint`
+
+**Key decisions**
+- German as hard -2: previously only a soft `deprioritise` signal — NETCONOMY scored 7/10 despite German being a hard stated condition. Promoted to hard penalty so boosts (+2 max) cannot cancel it.
+- Boosts-before-penalties ordering explicit in prompt: prevents "boosted score" from cancelling a hard penalty retroactively.
+- JSearch ID instability confirmed empirically: 1/18 overlapping jobs (inovex GmbH) returned a different ID across two concurrent identical queries. In-memory `deduplicate_listings()` already protected the LLM budget within a run; DB `filter_unseen` was unprotected for cross-run re-entry.
+- Discard on fingerprint hit (not update): if a job re-enters with a new ID, the existing DB record is left unchanged; the duplicate is silently discarded. Updating the ID would require cascading changes across `feedback` and `digest_jobs` tables for no real benefit.
+- Sequential JSearch queries (not concurrent): intentional to avoid free-tier rate limits on JSearch API.
+- `job_fingerprint` made public: needed by both `dedup.py` and `db.py`; single source of truth.
+- `company: str | None` in `job_fingerprint`: 290/570 adzuna_de rows had NULL company — required to avoid `AttributeError` during backfill.
+
+**Bugs fixed**
+- `job_fingerprint(title, None)` raised `AttributeError` on `.lower()` — fixed by normalizing as `company or ''`
+- Multiple test failures after fingerprint introduction: all `_make_job()` calls used same title/company → same fingerprint → batch tests broke. Fixed with distinct titles per test.
+- `test_backfill_sets_fingerprint_for_legacy_rows` returned `None` with `:memory:` SQLite: in-memory DBs don't persist across `with` blocks. Fixed using `tmp_path` fixture with a file-based DB.
+- `test_fingerprint_stored_on_insert` wrong expected value: `_ABBREV` expands `ML` → `machine learning`, giving `"machine learning engineer|acme gmbh"` not `"ml engineer|acme gmbh"`.
+
+**Test count:** 229 passing

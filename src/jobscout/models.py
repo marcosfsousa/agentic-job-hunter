@@ -118,3 +118,6 @@ class UserProfile(BaseModel):
     seniority: SeniorityConfig
     dealbreakers: DealbreakersConfig
     email_min_score: int = Field(default=7, ge=1, le=10)
+    jsearch_queries: list[str] = Field(
+        default_factory=lambda: ["machine learning engineer in Germany"]
+    )

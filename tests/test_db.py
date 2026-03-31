@@ -97,28 +97,75 @@ class TestFilterUnseen:
         assert result == []
 
     def test_only_unseen_jobs_returned(self, db):
-        seen = _make_job(id="seen-1")
-        unseen = _make_job(id="new-1")
+        seen = _make_job(id="seen-1", title="ML Engineer", company="Acme GmbH")
+        unseen = _make_job(id="new-1", title="Data Engineer", company="Acme GmbH")
         with db as d:
             d.mark_seen_bulk([seen])
             result = d.filter_unseen([seen, unseen])
         assert result == [unseen]
 
     def test_same_id_different_source_both_unseen(self, db):
-        job_a = _make_job(id="job-1", source="adzuna_de")
-        job_b = _make_job(id="job-1", source="jsearch")
+        # (id, source) is a composite key — same ID from different sources are independent.
+        # Use distinct companies so fingerprints don't collide across sources.
+        job_a = _make_job(id="job-1", source="adzuna_de", company="Acme GmbH")
+        job_b = _make_job(id="job-1", source="jsearch", company="Beta Corp")
         with db as d:
             d.mark_seen_bulk([job_a])
             result = d.filter_unseen([job_a, job_b])
         assert result == [job_b]
 
     def test_batch_query_with_many_jobs(self, db):
-        jobs = [_make_job(id=str(i)) for i in range(50)]
+        jobs = [_make_job(id=str(i), title=f"Engineer {i}") for i in range(50)]
         with db as d:
             d.mark_seen_bulk(jobs[:25])
             result = d.filter_unseen(jobs)
         assert len(result) == 25
         assert all(j.id in {str(i) for i in range(25, 50)} for j in result)
+
+    def test_fingerprint_blocks_same_job_with_new_id(self, db):
+        # Simulates JSearch returning a different ID for the same title+company.
+        original = _make_job(id="id-original", title="ML Engineer", company="Acme GmbH")
+        reentry = _make_job(id="id-new", title="ML Engineer", company="Acme GmbH")
+        with db as d:
+            d.mark_seen_bulk([original])
+            result = d.filter_unseen([reentry])
+        assert result == []
+
+    def test_fingerprint_does_not_block_different_job_same_source(self, db):
+        seen = _make_job(id="id-1", title="ML Engineer", company="Acme GmbH")
+        different = _make_job(id="id-2", title="Data Engineer", company="Acme GmbH")
+        with db as d:
+            d.mark_seen_bulk([seen])
+            result = d.filter_unseen([different])
+        assert result == [different]
+
+    def test_fingerprint_stored_on_insert(self, db):
+        # "ML" expands to "machine learning" via _ABBREV normalization.
+        job = _make_job(id="job-1", title="ML Engineer", company="Acme GmbH")
+        with db as d:
+            d.mark_seen_bulk([job])
+            row = d._conn.execute(
+                "SELECT fingerprint FROM seen_jobs WHERE id='job-1'"
+            ).fetchone()
+        assert row is not None
+        assert row[0] == "machine learning engineer|acme gmbh"
+
+    def test_backfill_sets_fingerprint_for_legacy_rows(self, tmp_path):
+        # :memory: DBs don't persist across with-blocks, so use a real file.
+        db_path = tmp_path / "test.db"
+        with JobDatabase(db_path) as d:
+            d._conn.execute(
+                "INSERT OR IGNORE INTO seen_jobs (id, source, first_seen, title, company)"
+                " VALUES (?, ?, ?, ?, ?)",
+                ("legacy-1", "adzuna_de", "2026-01-01T00:00:00+00:00", "ML Engineer", "Acme GmbH"),
+            )
+            d._conn.commit()
+        # Re-open — backfill runs on __enter__.
+        with JobDatabase(db_path) as d:
+            row = d._conn.execute(
+                "SELECT fingerprint FROM seen_jobs WHERE id='legacy-1'"
+            ).fetchone()
+        assert row[0] == "machine learning engineer|acme gmbh"
 
 
 # ---------------------------------------------------------------------------
