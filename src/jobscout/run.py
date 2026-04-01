@@ -11,6 +11,7 @@ import yaml
 from jobscout.adapters.adzuna import AdzunaAdapter
 from jobscout.adapters.base import JobScoutAdapterError
 from jobscout.adapters.jsearch import JSearchAdapter
+from jobscout.adapters.jobspy import JobSpyAdapter
 from jobscout.config import get_config
 from jobscout.delivery.email_sender import send_digest
 from jobscout.delivery.formatter import format_digest
@@ -105,6 +106,7 @@ def _sync_feedback(db: "JobDatabase", feedback_path: Path) -> None:
 _ADAPTER_REGISTRY = {
     "germany": AdzunaAdapter,
     "jsearch": JSearchAdapter,
+    "jobspy": JobSpyAdapter,
 }
 
 

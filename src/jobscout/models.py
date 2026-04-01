@@ -121,3 +121,5 @@ class UserProfile(BaseModel):
     jsearch_queries: list[str] = Field(
         default_factory=lambda: ["machine learning engineer in Germany"]
     )
+    jobspy_queries: list[str] = Field(default_factory=list)
+    jobspy_sites: dict = Field(default_factory=dict)

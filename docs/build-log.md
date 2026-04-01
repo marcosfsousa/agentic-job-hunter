@@ -462,3 +462,42 @@ Root cause: gpt-4o-mini was inflating scores (8–9 for mediocre fits) because t
 - Review `email_min_score` scheduled for 2026-04-07
 
 **Test count:** 229 passing
+
+---
+
+## Day 16 — 2026-04-01
+
+**Goal:** JobSpy adapter (LinkedIn + Indeed via python-jobspy), cron shift, ops runbook, pre-commit hook.
+
+**Files created**
+- `src/jobscout/adapters/jobspy.py` — `JobSpyAdapter`: sync-only jobspy library bridged to async pipeline via `run_in_executor`; sequential queries × sites loop with 2s pause between calls; `_safe()` NaN/NaT/namedtuple defence; `_sanitize_raw()` two-pass JSON-safe dict; `_since_to_hours_old()` with 6h buffer + 24h floor; German location post-filter; remote listing rescue via German job board domain check (`_is_german_domain`)
+- `tests/test_adapter_jobspy.py` — 68 tests covering `_safe`, `_sanitize_raw`, `_is_german`, `_is_german_domain`, `_since_to_hours_old`, `_map_job_level`, `_normalize` (all field mappings), and fetch failure modes
+- `.git/hooks/pre-commit` — warn-only hook: fetches origin and warns if local branch is behind (exits 0, never blocks)
+
+**Files modified**
+- `pyproject.toml` — added `python-jobspy>=1.1`; relaxed `numpy>=2.4` → `numpy>=1.26` (jobspy installs 1.26.3)
+- `src/jobscout/models.py` — added `jobspy_queries: list[str]` and `jobspy_sites: dict` to `UserProfile`
+- `profile.yaml` — added `jobspy_queries` (2 queries) and `jobspy_sites` (indeed + linkedin with per-site caps)
+- `src/jobscout/run.py` — imported `JobSpyAdapter`; added `"jobspy"` entry to `_ADAPTER_REGISTRY`
+- `.github/workflows/daily_run.yml` — shifted cron from `0 6 * * *` → `0 4 * * *` (GitHub Actions queue adds ~1–2h consistently; targeting ~08:00–08:30 CEST delivery)
+- `CLAUDE.md` — added `## Git workflow` rule (always pull before editing); added ops-checks pointer to dev-notes
+- `docs/dev-notes.md` — added `## Ops checks` section with sqlite/gh CLI commands for pipeline inspection
+
+**Key decisions**
+- Sequential loop (not `asyncio.gather`) for jobspy calls — LinkedIn and Indeed rate-limit aggressively; parallel scrapes trigger blocks
+- Location fallback is `""` not `"Germany"` — honest about missing data; `_is_german("")` returns False, which triggers the remote rescue path for German-domain listings
+- Remote rescue: listings with no location but `remote_policy == "remote"` and a German job board domain (linkedin.com, de.indeed.com, indeed.de) are kept and tagged `"Remote, Germany"` — these are high-value remote AI roles
+- `_safe()` try/except guard: `pd.isna()` raises `ValueError` on namedtuples (Location objects) and `TypeError` on unhashable types — both caught, value returned as-is
+- `_sanitize_raw()` two-pass: NaN→None first, then JSON round-trip with `default=str` to coerce numpy scalars and Timestamps
+
+**Dry-run result**
+```
+Adzuna: 100 listings | JSearch: 60 listings | JobSpy: 11 listings (4 calls: 2 queries × 2 sites)
+jobspy/indeed "AI engineer Germany" → 25 scraped, kept after German filter
+jobspy/linkedin "AI engineer Germany" → 12 scraped
+jobspy/indeed "machine learning engineer Berlin Munich Hamburg" → 0 results
+jobspy/linkedin "machine learning engineer Berlin Munich Hamburg" → 12 scraped
+Remote rescue fired for 9 linkedin.com listings with no location
+```
+
+**Test count:** 297 passing

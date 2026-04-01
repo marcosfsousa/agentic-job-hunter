@@ -105,3 +105,18 @@ jsearch_queries:
   - "AI software engineer Germany"
   - "AI engineer startup Berlin Munich Hamburg"
   - "generative AI engineer English Germany"
+
+# JobSpy scraper queries and per-site config.
+# results_wanted: max listings per query per site.
+# fetch_description: LinkedIn only — slower but required for embedding quality.
+jobspy_queries:
+  - "AI engineer Germany"
+  - "machine learning engineer Berlin Munich Hamburg"
+
+jobspy_sites:
+  indeed:
+    results_wanted: 25
+    country_indeed: "Germany"
+  linkedin:
+    results_wanted: 12
+    fetch_description: true
