@@ -8,7 +8,7 @@
 
 ## Known issues
 - Centroid signal still sparse — only a few `applied` entries seeding it. Will improve naturally as pipeline runs and reviews accumulate.
-- Cron fires at 6am UTC (7am CET winter). Drifts to 8am local in summer (CEST) — acceptable for personal tool.
+- Cron fires at 4am UTC. GH Actions queue adds ~1–2h delay consistently, targeting ~08:00–08:30 CEST delivery.
 - `email_min_score` temporarily at 4 (down from 5) — review by 2026-04-07.
 
 ## Next session (Day 16)

@@ -40,9 +40,15 @@ Goal: fewer, higher-quality matches. This tool finds and ranks. User decides wha
 - New adapter → follow `adapters/base.py` interface exactly
 - When all todos for the current session are marked done, prompt the user: "All todos complete — run `/simplify` on files modified this session before closing?"
 
+## Git workflow
+
+Always run `git pull` before making any file changes in this repo.
+The pipeline commits a DB file daily via GitHub Actions, so the local copy may be behind.
+
 ## Session State
 
 Before starting work, read `docs/session-state.md` for where we left off.
 Full build history in `docs/build-log.md`.
 Setup and run instructions → `docs/dev-notes.md`
+Ops checks (sync, pipeline inspection, queue delays) → `docs/dev-notes.md#ops-checks`
 Session state template → `docs/dev-notes.md#session-state-template`
