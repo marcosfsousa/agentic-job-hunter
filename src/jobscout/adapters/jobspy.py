@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 from jobscout.adapters.base import JobAdapter, filter_by_since
 from jobscout.adapters.inference import _infer_remote_policy, _infer_seniority
-from jobscout.models import JobListing
+from jobscout.models import JobListing, Seniority
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +103,7 @@ def _safe(row, key: str, default=None):
 # Seniority mapping from LinkedIn job_level field
 # ---------------------------------------------------------------------------
 
-_JOB_LEVEL_MAP = {
+_JOB_LEVEL_MAP: dict[str, Seniority] = {
     "internship": "junior",
     "entry level": "junior",
     "associate": "junior",
@@ -113,7 +113,7 @@ _JOB_LEVEL_MAP = {
 }
 
 
-def _map_job_level(job_level: str | None) -> str | None:
+def _map_job_level(job_level: str | None) -> Seniority | None:
     if not job_level:
         return None
     return _JOB_LEVEL_MAP.get(job_level.lower())
@@ -162,6 +162,7 @@ class JobSpyAdapter(JobAdapter):
         """
         if scrape_jobs is None:
             return []
+        scrape = scrape_jobs
 
         queries: list[str] = self._config.profile.jobspy_queries
         sites: dict = self._config.profile.jobspy_sites
@@ -195,7 +196,7 @@ class JobSpyAdapter(JobAdapter):
 
             try:
                 df = await loop.run_in_executor(
-                    None, lambda kw=kwargs: scrape_jobs(**kw)
+                    None, lambda kw=kwargs: scrape(**kw)
                 )
             except Exception as exc:
                 logger.warning("JobSpyAdapter %s query=%r failed — skipping: %s", site_name, query, exc, exc_info=True)
