@@ -103,8 +103,8 @@ email_min_score: 4
 # Deduplication handles overlap — tune queries to target different supply segments.
 jsearch_queries:
   - "AI software engineer Germany"
-  - "AI engineer startup Berlin Munich Hamburg"
-  - "generative AI engineer English Germany"
+  - "LLM engineer Germany"
+  - "NLP engineer Germany"
 
 # JobSpy scraper queries and per-site config.
 # results_wanted: max listings per query per site.

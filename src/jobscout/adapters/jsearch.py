@@ -127,14 +127,20 @@ class JSearchAdapter(JobAdapter):
         queries = self._config.profile.jsearch_queries
         all_collected: list[JobListing] = []
 
+        succeeded = 0
         async with httpx.AsyncClient(timeout=30.0) as client:
             for query in queries:
-                batch = await self._fetch_query(query, max_results, since, client)
-                all_collected.extend(batch)
+                try:
+                    batch = await self._fetch_query(query, max_results, since, client)
+                    all_collected.extend(batch)
+                    succeeded += 1
+                except JobScoutAdapterError as exc:
+                    logger.warning("JSearch query %r failed — skipping: %s", query, exc)
 
         logger.info(
-            "JSearchAdapter fetched %d listings across %d queries",
+            "JSearchAdapter fetched %d listings across %d/%d queries",
             len(all_collected),
+            succeeded,
             len(queries),
         )
         return all_collected
