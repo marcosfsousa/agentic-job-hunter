@@ -5,7 +5,7 @@ import asyncio
 import logging
 from datetime import date
 from pathlib import Path
-import openai
+import anthropic
 import yaml
 
 from jobscout.adapters.adzuna import AdzunaAdapter
@@ -186,8 +186,8 @@ async def run_pipeline(
     if dropped:
         logger.info("Embedding floor %.2f dropped %d job(s) before LLM evaluation", floor, dropped)
 
-    client = openai.AsyncOpenAI(api_key=config.openai_api_key)
-    evaluated = await evaluate_jobs(above_floor, config.profile, client, config.llm_model)
+    client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
+    evaluated = await evaluate_jobs(above_floor, config.profile, client, config.llm_model, reeval_below=config.reeval_below or config.profile.email_min_score)
 
     # ------------------------------------------------------------------
     # Deliver

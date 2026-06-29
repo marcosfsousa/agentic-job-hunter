@@ -31,3 +31,6 @@ build/
 
 # HuggingFace model cache
 .cache/
+
+# Codex
+AGENTS.md

@@ -117,8 +117,8 @@ class JSearchAdapter(JobAdapter):
                 no posted_date are always kept.
 
         Raises:
-            JobScoutAdapterError: On rate-limiting (429) or server errors (5xx).
             httpx.HTTPStatusError: On auth failure (401) — not retriable.
+                Per-query 429/5xx errors are caught internally and logged.
         """
         if not self._config.open_web_ninja_api_key:
             logger.info("JSearchAdapter: no API key configured — skipping")
@@ -127,14 +127,23 @@ class JSearchAdapter(JobAdapter):
         queries = self._config.profile.jsearch_queries
         all_collected: list[JobListing] = []
 
+        succeeded = 0
         async with httpx.AsyncClient(timeout=30.0) as client:
             for query in queries:
-                batch = await self._fetch_query(query, max_results, since, client)
-                all_collected.extend(batch)
+                try:
+                    batch = await self._fetch_query(query, max_results, since, client)
+                    all_collected.extend(batch)
+                    succeeded += 1
+                except JobScoutAdapterError as exc:
+                    logger.warning("JSearch query %r failed — skipping: %s", query, exc)
+                    if "429" in str(exc):
+                        logger.warning("JSearch quota exhausted — stopping remaining queries")
+                        break
 
         logger.info(
-            "JSearchAdapter fetched %d listings across %d queries",
+            "JSearchAdapter fetched %d listings across %d/%d queries",
             len(all_collected),
+            succeeded,
             len(queries),
         )
         return all_collected

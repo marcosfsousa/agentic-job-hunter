@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import replace
 
-import openai
+import anthropic
 
 from jobscout.evaluation.prompt import SYSTEM_PROMPT, build_prompt
 from jobscout.models import EvaluationResult, ScoredJob, UserProfile
@@ -15,21 +15,26 @@ logger = logging.getLogger(__name__)
 async def evaluate_jobs(
     jobs: list[ScoredJob],
     profile: UserProfile,
-    client: openai.AsyncOpenAI,
+    client: anthropic.AsyncAnthropic,
     model: str,
     top_n: int = 25,
+    reeval_below: int = 4,
 ) -> list[ScoredJob]:
-    """Evaluate top_n jobs with an OpenAI model and return them with LLM scores attached.
+    """Evaluate top_n jobs with an Anthropic model and return them with LLM scores attached.
 
     Jobs are evaluated sequentially. On any failure the job is retained with
     llm_score=None and final_score=None rather than being dropped.
 
+    Jobs whose first score falls below reeval_below are evaluated a second time;
+    the higher of the two scores is kept.
+
     Args:
         jobs: Ranked ScoredJobs (embedding_score populated, sorted descending).
         profile: User profile for prompt construction.
-        client: Async OpenAI client.
-        model: Model ID to use (e.g. 'gpt-4o-mini').
+        client: Async Anthropic client.
+        model: Model ID to use (e.g. 'claude-haiku-4-5-20251001').
         top_n: Maximum number of jobs to evaluate and return.
+        reeval_below: Re-evaluate jobs whose match_score is strictly below this value.
 
     Returns:
         top_n ScoredJobs with llm_score, final_score, and evaluation populated
@@ -40,6 +45,22 @@ async def evaluate_jobs(
 
     for job in candidates:
         evaluated = await _evaluate_one(job, profile, client, model)
+        if evaluated.evaluation and evaluated.evaluation.match_score < reeval_below:
+            logger.debug(
+                "Re-evaluating %s (%s): first score %d < %d",
+                job.listing.id,
+                job.listing.title,
+                evaluated.evaluation.match_score,
+                reeval_below,
+            )
+            second = await _evaluate_one(job, profile, client, model)
+            if second.evaluation and second.evaluation.match_score > evaluated.evaluation.match_score:
+                logger.debug(
+                    "Re-eval improved score: %d → %d",
+                    evaluated.evaluation.match_score,
+                    second.evaluation.match_score,
+                )
+                evaluated = second
         results.append(evaluated)
 
     return results
@@ -48,21 +69,23 @@ async def evaluate_jobs(
 async def _evaluate_one(
     job: ScoredJob,
     profile: UserProfile,
-    client: openai.AsyncOpenAI,
+    client: anthropic.AsyncAnthropic,
     model: str,
 ) -> ScoredJob:
     try:
-        response = await client.chat.completions.create(
+        response = await client.messages.create(
             model=model,
             max_tokens=256,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": build_prompt(job.listing, profile)},
-            ],
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": build_prompt(job.listing, profile)}],
         )
-        raw = response.choices[0].message.content
+        raw = response.content[0].text
         if raw is None:
             raise ValueError("model returned empty content")
+        raw = raw.strip()
+        if raw.startswith("```"):
+            # Haiku wraps JSON in code fences despite explicit instructions
+            raw = raw.split("\n", 1)[-1].rsplit("\n```", 1)[0].strip()
         evaluation = EvaluationResult.model_validate(json.loads(raw))
     except Exception as exc:
         logger.warning(
