@@ -23,10 +23,10 @@ class AppConfig(BaseModel):
     # Required API keys — validated non-empty at load time
     adzuna_app_id: str
     adzuna_app_key: str
-    openai_api_key: str
+    anthropic_api_key: str
 
     # LLM model used for evaluation — change here to swap models pipeline-wide
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "claude-haiku-4-5-20251001"
 
     # JSearch via OpenWebNinja — optional; omit to disable this source
     open_web_ninja_api_key: str | None = None
@@ -42,6 +42,10 @@ class AppConfig(BaseModel):
     # Minimum cosine similarity a job must reach to proceed to LLM evaluation — avoids wasting tokens on poor matches.
     embedding_min_score: float = 0.30
 
+    # Jobs scoring below this threshold on the first LLM pass are re-evaluated once;
+    # the higher of the two scores is kept. Defaults to email_min_score from profile.
+    reeval_below: int = 4
+
     # Paths — default to project-root-relative locations
     db_path: Path = _PROJECT_ROOT / "data" / "jobscout.db"
     digests_dir: Path = _PROJECT_ROOT / "digests"
@@ -52,7 +56,7 @@ class AppConfig(BaseModel):
     def feedback_path(self) -> Path:
         return self.db_path.parent / "feedback.yaml"
 
-    @field_validator("adzuna_app_id", "adzuna_app_key", "openai_api_key")
+    @field_validator("adzuna_app_id", "adzuna_app_key", "anthropic_api_key")
     @classmethod
     def must_be_non_empty(cls, v: str, info) -> str:
         if not v.strip():
@@ -120,7 +124,8 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
         profile=profile,
         adzuna_app_id=os.environ.get("ADZUNA_APP_ID", ""),
         adzuna_app_key=os.environ.get("ADZUNA_APP_KEY", ""),
-        openai_api_key=os.environ.get("OPENAI_API_KEY", ""),
+        anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
+        reeval_below=int(os.environ.get("REEVAL_BELOW", str(profile.email_min_score))),
         open_web_ninja_api_key=os.environ.get("OPEN_WEB_NINJA_API") or None,
         resend_api_key=os.environ.get("RESEND_API_KEY") or None,
         email_to=os.environ.get("EMAIL_TO") or None,

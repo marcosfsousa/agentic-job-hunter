@@ -71,14 +71,14 @@ def _make_scored_job(id: str, embedding_score: float = 0.8) -> ScoredJob:
 
 
 def _mock_client(response_payload: dict | None = None, raise_exc: Exception | None = None):
-    """Return a mock AsyncOpenAI client.
+    """Return a mock AsyncAnthropic client.
 
-    If raise_exc is set, the chat.completions.create call raises that exception.
+    If raise_exc is set, the messages.create call raises that exception.
     Otherwise it returns a response with response_payload as JSON text.
     """
     client = MagicMock()
     if raise_exc is not None:
-        client.chat.completions.create = AsyncMock(side_effect=raise_exc)
+        client.messages.create = AsyncMock(side_effect=raise_exc)
     else:
         payload = response_payload or {
             "match_score": 8,
@@ -86,10 +86,8 @@ def _mock_client(response_payload: dict | None = None, raise_exc: Exception | No
             "gaps": ["MLOps"],
             "explanation": "Strong match on core LLM skills.",
         }
-        message = SimpleNamespace(choices=[
-            SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))
-        ])
-        client.chat.completions.create = AsyncMock(return_value=message)
+        message = SimpleNamespace(content=[SimpleNamespace(text=json.dumps(payload))])
+        client.messages.create = AsyncMock(return_value=message)
     return client
 
 
@@ -124,10 +122,8 @@ class TestEvaluateJobs:
 
     async def test_on_invalid_json_job_retained_without_llm_score(self, profile):
         client = MagicMock()
-        bad_message = SimpleNamespace(choices=[
-            SimpleNamespace(message=SimpleNamespace(content="not valid json {"))
-        ])
-        client.chat.completions.create = AsyncMock(return_value=bad_message)
+        bad_message = SimpleNamespace(content=[SimpleNamespace(text="not valid json {")])
+        client.messages.create = AsyncMock(return_value=bad_message)
 
         results = await evaluate_jobs(
             [_make_scored_job("job-3")], profile, client, model="mock-model"
@@ -142,13 +138,13 @@ class TestEvaluateJobs:
         results = await evaluate_jobs(jobs, profile, client, model="mock-model", top_n=3)
 
         assert len(results) == 3
-        assert client.chat.completions.create.call_count == 3
+        assert client.messages.create.call_count == 3
 
     async def test_empty_input_returns_empty(self, profile):
         client = _mock_client()
         results = await evaluate_jobs([], profile, client, model="mock-model")
         assert results == []
-        client.chat.completions.create.assert_not_called()
+        client.messages.create.assert_not_called()
 
     async def test_partial_failure_mixed_results(self, profile):
         """First job succeeds, second fails — both are returned."""
@@ -158,19 +154,66 @@ class TestEvaluateJobs:
             "gaps": [],
             "explanation": "Good fit.",
         }
-        good_msg = SimpleNamespace(choices=[
-            SimpleNamespace(message=SimpleNamespace(content=json.dumps(good_payload)))
-        ])
+        good_msg = SimpleNamespace(content=[SimpleNamespace(text=json.dumps(good_payload))])
         fail_exc = Exception("timeout")
 
         client = MagicMock()
-        client.chat.completions.create = AsyncMock(side_effect=[good_msg, fail_exc])
+        client.messages.create = AsyncMock(side_effect=[good_msg, fail_exc])
 
         jobs = [_make_scored_job("ok-1"), _make_scored_job("fail-1")]
         results = await evaluate_jobs(jobs, profile, client, model="mock-model")
 
         assert results[0].llm_score == pytest.approx(0.7)
         assert results[1].llm_score is None
+
+    async def test_reeval_fires_when_score_below_threshold(self, profile):
+        """First score 3 < reeval_below=4 triggers a second call; higher score (7) wins."""
+        low_payload = {"match_score": 3, "matching_skills": [], "gaps": ["LLMs"], "explanation": "Weak."}
+        high_payload = {"match_score": 7, "matching_skills": ["RAG"], "gaps": [], "explanation": "Good."}
+        low_msg = SimpleNamespace(content=[SimpleNamespace(text=json.dumps(low_payload))])
+        high_msg = SimpleNamespace(content=[SimpleNamespace(text=json.dumps(high_payload))])
+
+        client = MagicMock()
+        client.messages.create = AsyncMock(side_effect=[low_msg, high_msg])
+
+        results = await evaluate_jobs(
+            [_make_scored_job("reeval-1")], profile, client, model="mock-model", reeval_below=4
+        )
+
+        assert client.messages.create.call_count == 2
+        assert results[0].evaluation is not None
+        assert results[0].evaluation.match_score == 7
+
+    async def test_reeval_not_called_when_score_at_or_above_threshold(self, profile):
+        """Score == reeval_below (4) should NOT trigger a second call."""
+        payload = {"match_score": 4, "matching_skills": ["Python"], "gaps": [], "explanation": "Fine."}
+        client = _mock_client(response_payload=payload)
+
+        results = await evaluate_jobs(
+            [_make_scored_job("no-reeval-1")], profile, client, model="mock-model", reeval_below=4
+        )
+
+        assert client.messages.create.call_count == 1
+        assert results[0].evaluation is not None
+        assert results[0].evaluation.match_score == 4
+
+    async def test_reeval_keeps_first_when_second_is_lower(self, profile):
+        """First score 3 triggers re-eval, but second score (2) is lower — first result kept."""
+        first_payload = {"match_score": 3, "matching_skills": [], "gaps": ["LLMs"], "explanation": "Weak."}
+        second_payload = {"match_score": 2, "matching_skills": [], "gaps": ["LLMs", "Python"], "explanation": "Worse."}
+        first_msg = SimpleNamespace(content=[SimpleNamespace(text=json.dumps(first_payload))])
+        second_msg = SimpleNamespace(content=[SimpleNamespace(text=json.dumps(second_payload))])
+
+        client = MagicMock()
+        client.messages.create = AsyncMock(side_effect=[first_msg, second_msg])
+
+        results = await evaluate_jobs(
+            [_make_scored_job("keep-first-1")], profile, client, model="mock-model", reeval_below=4
+        )
+
+        assert client.messages.create.call_count == 2
+        assert results[0].evaluation is not None
+        assert results[0].evaluation.match_score == 3
 
 
 # ---------------------------------------------------------------------------
