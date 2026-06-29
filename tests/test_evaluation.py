@@ -215,6 +215,22 @@ class TestEvaluateJobs:
         assert results[0].evaluation is not None
         assert results[0].evaluation.match_score == 3
 
+    async def test_reeval_second_pass_failure_keeps_first_result(self, profile):
+        """First score 3 triggers re-eval, but second call fails — first result is kept."""
+        first_payload = {"match_score": 3, "matching_skills": [], "gaps": ["LLMs"], "explanation": "Weak."}
+        first_msg = SimpleNamespace(content=[SimpleNamespace(text=json.dumps(first_payload))])
+
+        client = MagicMock()
+        client.messages.create = AsyncMock(side_effect=[first_msg, Exception("network error")])
+
+        results = await evaluate_jobs(
+            [_make_scored_job("reeval-fail-1")], profile, client, model="mock-model", reeval_below=4
+        )
+
+        assert client.messages.create.call_count == 2
+        assert results[0].evaluation is not None
+        assert results[0].evaluation.match_score == 3
+
 
 # ---------------------------------------------------------------------------
 # prompt tests

@@ -187,7 +187,7 @@ async def run_pipeline(
         logger.info("Embedding floor %.2f dropped %d job(s) before LLM evaluation", floor, dropped)
 
     client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
-    evaluated = await evaluate_jobs(above_floor, config.profile, client, config.llm_model, reeval_below=config.reeval_below)
+    evaluated = await evaluate_jobs(above_floor, config.profile, client, config.llm_model, reeval_below=config.reeval_below or config.profile.email_min_score)
 
     # ------------------------------------------------------------------
     # Deliver

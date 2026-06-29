@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from jobscout.models import UserProfile
 
@@ -43,8 +43,9 @@ class AppConfig(BaseModel):
     embedding_min_score: float = 0.30
 
     # Jobs scoring below this threshold on the first LLM pass are re-evaluated once;
-    # the higher of the two scores is kept. Defaults to email_min_score from profile.
-    reeval_below: int = 4
+    # the higher of the two scores is kept. None resolves to profile.email_min_score
+    # via the model validator below; always an int after construction.
+    reeval_below: int | None = None
 
     # Paths — default to project-root-relative locations
     db_path: Path = _PROJECT_ROOT / "data" / "jobscout.db"
@@ -55,6 +56,12 @@ class AppConfig(BaseModel):
     @property
     def feedback_path(self) -> Path:
         return self.db_path.parent / "feedback.yaml"
+
+    @model_validator(mode="after")
+    def _set_reeval_below(self) -> "AppConfig":
+        if self.reeval_below is None:
+            self.reeval_below = self.profile.email_min_score
+        return self
 
     @field_validator("adzuna_app_id", "adzuna_app_key", "anthropic_api_key")
     @classmethod
