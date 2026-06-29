@@ -82,6 +82,10 @@ async def _evaluate_one(
         raw = response.content[0].text
         if raw is None:
             raise ValueError("model returned empty content")
+        raw = raw.strip()
+        if raw.startswith("```"):
+            # Haiku wraps JSON in code fences despite explicit instructions
+            raw = raw.split("\n", 1)[-1].rsplit("\n```", 1)[0].strip()
         evaluation = EvaluationResult.model_validate(json.loads(raw))
     except Exception as exc:
         logger.warning(

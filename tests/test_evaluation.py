@@ -120,6 +120,20 @@ class TestEvaluateJobs:
         assert results[0].final_score is None
         assert results[0].evaluation is None
 
+    async def test_json_in_code_fence_is_parsed_correctly(self, profile):
+        """Haiku wraps JSON in markdown code fences — strip them before parsing."""
+        payload = {"match_score": 7, "matching_skills": ["RAG"], "gaps": [], "explanation": "Good."}
+        fenced = f"```json\n{json.dumps(payload)}\n```"
+        client = MagicMock()
+        client.messages.create = AsyncMock(
+            return_value=SimpleNamespace(content=[SimpleNamespace(text=fenced)])
+        )
+
+        results = await evaluate_jobs([_make_scored_job("fence-1")], profile, client, model="mock-model")
+
+        assert results[0].evaluation is not None
+        assert results[0].evaluation.match_score == 7
+
     async def test_on_invalid_json_job_retained_without_llm_score(self, profile):
         client = MagicMock()
         bad_message = SimpleNamespace(content=[SimpleNamespace(text="not valid json {")])
