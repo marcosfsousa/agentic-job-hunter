@@ -2,7 +2,7 @@ name: Daily Job Scout
 
 on:
   schedule:
-    - cron: '0 4 * * *'  # targets ~08:00–08:30 CEST accounting for GH Actions queue delay (~1.5h)
+    - cron: '15 3 * * *'  # targets ~08:00–09:00 CEST; off-minute scheduling avoids thundering herd; observed queue delay ~5h at 04:00 UTC, lower at 03:00 UTC
   workflow_dispatch:       # allow manual trigger from GitHub UI
 
 concurrency:
