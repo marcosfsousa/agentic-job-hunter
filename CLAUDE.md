@@ -44,6 +44,7 @@ Goal: fewer, higher-quality matches. This tool finds and ranks. User decides wha
 
 Always run `git pull` before making any file changes in this repo.
 The pipeline commits a DB file daily via GitHub Actions, so the local copy may be behind.
+For hotfixes on `main`: stash → checkout main → pull → edit → commit → push → return to feature branch. Never edit on a feature branch then carry changes sideways to main.
 
 ## Session State
 
