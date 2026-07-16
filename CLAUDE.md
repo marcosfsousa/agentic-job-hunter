@@ -46,6 +46,20 @@ Always run `git pull` before making any file changes in this repo.
 The pipeline commits a DB file daily via GitHub Actions, so the local copy may be behind.
 For hotfixes on `main`: stash → checkout main → pull → edit → commit → push → return to feature branch. Never edit on a feature branch then carry changes sideways to main.
 
+## Agent skills
+
+### Issue tracker
+
+Issues live as GitHub issues in `marcosfsousa/agentic-job-hunter`, managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, used verbatim as label strings. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context — `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 ## Session State
 
 Before starting work, read `docs/session-state.md` for where we left off.
