@@ -16,8 +16,16 @@ Everything below is measured against a live payload, per the map's standing rule
 
 - **Corpus:** 128 unique live freelancermap projects, pulled 2026-07-18 as an anonymous parse of the
   embedded `ProjectSearch` JSON, honest User-Agent, 8-request hard cap — the G (#11) constraints.
-  Built from 8 search queries (`machine learning`, `data scientist`, `NLP`, `LLM`, `generative AI`,
-  `python entwickler`, `deep learning`) deduplicated by project id.
+  Built from search queries deduplicated by project id. **Seven are recorded** (`machine learning`,
+  `data scientist`, `NLP`, `LLM`, `generative AI`, `python entwickler`, `deep learning`); this
+  section originally claimed **8** without listing an eighth, and the eighth was not written down.
+  ⚠️ **The discrepancy is left standing rather than reconciled by guess**, and it matters twice: the
+  side-finding that free-text search exists — recorded in N's [ticket
+  resolution](https://github.com/marcosfsousa/agentic-job-hunter/issues/19#issuecomment-5010590427),
+  not in this asset — rests on "8 queries → 8 distinct result sets" (7 distinct sets would support it
+  equally), and G (#11)'s 8-request hard cap was accounted against this
+  same number. Neither conclusion changes at 7, but the request count against G's cap is 7 or 8, not
+  confirmed 8. Re-derive from a fresh run before citing the figure as evidence of anything.
 - **Job document:** `title + skills + description`, HTML-stripped — the composition M (#17) decided.
 - **Query text:** F (#9)'s composition (`target_roles` + skills + `ideal_role` + `background`,
   negation stripped), in two variants — **EN-only** and **bilingual** (F's decision 1).
@@ -51,7 +59,12 @@ Two related payload facts, both measured across all 128:
   is no free English rendering of a German posting to fall back on.
 - **`skills`, when present, is already bilingual** — each entry is `{de, en, url}`, and 61 of 148
   bilingual entries have a genuinely different English rendering (`Cloud-Engineering` /
-  `Cloud Engineering`, `SQL` / `SQL Databases`). See §6 for why this matters less than it looks.
+  `Cloud Engineering`, `SQL` / `SQL Databases`). **This matters less than it looks, because `skills`
+  is only 41/128 (32%) populated** — the free English rendering exists for under a third of the
+  corpus, so it cannot carry the language problem. (This sentence originally pointed at §6, which is
+  the truncation section and says nothing about `skills`; the 32% figure it meant to reference was
+  recorded only in the ticket resolution. O (#21) has since dropped `skills` from the job document on
+  exactly this basis.)
 
 ---
 
@@ -157,9 +170,17 @@ an 81% base rate — the closest of any configuration to simply reflecting the m
 
 | concern | finding |
 | --- | --- |
-| Stored feedback centroid assumes 384 dims | `multilingual-e5-small` is **384 dims** — no centroid migration, no storage change |
-| Cached vectors | Job/centroid vectors are recomputed each run and discarded (per H #12); only the 384-dim assumption matters |
+| Stored feedback centroid assumes 384 dims | **The premise is false — nothing is stored.** There is no vector or embedding column anywhere in `storage/db.py` (verified in O #21). The centroid is recomputed from feedback rows on every run, so there is no persisted artifact to migrate at any dimensionality |
+| Cached vectors | None persist. Profile, job and centroid vectors are all computed in-memory each run and discarded |
 | Context window | 512 tokens, same as current — M (#17)'s head-truncation design carries over unchanged |
+
+**The no-migration conclusion stands, but not for the reason first recorded here.** This section
+originally credited it to `multilingual-e5-small` happening to be 384 dims, matching the current
+model. That reading treats a stored-dimension constraint as *satisfied*; in fact **no such constraint
+exists**. Dimensionality is simply irrelevant to migration for this pipeline — a 768-dim or 1024-dim
+model would impose no storage cost either. `multilingual-e5-small`'s 384 dims are a runtime cost
+(memory, CPU time in a daily Action), not a compatibility property. This correction is what retires
+§8's stated reason for not measuring `multilingual-e5-base`.
 
 Two execution details that are easy to get wrong:
 
@@ -216,7 +237,22 @@ Recorded rather than omitted:
 - **One snapshot, one day, 128 projects, one profile.** Seasonal or query-mix drift is unmeasured.
 - **The symmetric-vs-asymmetric finding is measured on this task only.** It says the paraphrase model
   is wrong *here*; it is not a general claim about the model.
-- **e5 was measured, but not tuned.** No comparison against `multilingual-e5-base` (768 dims, would
-  force a centroid migration) — deliberately, since the same-dim option already clears the bar.
-</content>
-</invoke>
+- **e5 was measured, but not tuned.** No comparison against `multilingual-e5-base` (768 dims) —
+  deliberately, since the same-dim option already clears the bar. **The original justification given
+  here was wrong** and is retracted: it cited a centroid migration forced by 768 dims, but there is no
+  persisted vector anywhere (see §5), so dimensionality carries no migration cost. The real costs of
+  `-base` are a heavier model download and slower CPU inference inside a daily GitHub Action. Those
+  are sufficient to defer it, but they are not the reason originally recorded.
+- **The `skills` concatenation key is unstated.** §1 records the job document as
+  `title + skills + description`, but `skills` entries are `{de, en, url}` objects and this asset
+  never says which key was concatenated. The headline numbers (5.07 mean fit, 12/15 best-15 capture)
+  therefore rest on an unrecorded setting. Raised by O (#21). The e5 conclusion is not thought to turn
+  on it — the margin over every alternative is wide, and `skills` is absent from 68% of documents —
+  but the measurement is not exactly reproducible without it. O (#21) has since dropped `skills` from
+  the job document entirely, so the ambiguity does not propagate into the build.
+- **The paired e5 lift is small but not directionally neutral.** §3 records e5 at +0.0081 lift, which
+  is near-zero against the current model's +0.169. But the same row shows **23 of 25** translations
+  still scoring higher — by the win-rate test this asset itself applies elsewhere ("24/25 →
+  coin-flip"), e5's *direction* is unchanged and only the *magnitude* collapsed. Recorded as a
+  residue, not a reopen: the magnitude is what reorders a top-30 cut, and §4 measures that outcome
+  directly.
