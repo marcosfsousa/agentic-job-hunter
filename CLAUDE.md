@@ -44,7 +44,25 @@ Goal: fewer, higher-quality matches. This tool finds and ranks. User decides wha
 
 Always run `git pull` before making any file changes in this repo.
 The pipeline commits a DB file daily via GitHub Actions, so the local copy may be behind.
-For hotfixes on `main`: stash → checkout main → pull → edit → commit → push → return to feature branch. Never edit on a feature branch then carry changes sideways to main.
+**Never push to `main` directly, force-push, or merge into `main` by hand.** All work reaches `main`
+through a branch and a reviewed PR — a hotfix is a short-lived branch and a fast PR, not an edit on
+`main`. (This replaces the previous stash → checkout main → edit → push hotfix flow.)
+
+**During the FTE → freelance pivot (specs #26–#29):** `v2-freelance-pivot` is the long-lived
+integration branch, cut from `main`. Each spec gets its own branch off it — `spec-1-contract-model`,
+`spec-2-profile-filter`, `spec-3-freelancermap-adapter`, `spec-4-e5-ranking-eval` — and PRs *into*
+the integration branch, never into `main`. Review therefore still happens in four normal-sized
+chunks, and the eventual merge to `main` is already-reviewed work.
+
+`main` stays on the last working pipeline until the pivot is whole. This is the reason for the
+integration branch, not a style preference: spec 1 deletes all three FTE adapters and disarms the
+cron, so the pipeline is **deliberately dark** from spec 1 until spec 3 re-arms it, and that state
+must not sit on `main`.
+
+**Tags are semver.** Tag `main` `v1.0.0` before any pivot code lands, so the FTE-era pipeline stays
+recoverable by name — the repo has no tags today, so this establishes the scheme. Tag `v2.0.0` on
+`main` once the integration branch has merged **and** spec 4's ≥5-listing validation has passed —
+the pivot is complete when it is validated, not when it compiles.
 
 ## Agent skills
 
