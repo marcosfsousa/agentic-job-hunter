@@ -33,7 +33,7 @@
 > | *"Rank on `remoteInPercent`, `projectContractType`, `duration`, and skills"* | **F (#9)** | **Three of the four were cut.** |
 > | *"Storing only opaque job IDs plus a timestamp … would still satisfy dedup"* | **H (#12)** | **It cannot.** `job_fingerprint()` is readable `title\|company` prose, **not a hash** — so the one field dedup needs *is* source content in plaintext. |
 > | Email **Upwork support** on whether embeddings are *"transformed data"* | **H (#12)** | **Cancelled.** Embeddings are **never persisted** — the question does not arise. |
-> | The **four-source shortlist** (Upwork second / Himalayas verify / freelance.de ask / Etengo fast-follower) | **C, K, L, J** | Reduced to **freelancermap-only** plus a **deferred Upwork gate**. ⚠️ **Partially reopened by Q (#23)**: Etengo and Himalayas are back under measurement in **S (#25)** — on a bar widened past volume to include a real-payload field census. Neither is adopted. |
+> | The **four-source shortlist** (Upwork second / Himalayas verify / freelance.de ask / Etengo fast-follower) | **C, K, L, J** | Reduced to **freelancermap-only** plus a **deferred Upwork gate**. **Reopened by Q (#23) and now closed by S (#25)**: Etengo and Himalayas were measured against a bar widened past volume to include a real-payload field census, and **both were dropped**. The shortlist is final at **freelancermap-only plus the deferred Upwork gate**, and freelancermap's single-source SPOF is an **accepted, recorded risk**. Neither candidate is adopted; there is no second DACH source to find. |
 > | **WWR "6 contract of 99"** (headline finding 6; drop rationale; WWR verdict) | **this document's own §We Work Remotely** | **16 of 173** (~9%). Corrected in place, three sites, on 2026-07-20. Every verdict is unchanged — only the number was wrong. ⚠️ **C (#6) inherited the uncorrected figure.** |
 >
 > *Header added by **R (#24)**, 2026-07-20. Nothing in the body below has been rewritten except the
@@ -163,10 +163,10 @@ Himalayas, Hays, Braintrust and Bundesagentur claims remain agent-reported and u
 |---|---|---|---|---|---|---|
 | **freelancermap** | No API, but **embedded `ProjectSearch` JSON** — parse one blob/page, page via `pagenr`, sync on exact `created` | **Silent** — no anti-automation clause in AGB; `robots.txt` `Disallow:` empty. Bound by §4(5) *"für eigene Zwecke"* + §11(2) no commercial reprocessing | **No — `budget` 0/22 populated** | **Yes — integer months, 17/22** | Full prose, 22/22 | **116 ML in DE / 136 DACH (verified);** 57 fully remote |
 | **Upwork** | **Public GraphQL API, self-serve key**, OAuth2, 300 req/min | **Explicitly permits via API** (scraping prohibited) | **Yes — real min/max ranges** | Yes (structured) | **Full text in search response** | AI GSV +50% YoY; **no DACH breakdown published** |
-| **Himalayas** | **`/jobs/api/search`** endpoint (agent-reported, **unverified by me**) | **Conflict**: API page says "anyone can use"; ToS bars automated access to Services | Field exists, usually `0-0` | — | — | **76 Contractor+AI+DE (unverified)** |
+| **Himalayas** | **`/jobs/api/search`** endpoint — ⚠️ **corrected by S (#25)**: endpoint is real and anonymous, but **only `country` binds**; `employmentType`/`categories`/`search` are **silently ignored**, and `limit`/`offset` are inert (**`page` is the real pagination param**) | **Conflict**: API page says "anyone can use"; ToS bars automated access to Services *(moot — S dropped the source, so the legal call was never taken)* | Field exists; ⚠️ S: 45% populated but **unit-mixed** (`$9/hr` beside `annual`) | — | ⚠️ S: **good** — 100% populated, median 2,936 chars | ⚠️ **Corrected by S (#25)**: the 76 was a **website-UI facet count, not API-reachable**. Measured 7-day window: 22 Contractor×AI/ML → 6 filtered → **0 correctly-typed** (annotation/AI-teaching economy). **Dropped** |
 | **freelance.de** | Scrape only (no public API) | **Explicitly prohibits** — `robots.txt` comment bans non-search-engine crawling | No (not a field) | No | Moderate; company name paywalled | 56 live ML; **partly redundant — posts onto freelancermap** |
 | **GULP** (Randstad) | Scrape only (no outbound API) | **Explicitly prohibits** — AGB §4 Nr. 1 d) | No | Typically yes | Unverified (JS shell) | **Redundant — inventory reaches you via freelancermap** |
-| **Etengo** | Scrape only | **Silent on automation**; §5(1) permits retrieval/storage *for own use* | **No — field does not exist** | **Yes** (`Laufzeit 7 Monate`) | Terse, structured stub | Thin — ~0 dedicated AI/ML on inspection |
+| **Etengo** | Scrape only — ⚠️ **upgraded by S (#25)**: **schema.org `JobPosting` JSON-LD on 27/27 pages**, fully populated. Cleanest structured ingest route in this table | **Silent on automation**; §5(1) permits retrieval/storage *for own use* | **No — field does not exist** (S: `baseSalary` 0/27) | **Yes** (`Laufzeit 7 Monate`) | ⚠️ **S: overstated as "stub"** — median **1,338 chars**, real prose at ~⅓ freelancermap's 3,951. Thin, not empty | ⚠️ **Confirmed by S (#25)** on the **full inventory**, not page one: **2 AI/ML in 27 total projects across all IT disciplines**; whole-site throughput 5.7/week. **Dropped** |
 | **SOLCOM** | Scrape only; **403s automated fetches** | robots.txt permissive, but edge-blocks bots | No | Unverified | Unverified (403) | Unverified |
 | **Malt** (incl. ex-Comatch) | Public API exists — **invoices + SCIM only, zero job endpoints**; model is push-not-pull | **Explicitly prohibits** — Art. 10.2; Cloudflare-challenges bots | n/a — no listing surface | n/a | n/a | Strongest DACH presence, **but nothing to ingest** |
 | **Toptal** | No public API; **zero client engagements publicly listed** | **Explicitly prohibits** | n/a | n/a | n/a | n/a — admission problem, not ingest |
@@ -1580,16 +1580,30 @@ shortlist:
 2. **Whether freelance.de would grant crawling permission.** They publish a request address
    (support@freelance.de) and a process. Nobody has asked. Cheap to test — though now less valuable
    than it looked, since freelance.de partly posts onto freelancermap anyway.
-2b. **Himalayas' 76 Contractor+AI+DE matches are unverified by me** — reported by an agent that
-   retracted other claims this session. Reproduce before relying on it. Same for its ToS conflict.
+2b. ~~**Himalayas' 76 Contractor+AI+DE matches are unverified by me**~~ — ✅ **CLOSED by S (#25).**
+   Reproduced, and the figure does not survive: it is a **website-UI facet count, not API-reachable**
+   (only `country` binds; `employmentType`/`categories`/`search` are silently ignored). A measured
+   7-day DE window gives **22 Contractor×AI/ML → 6 through the hard filter → 0 correctly-typed** —
+   the pool is the annotation / expert-data / AI-teaching economy. **Himalayas dropped.** The ToS
+   conflict was never adjudicated: S's scope boundary made the legal call contingent on clearing
+   the bar, so it is **moot, not deferred**. The instinct to distrust the agent report was correct.
 2c. **How stable freelancermap's `ProjectSearch` JSON is.** It is an undocumented internal payload,
    not a contract. It could change shape without notice, and the whole #1 recommendation rests on it.
    No versioning, no deprecation policy, no guarantees.
 3. **ToS not located** for: SOLCOM, Michael Page (404s), Randstad (404 — though its robots.txt
    settles it anyway), Instaffo, Junico, Projektwerk. Permissive robots.txt on Etengo, SOLCOM,
    freelancermap, Junico and Projektwerk is **not** consent — silence is silence.
-4. **Whether Etengo's thin AI/ML page-one result is representative** or a snapshot artifact. One
-   observation on one day.
+4. ~~**Whether Etengo's thin AI/ML page-one result is representative** or a snapshot artifact.~~
+   ✅ **CLOSED by S (#25) — it was representative.** Re-measured on the **entire live inventory**
+   (enumerated from `sitemap.xml`, every project fetched), not one page: **27 projects across all
+   IT disciplines**, of which **2** match AI/ML, and **1** survives the production hard filter — an
+   *AI QA* role, not ML engineering. Whole-site throughput is **5.7 new projects/week**, so the
+   ≥5/week ML bar exceeds what Etengo ships across every discipline combined. The failure is
+   **structural, not a snapshot**. ⚠️ Two field findings compound it: **`remote_percentage` 0/27**
+   (never emitted in any form) and **`contract_type` 0/27 usable** — the JSON-LD `employmentType`
+   is the constant `["CONTRACTOR", "FULL_TIME", "PART_TIME"]` on every row, i.e. SEO boilerplate
+   carrying zero information — so Etengo would be **unfilterable** by the hard filter (D/#7) even
+   if the volume were there. **Etengo dropped** — on supply and filterability, not on access.
 5. **SOLCOM's field structure and volume** — blocked by 403s, entirely unverified.
 6. **GULP's fields and volume** — JS app shell, never rendered. Moot given §4 Nr. 1 d), but
    unverified all the same.
