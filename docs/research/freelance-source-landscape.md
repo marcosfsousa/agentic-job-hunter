@@ -1,5 +1,44 @@
 # Freelance / Contract Source Landscape — DACH + Remote
 
+> ## ⚠️ Superseded in part — read this first
+>
+> This is **ticket A (#4)**, the *first* research pass of the [freelance-pivot
+> map](https://github.com/marcosfsousa/agentic-job-hunter/issues/3), written **2026-07-16**. Fourteen
+> tickets have closed since, several of them measuring the same surfaces against **live payloads**
+> rather than rendered pages. **Eight load-bearing operational claims below have been overturned.**
+>
+> This document is written in a careful, self-correcting voice — it corrects its own errors inline as
+> it goes — which makes it read as *already reconciled*. **It is not.** The inline corrections are
+> A's own, from 2026-07-16; they say nothing about what later tickets overturned. Do not design
+> against any claim in the list below without checking the ticket that replaced it.
+>
+> ### Still authoritative — why this document is kept
+>
+> - The **verbatim freelancermap AGB quotes** (§4(1)(a)/(b), §4(3), §4(5), §11(2)) with their access
+>   date. G (#11) and I (#13) both rest on these; this is their only written home.
+> - The **`?query=` endpoint trap** — the parameter is silently ignored and returns the same 13,661
+>   total for *any* input, including nonsense. (Note: N (#19) later established that free-text search
+>   *does* work on the surface it measured — 8 queries, 8 distinct result sets. Both are true; they
+>   are different endpoints. The trap is real and still worth avoiding.)
+> - The **`.de`-vs-`.com` 116-vs-22** finding.
+> - The **honeypot pattern**.
+>
+> ### Overturned — do not design against these
+>
+> | Claim in this doc | Overturned by | What holds now |
+> | --- | --- | --- |
+> | **`pagenr` paginates** the `ProjectSearch` view (§"Adapter route", summary table) | **K (#15)** | `pagenr` is **inert on the anonymous view** — the only route G (#11) permits. Every page returns page 1's same 22 IDs. The adapter build must find the real page param. ⚠️ This claim propagated **verbatim into C (#6)'s resolution**. |
+> | **`multi-qa-MiniLM-L6-cos-v1`** as the target embedding model (**5 places**) | **N (#19)** | Swapped to **`intfloat/multilingual-e5-small`**. This doc never observes that the corpus is German at all; N measured it at **81%**. |
+> | Field names **`client_type: {end_client, …}`**, **`rate_is_estimate`**, **`start_asap`** | **B (#5)** | None are ADR-0001's. Authoritative: **`client_type: {agency, direct, unknown}`**, **no estimate flag**, **`start_is_immediate`**. |
+> | *"Rank on `remoteInPercent`, `projectContractType`, `duration`, and skills"* | **F (#9)** | **Three of the four were cut.** |
+> | *"Storing only opaque job IDs plus a timestamp … would still satisfy dedup"* | **H (#12)** | **It cannot.** `job_fingerprint()` is readable `title\|company` prose, **not a hash** — so the one field dedup needs *is* source content in plaintext. |
+> | Email **Upwork support** on whether embeddings are *"transformed data"* | **H (#12)** | **Cancelled.** Embeddings are **never persisted** — the question does not arise. |
+> | The **four-source shortlist** (Upwork second / Himalayas verify / freelance.de ask / Etengo fast-follower) | **C, K, L, J** | Reduced to **freelancermap-only** plus a **deferred Upwork gate**. ⚠️ **Partially reopened by Q (#23)**: Etengo and Himalayas are back under measurement in **S (#25)** — on a bar widened past volume to include a real-payload field census. Neither is adopted. |
+> | **WWR "6 contract of 99"** (headline finding 6; drop rationale; WWR verdict) | **this document's own §We Work Remotely** | **16 of 173** (~9%). Corrected in place, three sites, on 2026-07-20. Every verdict is unchanged — only the number was wrong. ⚠️ **C (#6) inherited the uncorrected figure.** |
+>
+> *Header added by **R (#24)**, 2026-07-20. Nothing in the body below has been rewritten except the
+> three WWR figures, each marked inline.*
+
 Research for the FTE → freelance/contract pivot. The question: which sources should JobScout
 ingest for DACH-centric (Germany) + remote AI/ML contract work, and what can an `httpx`-based
 adapter actually get out of them?
@@ -110,9 +149,13 @@ Himalayas, Hays, Braintrust and Bundesagentur claims remain agent-reported and u
    section; this is the one finding most likely to change a design decision.
 6. **Openness and usefulness are uncorrelated.** The two most open sources in this report — We Work
    Remotely's public RSS and RemoteOK's public JSON API — are also the least useful: I pulled both
-   and found **6 contract jobs out of 99** on WWR, and on RemoteOK **no contract field at all**,
-   salary populated on **1 of 100**, and spam tags. The easiest adapters to build are the ones least
-   worth building.
+   and found **16 contract jobs out of 173** on WWR (~9%), and on RemoteOK **no contract field at
+   all**, salary populated on **1 of 100**, and spam tags. The easiest adapters to build are the ones
+   least worth building.
+   *(Corrected: this finding originally read "6 contract jobs out of 99", read off the main feed —
+   which the WWR section's own correction later found is **capped at ~10 items per category**. The
+   category feeds reach 173 unique items, of which Contract = 16 (~9%). The verdict is
+   unchanged; the number was wrong. C (#6) inherited the uncorrected figure.)*
 
 ## Summary table
 
@@ -1019,8 +1062,10 @@ Either way the conclusion is unchanged: no rate/salary field at all, US-dominate
 distribution, and a contract slice in the low tens of which almost none is DACH AI/ML.
 
 Verdict: technically the easiest adapter in the entire report (parse RSS, done — no auth, no legal
-ambiguity, permissive robots), and it would yield **~6 contract jobs, almost none of them DACH,
+ambiguity, permissive robots), and it would yield **~16 contract jobs, almost none of them DACH,
 almost none AI/ML.** Cheap enough to be tempting; not worth a pipeline stage.
+*(Corrected: this verdict said ~6, the pre-correction main-feed number, despite sitting ten lines
+below the correction that supersedes it. 16/173 is the reachable figure. Verdict unchanged.)*
 
 ### RemoteOK — open API, and the data does not survive inspection
 
@@ -1473,7 +1518,8 @@ concentration risk noted below.
   its ToS posture is better than freelancermap's.**
 - **We Work Remotely and RemoteOK** — the most *tempting* drops, because they are the easiest
   adapters in the report: open feed, no auth, no legal ambiguity, an afternoon each. **Drop them
-  anyway.** WWR yields 6 contract jobs out of 99; RemoteOK has no contract field at all, salary
+  anyway.** WWR yields 16 contract jobs out of 173 (corrected from 6/99); RemoteOK has no contract
+  field at all, salary
   populated on 1 of 100, spam tags, and 3 AI-tagged jobs — none DACH. Building these would feel like
   progress and add nothing to the digest. **This is the clearest case in the report of "cheap" and
   "worthwhile" pointing in opposite directions.** If either is ever reconsidered, note RemoteOK's
