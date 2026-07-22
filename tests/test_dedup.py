@@ -1,7 +1,7 @@
 """Tests for filters/dedup.py — fingerprint-based deduplication."""
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 
 from jobscout.filters.dedup import job_fingerprint, deduplicate_listings
 from jobscout.models import JobListing
@@ -15,12 +15,9 @@ def _make_job(**overrides) -> JobListing:
         company="Acme GmbH",
         description="A short description.",
         location="Berlin, Germany",
-        remote_policy="hybrid",
-        salary_min=60_000.0,
-        salary_max=80_000.0,
-        seniority="mid",
+        remote_percentage=50,
         url="https://example.com/job/1",
-        posted_date=date(2026, 3, 18),
+        posted_date=datetime(2026, 3, 18, 9, 30, 0),
         fetched_at=datetime(2026, 3, 18, 12, 0, 0),
         raw_data={},
     )

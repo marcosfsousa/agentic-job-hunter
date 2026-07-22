@@ -13,7 +13,7 @@ import pytest
 import resend.exceptions
 
 from jobscout.delivery.email_sender import _is_configured, send_digest
-from jobscout.delivery.formatter import _format_salary, format_digest
+from jobscout.delivery.formatter import format_digest
 from jobscout.delivery.writer import write_digest
 from jobscout.models import EvaluationResult, JobListing, ScoredJob
 
@@ -29,8 +29,7 @@ def _make_scored_job(
     id: str = "job-1",
     *,
     with_evaluation: bool = True,
-    salary_min: float | None = 55_000.0,
-    salary_max: float | None = 75_000.0,
+    remote_percentage: int | None = 50,
 ) -> ScoredJob:
     listing = JobListing(
         id=id,
@@ -39,12 +38,9 @@ def _make_scored_job(
         company="Test GmbH",
         description="Build LLM pipelines using LangChain.",
         location="Berlin, Germany",
-        remote_policy="hybrid",
-        salary_min=salary_min,
-        salary_max=salary_max,
-        seniority="mid",
+        remote_percentage=remote_percentage,
         url=f"https://example.com/job/{id}",
-        posted_date=date(2026, 3, 20),
+        posted_date=datetime(2026, 3, 20, 9, 0, 0),
         fetched_at=datetime(2026, 3, 20, 12, 0, 0),
         raw_data={},
     )
@@ -134,34 +130,28 @@ class TestFormatDigest:
         result = format_digest([], run_date=date(2026, 1, 15))
         assert "2026-01-15" in result
 
-    def test_no_salary_line_when_both_none(self):
-        result = format_digest(
-            [_make_scored_job(salary_min=None, salary_max=None)], run_date=_RUN_DATE
-        )
+    def test_no_salary_line_is_ever_rendered(self):
+        """Annual salary left the model with the contract pivot."""
+        result = format_digest([_make_scored_job()], run_date=_RUN_DATE)
         assert "**Salary:**" not in result
+        assert "€" not in result
+
+    def test_remote_line_renders_from_percentage(self):
+        result = format_digest([_make_scored_job(remote_percentage=100)], run_date=_RUN_DATE)
+        assert "**Remote:** remote" in result
+
+    def test_remote_line_renders_hybrid_from_partial_percentage(self):
+        result = format_digest([_make_scored_job(remote_percentage=60)], run_date=_RUN_DATE)
+        assert "**Remote:** hybrid" in result
+
+    def test_remote_line_renders_when_percentage_is_unknown(self):
+        result = format_digest([_make_scored_job(remote_percentage=None)], run_date=_RUN_DATE)
+        assert "**Remote:** not_specified" in result
 
     def test_job_section_contains_id_and_source(self):
         result = format_digest([_make_scored_job("abc-123")], run_date=_RUN_DATE)
         assert "**ID:** abc-123" in result
         assert "**Source:** test" in result
-
-
-# ---------------------------------------------------------------------------
-# TestFormatSalary
-# ---------------------------------------------------------------------------
-
-class TestFormatSalary:
-    def test_both_min_and_max(self):
-        assert _format_salary(50_000, 70_000) == "€50,000 – €70,000"
-
-    def test_only_max(self):
-        assert _format_salary(None, 70_000) == "up to €70,000"
-
-    def test_only_min(self):
-        assert _format_salary(50_000, None) == "from €50,000"
-
-    def test_neither(self):
-        assert _format_salary(None, None) == ""
 
 
 # ---------------------------------------------------------------------------

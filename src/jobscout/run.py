@@ -8,10 +8,7 @@ from pathlib import Path
 import anthropic
 import yaml
 
-from jobscout.adapters.adzuna import AdzunaAdapter
 from jobscout.adapters.base import JobScoutAdapterError
-from jobscout.adapters.jsearch import JSearchAdapter
-from jobscout.adapters.jobspy import JobSpyAdapter
 from jobscout.config import get_config
 from jobscout.delivery.email_sender import send_digest
 from jobscout.delivery.formatter import format_digest
@@ -103,11 +100,13 @@ def _sync_feedback(db: "JobDatabase", feedback_path: Path) -> None:
 
 # All registered adapters run on every pipeline execution.
 # An adapter self-disables if its API key is absent from .env.
-_ADAPTER_REGISTRY = {
-    "germany": AdzunaAdapter,
-    "jsearch": JSearchAdapter,
-    "jobspy": JobSpyAdapter,
-}
+#
+# Deliberately empty: the three FTE adapters (adzuna, jsearch, jobspy) were
+# deleted with the contract-model pivot, and freelancermap has not landed yet.
+# The pipeline is dark until it does — the daily schedule is disarmed to match.
+# Their implementations are recoverable from git history if a text-only source
+# ever needs a reference. Add the new adapter here.
+_ADAPTER_REGISTRY: dict[str, type] = {}
 
 
 async def run_pipeline(

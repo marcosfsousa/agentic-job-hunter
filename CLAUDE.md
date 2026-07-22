@@ -43,7 +43,11 @@ Goal: fewer, higher-quality matches. This tool finds and ranks. User decides wha
 ## Git workflow
 
 Always run `git pull` before making any file changes in this repo.
-The pipeline commits a DB file daily via GitHub Actions, so the local copy may be behind.
+The daily GitHub Action commits `data/feedback.yaml`, so the local copy may be behind.
+**`data/jobscout.db` is never committed** — it holds the full description of every ingested
+listing, and republishing ingested source content is not ours to do. It is gitignored, lives
+only on disk locally, and survives between CI runs via an Actions cache.
+`tests/test_repo_invariants.py` fails if it becomes tracked again.
 **Never push to `main` directly, force-push, or merge into `main` by hand.** All work reaches `main`
 through a branch and a reviewed PR — a hotfix is a short-lived branch and a fast PR, not an edit on
 `main`. (This replaces the previous stash → checkout main → edit → push hotfix flow.)

@@ -21,15 +21,10 @@ class AppConfig(BaseModel):
     profile: UserProfile
 
     # Required API keys — validated non-empty at load time
-    adzuna_app_id: str
-    adzuna_app_key: str
     anthropic_api_key: str
 
     # LLM model used for evaluation — change here to swap models pipeline-wide
     llm_model: str = "claude-haiku-4-5-20251001"
-
-    # JSearch via OpenWebNinja — optional; omit to disable this source
-    open_web_ninja_api_key: str | None = None
 
     # Optional email delivery via Resend — all three must be set to enable sending
     resend_api_key: str | None = None
@@ -63,7 +58,7 @@ class AppConfig(BaseModel):
             self.reeval_below = self.profile.email_min_score
         return self
 
-    @field_validator("adzuna_app_id", "adzuna_app_key", "anthropic_api_key")
+    @field_validator("anthropic_api_key")
     @classmethod
     def must_be_non_empty(cls, v: str, info) -> str:
         if not v.strip():
@@ -129,11 +124,8 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
 
     cfg = AppConfig(
         profile=profile,
-        adzuna_app_id=os.environ.get("ADZUNA_APP_ID", ""),
-        adzuna_app_key=os.environ.get("ADZUNA_APP_KEY", ""),
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         reeval_below=int(os.environ.get("REEVAL_BELOW", str(profile.email_min_score))),
-        open_web_ninja_api_key=os.environ.get("OPEN_WEB_NINJA_API") or None,
         resend_api_key=os.environ.get("RESEND_API_KEY") or None,
         email_to=os.environ.get("EMAIL_TO") or None,
         email_from=os.environ.get("EMAIL_FROM") or None,

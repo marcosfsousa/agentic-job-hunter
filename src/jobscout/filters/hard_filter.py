@@ -22,12 +22,9 @@ def apply_hard_filter(jobs: list[JobListing], profile: UserProfile) -> list[JobL
 
 def _passes_all(job: JobListing, profile: UserProfile) -> bool:
     return (
-        _passes_seniority(job, profile)
-        and _passes_experience(job, profile)
-        and _passes_company(job, profile)
+        _passes_company(job, profile)
         and _passes_exclude_keywords(job, profile)
         and _passes_require_keywords(job, profile)
-        and _passes_salary(job, profile)
         and _passes_location(job, profile)
     )
 
@@ -36,36 +33,8 @@ def _passes_all(job: JobListing, profile: UserProfile) -> bool:
 # Predicates
 # ---------------------------------------------------------------------------
 
-def _passes_seniority(job: JobListing, profile: UserProfile) -> bool:
-    if job.seniority is None or job.seniority == "not_specified":
-        return True
-    if job.seniority in profile.seniority.exclude:
-        return False
-    return job.seniority in profile.seniority.target
-
-
-_YEARS_EXP_RE = re.compile(
-    r"(\d+)\s*\+?\s*(?:"
-    r"(?:to\s*\d+\s*)?years?\s+(?:of\s+)?(?:professional\s+|work\s+|industry\s+|relevant\s+)?(?:experience|expertise)"
-    r"|jahre\s+(?:(?:berufs)?erfahrung|(?:relevante[r]?\s+)?(?:berufs)?erfahrung)"
-    r")",
-    re.IGNORECASE,
-)
-
-
 def _job_text(job: JobListing) -> str:
     return f"{job.title} {job.description}"
-
-
-def _passes_experience(job: JobListing, profile: UserProfile) -> bool:
-    max_years = profile.seniority.max_years_experience
-    if max_years is None:
-        return True
-    matches = _YEARS_EXP_RE.findall(_job_text(job))
-    # Keep the job if the minimum stated requirement is within the limit
-    if not matches:
-        return True
-    return min(int(y) for y in matches) <= max_years
 
 
 def _passes_company(job: JobListing, profile: UserProfile) -> bool:
@@ -90,12 +59,6 @@ def _passes_require_keywords(job: JobListing, profile: UserProfile) -> bool:
         re.search(rf"\b{re.escape(kw.lower())}\b", text)
         for kw in profile.dealbreakers.require_any_keyword
     )
-
-
-def _passes_salary(job: JobListing, profile: UserProfile) -> bool:
-    if job.salary_max is None:
-        return True
-    return job.salary_max >= profile.salary.minimum_annual_eur
 
 
 def _passes_location(job: JobListing, profile: UserProfile) -> bool:

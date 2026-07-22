@@ -1,15 +1,30 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import date
+from datetime import date, datetime
 
 from jobscout.config import AppConfig
 from jobscout.models import JobListing
 
 
+def _as_date(value: date) -> date:
+    """Narrow a date-or-datetime to a calendar date.
+
+    ``posted_date`` is a full timestamp but ``--since`` is day-granular, and
+    Python raises TypeError on a datetime-to-date comparison rather than
+    coercing. Both sides are narrowed so the cutoff means "posted on or after
+    this day" regardless of which type reaches it.
+    """
+    return value.date() if isinstance(value, datetime) else value
+
+
 def filter_by_since(listings: list[JobListing], since: date) -> list[JobListing]:
     """Return listings posted on or after ``since``. Listings with no posted_date are kept."""
-    return [j for j in listings if j.posted_date is None or j.posted_date >= since]
+    cutoff = _as_date(since)
+    return [
+        j for j in listings
+        if j.posted_date is None or _as_date(j.posted_date) >= cutoff
+    ]
 
 
 class JobScoutAdapterError(Exception):
