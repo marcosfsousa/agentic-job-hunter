@@ -9,17 +9,48 @@ on:
     types: [opened, assigned]
   pull_request_review:
     types: [submitted]
-  # Automatic review. Deliberately NOT `synchronize` — that re-reviews on every
-  # push and bills for it. Push follow-up commits freely, then comment @claude
-  # to re-review when the branch is actually ready.
-  pull_request:
-    types: [opened, ready_for_review]
+  # ---------------------------------------------------------------------------
+  # AUTOMATIC PR REVIEW — DISARMED 2026-07-22.
+  #
+  # Seven review runs fired in a single day and the seventh died mid-run on an
+  # exhausted API credit balance. The review bills `ANTHROPIC_API_KEY` (see the
+  # `review` job below), so while that balance is empty the job cannot succeed —
+  # an armed trigger only stamps a red cross on PRs that are otherwise fine.
+  # Disarmed rather than left failing, so a failed check means something.
+  #
+  # Nothing is lost while this is off:
+  #   - `@claude` on a PR or issue still runs the on-demand job below.
+  #   - `/code-review` locally covers the same two axes (Standards + Spec) and
+  #     bills nothing to this API account — it runs on the Claude subscription.
+  #
+  # TO RE-ARM: uncomment the four lines below. They are deliberately left in a
+  # cost-controlled shape rather than the original one:
+  #   - `paths-ignore` skips prose-only PRs. One run cost $0.24 to review a
+  #     five-line comment fix in CLAUDE.md; a PR touching any path outside the
+  #     list is reviewed exactly as before.
+  #   - `.github/**` is deliberately NOT ignored — workflow diffs carry
+  #     permissions and secret handling, the last thing to merge unreviewed.
+  #   - `synchronize` stays absent: it re-reviews on every push and bills each
+  #     time. Push freely, then comment @claude when the branch is ready.
+  # ---------------------------------------------------------------------------
+  # pull_request:
+  #   types: [opened, ready_for_review]
+  #   paths-ignore:
+  #     - '**/*.md'
+  #     - 'docs/**'
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Automatic PR review. CodeRabbit skips any PR whose base is not the default
-  # branch, which is every pivot spec PR (#26-#29 target v2-freelance-pivot), so
-  # this is the only automated review those PRs get.
+  # Automatic PR review. DORMANT — its `pull_request` trigger is commented out
+  # above, so this job never fires; the body is kept intact so re-arming is a
+  # trigger change, not a rewrite.
+  #
+  # When armed, this is the ONLY automated review any PR here gets:
+  # `.coderabbit.yaml` disables CodeRabbit's auto-review outright (it was already
+  # skipping every pivot spec PR — its auto-review only runs against the default
+  # branch — and two bots on one diff produced findings nobody reconciled). So
+  # while this is disarmed, PR review is a human job, or `/code-review` locally.
+  # `@coderabbitai review` also still works on demand.
   # ---------------------------------------------------------------------------
   review:
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
