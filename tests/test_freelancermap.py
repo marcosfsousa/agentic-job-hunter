@@ -556,6 +556,34 @@ class TestMultiQueryCoverage:
         )
         assert len(await adapter.fetch(max_results=4)) == 4
 
+    async def test_truncating_to_max_results_is_never_silent(self, caplog):
+        """The dropped rows are whichever queries ran last, so a quiet truncation
+        makes *adding* a query cost coverage rather than add it — the opposite of
+        what the query list is for. Same no-silent-caps rule as the request cap."""
+        adapter = _adapter(
+            _serving({"LLM": _page([_project(i) for i in range(10)])}),
+            queries=["LLM"],
+            min_raw_ingest=1,
+        )
+        with caplog.at_level("WARNING"):
+            await adapter.fetch(max_results=4)
+
+        assert "truncated" in caplog.text
+        assert "max_results=4" in caplog.text
+
+    async def test_no_warning_when_everything_fits(self, caplog):
+        """Guards the guard: proves the warning above tracks truncation rather than
+        firing on every run."""
+        adapter = _adapter(
+            _serving({"LLM": _page([_project(i) for i in range(3)])}),
+            queries=["LLM"],
+            min_raw_ingest=1,
+        )
+        with caplog.at_level("WARNING"):
+            await adapter.fetch(max_results=100)
+
+        assert "truncated" not in caplog.text
+
     async def test_since_filters_after_the_union(self):
         adapter = _adapter(
             _serving({"LLM": _page([
@@ -575,6 +603,20 @@ class TestMultiQueryCoverage:
         adapter = _adapter(_serving({"LLM": page}), queries=["LLM"], min_raw_ingest=1)
         listings = await adapter.fetch()
         assert [j.id for j in listings] == ["1"]
+
+    async def test_a_structured_id_is_dropped_rather_than_stringified(self):
+        """The union key and the normalised id must agree on what an id is.
+
+        A bare `str()` in the union would key this row as "[1, 2]" while
+        normalisation rejected the same value and produced `id == ""` — admitting
+        exactly the un-dedupable listing the test above exists to keep out.
+        """
+        page = _page([_project(1), _project([1, 2])])
+        adapter = _adapter(_serving({"LLM": page}), queries=["LLM"], min_raw_ingest=1)
+        listings = await adapter.fetch()
+
+        assert [j.id for j in listings] == ["1"]
+        assert all(j.id for j in listings), "no listing may carry an empty id"
 
 
 class TestBindingConstraints:

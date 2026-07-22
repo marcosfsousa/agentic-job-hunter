@@ -290,6 +290,14 @@ Handed down by D and surfaced here so they aren't lost; all are `profile.yaml` *
   none — so every row takes the `pct >= floor` path and widening this list changes nothing.
   It is **dormant, not dead**: it is the correct behaviour for a future text-only source, which
   is why it is not being removed. Re-read this flag as live the day a second source lands.
+
+  **There is a second, stronger reason**, and it survives even if the first stops holding: the
+  adapter pins `countries[0]=1` (Germany) as a **server-side** filter on every request, to keep
+  fetch volume down per G (#11)'s no-overload constraint. Non-DE rows are therefore never
+  fetched at all, so widening `target_countries` to Austria or Switzerland could not work on
+  freelancermap even if every row's `remoteInPercent` were null tomorrow. Actually widening to
+  DACH is an **adapter** change (drop or extend that parameter) *and* a `profile.yaml` change —
+  not the value edit this flag implied.
 - **Annotation-shop exclusions** — add Mercor / Surge / Outlier / Scale to `exclude_companies`
   (they title labelling piecework as "AI Engineer" and will rank well while being wrong).
 - **`target_roles` refresh** toward contract/German phrasing.

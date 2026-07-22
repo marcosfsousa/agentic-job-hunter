@@ -335,6 +335,19 @@ class FreelancermapAdapter(JobAdapter):
         listings = [self._normalize(raw) for raw in raw_by_id.values()]
         if since is not None:
             listings = filter_by_since(listings, since)
+
+        if len(listings) > max_results:
+            # Never silently, for the same reason the request cap logs: the rows
+            # dropped here are whichever queries ran last, so a truncating run makes
+            # *adding* a query cost coverage instead of adding it — the exact
+            # opposite of what the query list is for. Five seeded queries can union
+            # past `run.py`'s default of 100.
+            logger.warning(
+                "freelancermap: %d listings truncated to max_results=%d — the %d dropped "
+                "row(s) are from the queries that ran last. Raise max_results rather than "
+                "shortening freelancermap_queries.",
+                len(listings), max_results, len(listings) - max_results,
+            )
         return listings[:max_results]
 
     def _budgeted_queries(self) -> list[str]:
@@ -596,9 +609,14 @@ def _project_id(raw: dict[str, Any]) -> str | None:
 
     Reads the untyped dict rather than `_RawProject` because it runs during the
     union, before normalisation — the id is what the union is keyed on.
+
+    Coerces through `_nullable_str` so this agrees with `_RawProject.id`, which the
+    same row reaches moments later. A bare `str()` here would disagree: a structured
+    id would key the union as `"[1, 2]"` while normalisation rejected it and produced
+    `JobListing.id == ""` — a listing that can be neither deduped nor marked seen,
+    which is precisely what dropping the row is supposed to prevent.
     """
-    value = raw.get("id")
-    return str(value) if value is not None else None
+    return _nullable_str(raw.get("id")) or None
 
 
 def _project_url(project: _RawProject) -> str:
