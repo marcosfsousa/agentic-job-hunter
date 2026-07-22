@@ -93,11 +93,12 @@ def _passes_location(job: JobListing, profile: UserProfile) -> bool:
         # target country (the floor outranks location).
         return pct >= floor
 
-    # No percentage, or the gate is switched off. The REMOTE axis fails open — the
-    # job is not rejected for being insufficiently remote — but a text-only source
-    # that says remote is still exempt from the country check. Under ADR 0001 a
-    # non-null percentage always wins, so this can only fire when the number is
-    # absent; it cannot contradict the floor above.
+    # The floor did not decide — either the source published no percentage, or the
+    # gate is switched off. The REMOTE axis fails open (the job is not rejected for
+    # being insufficiently remote), but fully-remote work is still exempt from the
+    # country check. This reaches `remote_policy` rather than the raw percentage so
+    # that a text-only source saying "remote" is read too. It cannot contradict the
+    # branch above, which returned whenever both values were present.
     if job.remote_policy == "remote":
         return True
 

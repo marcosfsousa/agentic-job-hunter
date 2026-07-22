@@ -18,9 +18,12 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from jobscout.config import _PROJECT_ROOT, get_config, reset_config
+from jobscout.config import get_config, reset_config
 
-SHIPPED_PROFILE = _PROJECT_ROOT / "profile.yaml"
+# Located the same way tests/test_repo_invariants.py locates repo files, rather than
+# by importing config.py's private root — the point here is to load the file that
+# actually ships.
+SHIPPED_PROFILE = Path(__file__).resolve().parent.parent / "profile.yaml"
 
 
 @pytest.fixture(autouse=True)
@@ -127,6 +130,29 @@ class TestUnrecognisedKeysAreRejected:
         path = _profile_with(tmp_path, mutate)
         with pytest.raises(ValidationError, match="freelancer_map_queries"):
             get_config(profile_path=path)
+
+    def test_out_of_range_remote_floor_raises(self, tmp_path):
+        """A percentage outside 0-100 is unsatisfiable — it must not fail silently.
+
+        The key is spelled right here, so strictness alone would not catch it; a
+        floor of 1000 would simply reject every listing and produce an empty digest
+        that looks like a quiet day.
+        """
+        def mutate(data: dict) -> None:
+            data["dealbreakers"]["minimum_remote_percentage"] = 1000
+
+        path = _profile_with(tmp_path, mutate)
+        with pytest.raises(ValidationError, match="minimum_remote_percentage"):
+            get_config(profile_path=path)
+
+    def test_null_remote_floor_is_allowed(self, tmp_path):
+        """Disabling the gate stays expressible without deleting the key."""
+        def mutate(data: dict) -> None:
+            data["dealbreakers"]["minimum_remote_percentage"] = None
+
+        path = _profile_with(tmp_path, mutate)
+        profile = get_config(profile_path=path).profile
+        assert profile.dealbreakers.minimum_remote_percentage is None
 
     def test_misspelled_rate_key_raises(self, tmp_path):
         def mutate(data: dict) -> None:

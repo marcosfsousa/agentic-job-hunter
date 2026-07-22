@@ -174,14 +174,15 @@ class DealbreakersConfig(_StrictProfileModel):
     exclude_keywords: list[str] = Field(default_factory=list)
     require_any_keyword: list[str] = Field(default_factory=list)
 
-    # Blocklist, never an allowlist: an allowlist of ["contracting"] would silently
-    # empty the corpus the day a source that emits `unknown` in bulk is added. Empty
-    # rejects nothing.
+    # Read by `_passes_contract_type` — a blocklist, and see that predicate for why
+    # the direction matters. Empty rejects nothing.
     exclude_contract_types: list[ContractType] = Field(default_factory=list)
 
-    # The remote floor `_passes_location` compares `remote_percentage` against.
-    # None disables the remote gate and leaves the country check to decide.
-    minimum_remote_percentage: int | None = 100
+    # The floor `_passes_location` compares `remote_percentage` against; None
+    # switches that gate off. Bounded because it is a percentage: a mistyped 1000
+    # would otherwise reject every listing silently, which is the same class of
+    # failure the strict key validation above exists to prevent.
+    minimum_remote_percentage: int | None = Field(default=100, ge=0, le=100)
 
 
 class SkillsConfig(_StrictProfileModel):

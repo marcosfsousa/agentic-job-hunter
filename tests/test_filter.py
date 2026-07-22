@@ -72,6 +72,27 @@ def _make_profile(**overrides) -> UserProfile:
     return UserProfile(**defaults)
 
 
+def _gated(
+    *,
+    contract_types: list | None = None,
+    remote_floor: int | None = None,
+) -> UserProfile:
+    """A profile with one or both new gates armed, keeping the base dealbreakers.
+
+    Overriding `dealbreakers=` wholesale would silently drop `exclude_keywords` and
+    `require_any_keyword`, so an `apply_hard_filter` assertion built that way would
+    run with the surviving predicates inert — proving the new gate is wired, but
+    only in a filter that has nothing else in it.
+    """
+    base = _make_profile().dealbreakers
+    return _make_profile(
+        dealbreakers=base.model_copy(update={
+            "exclude_contract_types": contract_types or [],
+            "minimum_remote_percentage": remote_floor,
+        })
+    )
+
+
 PROFILE = _make_profile()
 
 
@@ -173,27 +194,17 @@ class TestPassesRequireKeywords:
 # _passes_contract_type
 # ---------------------------------------------------------------------------
 
-def _blocking(*contract_types) -> UserProfile:
-    """A profile whose only active gate is the contract-type blocklist."""
-    return _make_profile(
-        dealbreakers=DealbreakersConfig(
-            exclude_contract_types=list(contract_types),
-            minimum_remote_percentage=None,
-        )
-    )
-
-
 class TestPassesContractType:
     def test_blocklisted_type_is_rejected(self):
-        profile = _blocking("employee_leasing", "permanent_position")
+        profile = _gated(contract_types=["employee_leasing", "permanent_position"])
         assert not _passes_contract_type(_make_job(contract_type="employee_leasing"), profile)
 
     def test_second_blocklisted_type_is_rejected(self):
-        profile = _blocking("employee_leasing", "permanent_position")
+        profile = _gated(contract_types=["employee_leasing", "permanent_position"])
         assert not _passes_contract_type(_make_job(contract_type="permanent_position"), profile)
 
     def test_contracting_passes(self):
-        profile = _blocking("employee_leasing", "permanent_position")
+        profile = _gated(contract_types=["employee_leasing", "permanent_position"])
         assert _passes_contract_type(_make_job(contract_type="contracting"), profile)
 
     def test_unknown_passes(self):
@@ -203,12 +214,12 @@ class TestPassesContractType:
         the day a source that cannot determine the engagement form is added. If
         someone "simplifies" the predicate to an allowlist, this is what catches it.
         """
-        profile = _blocking("employee_leasing", "permanent_position")
+        profile = _gated(contract_types=["employee_leasing", "permanent_position"])
         assert _passes_contract_type(_make_job(contract_type="unknown"), profile)
 
     def test_empty_blocklist_rejects_nothing(self):
         """The predicate's disabled state is expressible without deleting it."""
-        profile = _blocking()
+        profile = _gated()
         assert _passes_contract_type(_make_job(contract_type="employee_leasing"), profile)
 
     def test_outcome_follows_config_not_a_constant(self):
@@ -219,8 +230,8 @@ class TestPassesContractType:
         assertion that actually proves the config wiring landed.
         """
         job = _make_job(contract_type="employee_leasing")
-        assert _passes_contract_type(job, _blocking())
-        assert not _passes_contract_type(job, _blocking("employee_leasing"))
+        assert _passes_contract_type(job, _gated())
+        assert not _passes_contract_type(job, _gated(contract_types=["employee_leasing"]))
 
 
 # ---------------------------------------------------------------------------
@@ -231,32 +242,28 @@ class TestPassesContractType:
 # branch is pinned separately below.
 # ---------------------------------------------------------------------------
 
-def _with_remote_floor(floor: int | None) -> UserProfile:
-    return _make_profile(dealbreakers=DealbreakersConfig(minimum_remote_percentage=floor))
-
-
 class TestPassesLocationRemoteFloor:
     """A known percentage decides alone — the country check does not run."""
 
     def test_at_the_floor_passes_with_a_non_matching_country(self):
         """Story 16: a remote project is not rejected for being posted from Lisbon."""
         job = _make_job(remote_percentage=100, location="Lisbon, Portugal")
-        assert _passes_location(job, _with_remote_floor(100))
+        assert _passes_location(job, _gated(remote_floor=100))
 
     def test_above_the_floor_passes_with_a_non_matching_country(self):
         job = _make_job(remote_percentage=80, location="London, UK")
-        assert _passes_location(job, _with_remote_floor(50))
+        assert _passes_location(job, _gated(remote_floor=50))
 
     def test_below_the_floor_is_rejected_despite_a_matching_country(self):
         """Story 17: the remote gate outranks location, not the other way round."""
         job = _make_job(remote_percentage=40, location="Berlin, Germany")
-        assert not _passes_location(job, _with_remote_floor(100))
+        assert not _passes_location(job, _gated(remote_floor=100))
 
     def test_outcome_follows_config_not_a_constant(self):
         """The same listing, two floors, opposite outcomes — proves P's move landed."""
         job = _make_job(remote_percentage=60, location="Berlin, Germany")
-        assert _passes_location(job, _with_remote_floor(50))
-        assert not _passes_location(job, _with_remote_floor(80))
+        assert _passes_location(job, _gated(remote_floor=50))
+        assert not _passes_location(job, _gated(remote_floor=80))
 
 
 class TestPassesLocationWhenPercentageIsUnknown:
@@ -274,7 +281,7 @@ class TestPassesLocationWhenPercentageIsUnknown:
             remote_policy_text="not_specified",
             location="Munich, Germany",
         )
-        assert _passes_location(job, _with_remote_floor(100))
+        assert _passes_location(job, _gated(remote_floor=100))
 
     def test_non_matching_country_is_rejected(self):
         """The assertion that pins the resolved reading.
@@ -291,7 +298,7 @@ class TestPassesLocationWhenPercentageIsUnknown:
             remote_policy_text="not_specified",
             location="Amsterdam, Netherlands",
         )
-        assert not _passes_location(job, _with_remote_floor(100))
+        assert not _passes_location(job, _gated(remote_floor=100))
 
     def test_text_only_remote_is_exempt_from_the_country_check(self):
         """Story 19: read the best signal available, not only the structured one.
@@ -304,7 +311,7 @@ class TestPassesLocationWhenPercentageIsUnknown:
             remote_policy_text="remote",
             location="Lisbon, Portugal",
         )
-        assert _passes_location(job, _with_remote_floor(100))
+        assert _passes_location(job, _gated(remote_floor=100))
 
 
 class TestPassesLocationWhenGateDisabled:
@@ -313,15 +320,15 @@ class TestPassesLocationWhenGateDisabled:
     def test_low_remote_percentage_in_a_target_country_passes(self):
         """The percentage is no longer consulted; the country check decides."""
         job = _make_job(remote_percentage=0, location="Berlin, Germany")
-        assert _passes_location(job, _with_remote_floor(None))
+        assert _passes_location(job, _gated(remote_floor=None))
 
     def test_low_remote_percentage_outside_target_countries_is_rejected(self):
         job = _make_job(remote_percentage=0, location="London, UK")
-        assert not _passes_location(job, _with_remote_floor(None))
+        assert not _passes_location(job, _gated(remote_floor=None))
 
     def test_fully_remote_still_passes_via_the_policy_exemption(self):
         job = _make_job(remote_percentage=100, location="Anywhere")
-        assert _passes_location(job, _with_remote_floor(None))
+        assert _passes_location(job, _gated(remote_floor=None))
 
     def test_unknown_percentage_falls_through_to_the_country_check(self):
         assert _passes_location(
@@ -330,7 +337,7 @@ class TestPassesLocationWhenGateDisabled:
                 remote_percentage=None,
                 remote_policy_text="not_specified",
             ),
-            _with_remote_floor(None),
+            _gated(remote_floor=None),
         )
         assert not _passes_location(
             _make_job(
@@ -338,7 +345,7 @@ class TestPassesLocationWhenGateDisabled:
                 remote_percentage=None,
                 remote_policy_text="not_specified",
             ),
-            _with_remote_floor(None),
+            _gated(remote_floor=None),
         )
 
 
@@ -367,13 +374,13 @@ class TestApplyHardFilter:
     def test_blocklisted_contract_type_never_reaches_evaluation(self):
         leasing = _make_job(id="leasing", contract_type="employee_leasing")
         contracting = _make_job(id="contracting", contract_type="contracting")
-        profile = _blocking("employee_leasing", "permanent_position")
+        profile = _gated(contract_types=["employee_leasing", "permanent_position"])
         assert apply_hard_filter([leasing, contracting], profile) == [contracting]
 
     def test_work_below_the_remote_floor_never_reaches_evaluation(self):
         onsite = _make_job(id="onsite", remote_percentage=40, location="Berlin, Germany")
         remote = _make_job(id="remote", remote_percentage=100, location="Berlin, Germany")
-        assert apply_hard_filter([onsite, remote], _with_remote_floor(100)) == [remote]
+        assert apply_hard_filter([onsite, remote], _gated(remote_floor=100)) == [remote]
 
 
 # ---------------------------------------------------------------------------

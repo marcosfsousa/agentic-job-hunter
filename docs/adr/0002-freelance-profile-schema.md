@@ -83,6 +83,24 @@ freelancermap_queries:             # replaces jsearch_queries / jobspy_queries /
 | **`LocationConfig`** trimmed | drop `preferred_cities`, `remote_acceptable`, `eu_work_authorization` (zero consumers in `src/`); keep only `target_countries`. |
 | **`DealbreakersConfig`** | add `exclude_contract_types: list[ContractType] = Field(default_factory=list)` — imports B's `ContractType`. Also add `minimum_remote_percentage: int \| None = 100` — read by `_passes_location`, replacing F decision 7's hardcoded `100` (P [#22](https://github.com/marcosfsousa/agentic-job-hunter/issues/22)). |
 | **`UserProfile`** | drop `jsearch_queries`, `jobspy_queries`, `jobspy_sites`; add `freelancermap_queries: list[str]`. |
+| **All five profile models strict** | `UserProfile`, `RateConfig`, `LocationConfig`, `DealbreakersConfig`, `SkillsConfig` set `extra="forbid"` — an unrecognised key is a load error, not a silent default. Added by spec 2 ([#27](https://github.com/marcosfsousa/agentic-job-hunter/issues/27)). |
+
+⚠️ **The strictness row is an addition by spec 2, not part of this ADR as originally accepted.**
+Recorded here because it changes what `profile.yaml` may legally contain, which is this ADR's
+subject. The reason is specific rather than stylistic: the two gates above are the first hard
+filters wired to config, the tests build `UserProfile` in code, and so a key misspelled *in the
+file* falls back to its Pydantic default, changes what gets filtered, and breaks nothing. With
+`minimum_remote_percentage` defaulting to `100`, that means the strictest possible remote stance
+applied silently.
+
+It also makes the FTE profile cleanup a **hard prerequisite** rather than a tidiness item: a
+leftover `salary:` / `seniority:` / `jsearch_queries` block becomes a load error, not an ignored
+key.
+
+**Scoped to the profile models only.** `EvaluationResult` and `FeedbackEntry` validate data from
+outside the repo — Haiku's JSON and `feedback.yaml` — and stay permissive, so a provider adding a
+response field cannot break the pipeline. This is a rule about *our* config file, not about
+Pydantic usage in general.
 
 ### Answer to B's enum-wiring handoff
 

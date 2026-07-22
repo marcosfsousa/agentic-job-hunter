@@ -102,8 +102,9 @@ dealbreakers:
 
   # Remote floor. A job whose remote_percentage is below this is rejected; one at
   # or above it passes without a country check. A job with no percentage is not
-  # rejected for remoteness but still faces target_countries. null disables the
-  # gate entirely and leaves the country check to decide.
+  # rejected for remoteness but still faces target_countries. null switches the
+  # floor off, leaving target_countries to decide — except for fully-remote work,
+  # which is exempt from the country check either way.
   minimum_remote_percentage: 100
 
 # Free-text search terms sent to freelancermap. German terms are seeded from the
