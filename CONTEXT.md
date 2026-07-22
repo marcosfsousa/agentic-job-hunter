@@ -21,6 +21,11 @@ When a term here conflicts with how code or conversation uses a word, the confli
   This *replaced* annual **salary**; the two never coexist on a listing. Rate is usually **absent**
   on the DACH side (agencies treat it as a negotiation, not a published figure), so every rate
   field is nullable and nothing may require it.
+- **Rate floor / rate target** — the *user's* asking price, in `profile.yaml`'s `rate:` block.
+  Distinct from **Rate** above, which is the listing's side of the same negotiation — the two are
+  never compared, because nothing in the pipeline reads `rate:` (deliberately: it is a negotiating
+  position held independently of this tool). Stated per unit — hourly and daily each carry their
+  own floor and target, and neither is derived from the other.
 - **Salary** — FTE-era annual-EUR figure. **Removed** from the model. If you see it, it's legacy.
 
 ## Contract shape

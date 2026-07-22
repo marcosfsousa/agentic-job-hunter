@@ -4,6 +4,7 @@
 - **Date:** 2026-07-17
 - **Wayfinder ticket:** [E — Freelance profile.yaml schema](https://github.com/marcosfsousa/agentic-job-hunter/issues/8)
 - **Amended by:** [P — Reconcile ADR 0002 with F](https://github.com/marcosfsousa/agentic-job-hunter/issues/22) (2026-07-18) — `rate:` restated per-unit with no derivation and marked a knowingly-consumer-less exception; remote gate moved from F's hardcode into `dealbreakers.minimum_remote_percentage`; the `deprioritise` "5+ years" entry deleted; Risks 1 and 2 discharged. Amendments are marked inline.
+- **Amended by:** [Spec 2 — Freelance profile schema + hard-filter gates](https://github.com/marcosfsousa/agentic-job-hunter/issues/27) (2026-07-22) — the `_passes_location` statement in Boundaries was ambiguous in a way that made `target_countries` dead config under a literal reading; replaced with the resolved predicate and its rationale. The `freelancermap_queries` English-only comment is flagged as disputed and deferred to spec 4. Amended in place, per P's precedent, so the ADR reads correct rather than merged-then-patched.
 - **Depends on:** [B — Contract data model](https://github.com/marcosfsousa/agentic-job-hunter/issues/5) ([ADR 0001](0001-contract-data-model.md); enums + removed job fields), [D — Hard filter semantics](https://github.com/marcosfsousa/agentic-job-hunter/issues/7) (which predicates read which config), [K — Repoint yield](https://github.com/marcosfsousa/agentic-job-hunter/issues/15) (adapter roster; "supply skews senior")
 - **Part of:** [Wayfinder: JobScout FTE → freelance pivot](https://github.com/marcosfsousa/agentic-job-hunter/issues/3)
 
@@ -36,6 +37,12 @@ below.
 # — `background` / `ideal_role` become positive-only prose, negatives consolidated
 #   into `deprioritise`; the `deprioritise` "5+ years senior" entry is DELETED (P #22).
 # — `freelancermap_queries` values go English-only once e5 lands (N #19 §5).
+#   ⚠️ DISPUTED, deferred to spec 4 (#29) — this line appears to conflate two different
+#   strings. N §5 amends F decision 1, the *embedding query*; `freelancermap_queries` is
+#   what goes to freelancermap's HTTP `query=` parameter, and the embedding model has no
+#   bearing on what a source's own search endpoint matches. Spec 2 (#27) therefore seeded
+#   the German terms as the decision table below specifies, and left the call to the spec
+#   that lands N §5. See #27 for the full argument.
 
 location:
   target_countries: ["Germany", "Deutschland"]   # only surviving location field
@@ -76,6 +83,24 @@ freelancermap_queries:             # replaces jsearch_queries / jobspy_queries /
 | **`LocationConfig`** trimmed | drop `preferred_cities`, `remote_acceptable`, `eu_work_authorization` (zero consumers in `src/`); keep only `target_countries`. |
 | **`DealbreakersConfig`** | add `exclude_contract_types: list[ContractType] = Field(default_factory=list)` — imports B's `ContractType`. Also add `minimum_remote_percentage: int \| None = 100` — read by `_passes_location`, replacing F decision 7's hardcoded `100` (P [#22](https://github.com/marcosfsousa/agentic-job-hunter/issues/22)). |
 | **`UserProfile`** | drop `jsearch_queries`, `jobspy_queries`, `jobspy_sites`; add `freelancermap_queries: list[str]`. |
+| **All five profile models strict** | `UserProfile`, `RateConfig`, `LocationConfig`, `DealbreakersConfig`, `SkillsConfig` set `extra="forbid"` — an unrecognised key is a load error, not a silent default. Added by spec 2 ([#27](https://github.com/marcosfsousa/agentic-job-hunter/issues/27)). |
+
+⚠️ **The strictness row is an addition by spec 2, not part of this ADR as originally accepted.**
+Recorded here because it changes what `profile.yaml` may legally contain, which is this ADR's
+subject. The reason is specific rather than stylistic: the two gates above are the first hard
+filters wired to config, the tests build `UserProfile` in code, and so a key misspelled *in the
+file* falls back to its Pydantic default, changes what gets filtered, and breaks nothing. With
+`minimum_remote_percentage` defaulting to `100`, that means the strictest possible remote stance
+applied silently.
+
+It also makes the FTE profile cleanup a **hard prerequisite** rather than a tidiness item: a
+leftover `salary:` / `seniority:` / `jsearch_queries` block becomes a load error, not an ignored
+key.
+
+**Scoped to the profile models only.** `EvaluationResult` and `FeedbackEntry` validate data from
+outside the repo — Haiku's JSON and `feedback.yaml` — and stay permissive, so a provider adding a
+response field cannot break the pipeline. This is a rule about *our* config file, not about
+Pydantic usage in general.
 
 ### Answer to B's enum-wiring handoff
 
@@ -270,13 +295,51 @@ Handed down by D and surfaced here so they aren't lost; all are `profile.yaml` *
 - **Hard-filter predicates** → decided by D ([#7](https://github.com/marcosfsousa/agentic-job-hunter/issues/7)),
   since **amended twice on `_passes_location`**. E's schema is consistent with D's `_passes_all`
   (seniority/experience/salary removed, `_passes_contract_type` blocklist added). The current
-  `_passes_location` is: **fully-remote (`remote_percentage == 100`) → country-blind pass;
-  `remote_percentage` present and `< minimum_remote_percentage` → reject; `remote_percentage` null
-  → pass (fails open, matching the `contract_type` blocklist shape); otherwise `location` must match
-  a target country.** *(D reshaped it; F decision 7 added the fail-open gate, which is why this
-  ADR's earlier description of it "keeping German-located hybrid/onsite ones" was stale; P
+  `_passes_location` is:
+
+  ```python
+  pct = job.remote_percentage
+  floor = profile.dealbreakers.minimum_remote_percentage
+
+  if pct is not None and floor is not None:
+      # meets the floor -> country-blind pass; below it -> reject
+      return pct >= floor
+
+  # percentage unknown (or gate disabled): the REMOTE axis fails open,
+  # but a text-only source that says "remote" is still exempt
+  if job.remote_policy == "remote":
+      return True
+
+  # ...and the LOCATION axis still applies
+  return any(c.lower() in job.location.lower()
+             for c in profile.location.target_countries)
+  ```
+
+  *(D reshaped it; F decision 7 added the fail-open gate, which is why this ADR's earlier
+  description of it "keeping German-located hybrid/onsite ones" was stale; P
   ([#22](https://github.com/marcosfsousa/agentic-job-hunter/issues/22)) moved the threshold out of
-  the predicate into config.)* The `== 100` / `== 0` cut points were confirmed final by F decision 6.
+  the predicate into config.)* The `>= 100` / `<= 0` cut points were confirmed final by F decision 6
+  and stay in `JobListing.remote_policy`; this predicate reads the property rather than re-deriving
+  the boundary.
+
+  ⚠️ **Amended by spec 2 ([#27](https://github.com/marcosfsousa/agentic-job-hunter/issues/27)) —
+  the prose this replaces was ambiguous and had to be resolved to build it.** It read
+  *"`remote_percentage` null → pass (fails open …); otherwise `location` must match a target
+  country"*. Taken literally — null passes unconditionally — the `otherwise` branch is unreachable
+  and `target_countries` becomes dead config, contradicting this same ADR keeping it as *"the only
+  surviving location field"* and D handing down DACH-widening as a live tuning flag.
+
+  **The correct reading is that "fails open" is scoped to the *remote axis*:** an unknown
+  percentage means the row is not rejected *for being insufficiently remote*, and it still faces
+  the country check. `target_countries` stays live and does its work on exactly the
+  unknown-percentage rows. This is not a cosmetic distinction — freelancermap's `remoteInPercent`
+  populated-rate is still unmeasured (F's build-time deferral, now spec 3's), so if most rows carry
+  no percentage the literal reading would mean no location filtering at all. The predicate is
+  correct either way that measurement lands.
+
+  The pinning test is **null percentage + non-matching country → reject**
+  (`TestPassesLocationWhenPercentageIsUnknown::test_non_matching_country_is_rejected`). Both
+  readings are indistinguishable without it.
 - **Ranking query + eval prompt** (including the rate-adequacy and experience-fit judgements this
   schema feeds, and Risk 2) → F ([#9](https://github.com/marcosfsousa/agentic-job-hunter/issues/9)).
 - **Profile-file migration + `models.py` code edits** → execution. This ADR is the build list; no
