@@ -9,8 +9,78 @@ on:
     types: [opened, assigned]
   pull_request_review:
     types: [submitted]
+  # Automatic review. Deliberately NOT `synchronize` — that re-reviews on every
+  # push and bills for it. Push follow-up commits freely, then comment @claude
+  # to re-review when the branch is actually ready.
+  pull_request:
+    types: [opened, ready_for_review]
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Automatic PR review. CodeRabbit skips any PR whose base is not the default
+  # branch, which is every pivot spec PR (#26-#29 target v2-freelance-pivot), so
+  # this is the only automated review those PRs get.
+  # ---------------------------------------------------------------------------
+  review:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+      actions: read  # read the Tests workflow's result rather than trusting the PR body
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history — the review diffs against the merge-base
+
+      - name: Review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          use_sticky_comment: true  # one comment per PR, updated — not a new one each run
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+            BASE BRANCH: ${{ github.event.pull_request.base.ref }}
+
+            Review this pull request along two axes, reported under separate headings.
+            The PR branch is already checked out. Diff against the merge-base:
+            `git diff origin/${{ github.event.pull_request.base.ref }}...HEAD`
+
+            ## Standards
+            Does the diff follow this repo's documented conventions? Read `CLAUDE.md`
+            (Code conventions, Constraints, Architecture, Git workflow) and `CONTEXT.md`
+            (the domain glossary — code that contradicts a glossary term is a bug, and
+            the glossary says so itself). Cite the file and rule for each finding.
+
+            ## Spec
+            Find the originating issue from the PR body or commit messages (`#NN`) and
+            read it with `gh issue view NN`. Report: requirements missing or partial;
+            behaviour in the diff nobody asked for; requirements implemented wrongly.
+            Quote the spec line for each finding. If the spec names an ADR under
+            `docs/adr/`, read it — where a spec and its ADR disagree, the ADR wins.
+
+            ## Rules
+            - Do NOT take test or typecheck claims in the PR body on trust. Check the
+              `Tests` workflow with `gh pr checks` / `gh run view`. If it has not
+              finished or did not run, say so plainly rather than assuming it passed.
+            - Distinguish blocking issues from judgement calls, and say which is which.
+            - A finding the spec explicitly deferred to another ticket is not a defect.
+              Check the spec's "Out of Scope" section before reporting one.
+            - Say plainly if you find nothing blocking. Do not invent findings to fill
+              the report.
+
+            Post the review with `gh pr comment`. Use inline comments for specific
+            lines. Do not return review text as a chat message — only GitHub comments.
+
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr checks:*),Bash(gh run view:*),Bash(gh run list:*),Bash(gh issue view:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*)"
+
+  # ---------------------------------------------------------------------------
+  # On-demand: responds to an @claude mention on an issue, PR or review comment.
+  # ---------------------------------------------------------------------------
   claude:
     if: |
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
