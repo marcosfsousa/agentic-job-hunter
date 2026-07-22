@@ -39,6 +39,7 @@ import json
 import logging
 import re
 from datetime import date, datetime, timezone
+from html.parser import HTMLParser
 from typing import Annotated, Any, cast, get_args
 
 import httpx
@@ -171,17 +172,42 @@ class _RawContractBlock(BaseModel):
     remoteInPercent: _NullableInt = None
 
 
+class _RawCountry(BaseModel):
+    """`country` is an object, not a string: `{"id": 1, "name": "Deutschland",
+    "iso2": "DE", "nameDe": ..., "nameEn": ...}`. `name` is the German form, which
+    is what `target_countries` already lists alongside "Germany"."""
+
+    name: _NullableStr = None
+
+
+class _RawLinks(BaseModel):
+    """`links.project` is the real project path.
+
+    The top-level `url` field exists but is null on every row measured, so the
+    canonical link lives here instead. Reading `url` and stopping is how every
+    listing ended up pointing at the homepage.
+    """
+
+    project: _NullableStr = None
+
+
 class _RawProject(BaseModel):
     """One entry of the search payload's `initialResults`."""
 
     id: _NullableStr = None
+    slug: _NullableStr = None
     title: _NullableStr = None
     company: _NullableStr = None
     description: _NullableStr = None
     city: _NullableStr = None
-    country: _NullableStr = None
-    url: _NullableStr = None
     created: _NullableStr = None
+
+    country: Annotated[_RawCountry, BeforeValidator(_as_mapping)] = _RawCountry()
+    links: Annotated[_RawLinks, BeforeValidator(_as_mapping)] = _RawLinks()
+
+    # Null on every row measured. Kept because it is the field the payload
+    # advertises for this, and reading it costs nothing if it ever starts working.
+    url: _NullableStr = None
 
     projectContractType: Annotated[_RawContractBlock, BeforeValidator(_as_mapping)] = (
         _RawContractBlock()
@@ -398,9 +424,11 @@ class FreelancermapAdapter(JobAdapter):
             # The poster, which on an intermediated listing is the agency. The
             # end-client is not stored even when `endcustomer` says there is one.
             company=project.company or "",
-            description=project.description or "",
+            # Flattened from the source's editor HTML. `raw_data` keeps the marked-up
+            # original, so nothing is lost.
+            description=_plain_text(project.description),
             location=_location(project),
-            url=_absolute_url(project.url),
+            url=_project_url(project),
             posted_date=_parse_created(project.created),
             fetched_at=datetime.now(timezone.utc),
             # The payload verbatim, including the fields nothing maps — notably
@@ -498,6 +526,63 @@ def _parse_payload(script_body: str) -> dict[str, Any]:
 # Field helpers
 # ---------------------------------------------------------------------------
 
+class _DescriptionTextExtractor(HTMLParser):
+    """Flattens a description's markup to readable text.
+
+    freelancermap's `description` is not prose — it is editor HTML: `<br />` on
+    19/22 rows, `<div class="ql-editor">` and `<span style="color: rgb(0,0,0)">`
+    wrappers on most, `<ul>/<li>` requirement lists on 13/22.
+
+    That markup reaches three places and is wrong in all of them: the digest shows
+    it to a human, the LLM evaluator reads it as part of the listing, and the
+    embedding tokenises it inside a 512-token window the descriptions already
+    overflow — so `<span style="color: rgb(0, 0, 0);">` would displace requirements
+    text that would otherwise have fit.
+
+    Stdlib rather than a parser dependency, per the repo's stdlib-first convention.
+    Tag-shaped text inside a listing is a non-issue: `HTMLParser` drops it, which is
+    the same thing a browser does with the page these came from.
+    """
+
+    # Tags that end a line of text. Without this the flattened output runs list
+    # items and paragraphs together into one unreadable sentence.
+    _BREAKING = frozenset({
+        "br", "p", "div", "li", "ul", "ol", "tr", "table", "blockquote",
+        "h1", "h2", "h3", "h4", "h5", "h6",
+    })
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: Any) -> None:
+        if tag in self._BREAKING:
+            self._parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._BREAKING:
+            self._parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        self._parts.append(data)
+
+    @property
+    def text(self) -> str:
+        return "".join(self._parts)
+
+
+def _plain_text(value: str | None) -> str:
+    """Markup-free description text, with blank-line runs collapsed."""
+    if not value:
+        return ""
+    parser = _DescriptionTextExtractor()
+    parser.feed(value)
+    parser.close()
+
+    lines = [line.strip() for line in parser.text.splitlines()]
+    return "\n".join(line for i, line in enumerate(lines) if line or (i and lines[i - 1])).strip()
+
+
 def _queries(count: int) -> str:
     """"3 queries" / "1 query" — pluralised once, used in the log and the raise."""
     return f"{count} quer{'y' if count == 1 else 'ies'}"
@@ -516,19 +601,41 @@ def _project_id(raw: dict[str, Any]) -> str | None:
     return str(value) if value is not None else None
 
 
-def _absolute_url(url: str | None) -> str:
-    if not url:
-        return _BASE_URL
-    return url if url.startswith("http") else f"{_BASE_URL}{url}"
+def _project_url(project: _RawProject) -> str:
+    """The canonical project link.
+
+    Three sources in descending order of directness. The top-level `url` field is
+    tried first because it is the one the payload advertises for this — but it was
+    null on every row measured, so `links.project` is what actually carries the
+    path, and `slug` reconstructs it if that ever moves too. Falling back to the
+    homepage means a digest entry nobody can open, which is why there are three.
+    """
+    for path in (project.url, project.links.project):
+        if path:
+            return path if path.startswith("http") else f"{_BASE_URL}{path}"
+    if project.slug:
+        return f"{_BASE_URL}/projekt/{project.slug}"
+    return _BASE_URL
 
 
 def _location(project: _RawProject) -> str:
     """City and country, as a display string.
 
     The country is included because it is what `target_countries` matches against
-    on rows the remote gate does not decide.
+    on rows the remote gate does not decide — and `city` alone is not enough for
+    that, since it holds free text the poster typed. It is often a real city, but
+    "D" turns up too, meaning Deutschland.
+
+    That last case is also why the city is dropped when it merely restates the
+    country: "D, Deutschland" is noise, and `location` is read by a human in the
+    digest as well as by the gate.
     """
-    return ", ".join(p for p in (project.city, project.country) if p)
+    city, country = project.city, project.country.name
+    if not country:
+        return city or ""
+    if not city or city.strip().lower() in {country.lower(), country[:1].lower()}:
+        return country
+    return f"{city}, {country}"
 
 
 def _contract_type(value: str | None) -> ContractType:

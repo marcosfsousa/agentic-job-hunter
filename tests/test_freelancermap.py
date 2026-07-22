@@ -109,12 +109,14 @@ def _project(project_id: int, **overrides: Any) -> dict[str, Any]:
         "company": "Nexon IT Consulting GmbH",
         "description": "Aufbau von RAG-Pipelines und LLM-Anwendungen. Remote.",
         "city": "Berlin",
-        "country": "Deutschland",
-        "url": f"/projekt/ml-{project_id}",
+        "country": {"id": 1, "name": "Deutschland", "iso2": "DE"},
+        "slug": f"ml-{project_id}",
+        "url": None,
+        "links": {"project": f"/projekt/ml-{project_id}"},
         "created": "2026-07-16T15:38:04+02:00",
         "projectContractType": {"type": "contracting", "remoteInPercent": 100},
         "endcustomer": False,
-        "budget": [],
+        "budget": None,
     }
     base.update(overrides)
     return base
@@ -148,9 +150,9 @@ def _serving(pages_by_query: dict[str, str], recorder: list | None = None):
 class TestPayloadExtraction:
     """The step a JSON fixture would skip: finding the right blob on a real page."""
 
-    def test_the_fixture_page_yields_its_three_projects(self):
+    def test_the_fixture_page_yields_its_four_projects(self):
         assert [str(r["id"]) for r in _extract_results(FIXTURE_HTML)] == [
-            "2891234", "2891235", "2891236",
+            "3026737", "3026337", "3026469", "3026169",
         ]
 
     def test_another_react_component_on_the_page_is_not_mistaken_for_it(self):
@@ -196,86 +198,187 @@ class TestFieldMapping:
         self.adapter = FreelancermapAdapter(_make_config())
 
     def test_identity_fields_map_directly(self):
-        listing = self.adapter._normalize(_raw_by_id("2891234"))
-        assert listing.id == "2891234"
+        listing = self.adapter._normalize(_raw_by_id("3026337"))
+        assert listing.id == "3026337"
         assert listing.source == "freelancermap"
-        assert listing.title == "Machine Learning Engineer (LLM / RAG) — remote"
-        assert listing.company == "Nexon IT Consulting GmbH"
-        assert "RAG-Pipelines" in listing.description
-
-    def test_relative_url_is_made_absolute(self):
-        listing = self.adapter._normalize(_raw_by_id("2891234"))
-        assert listing.url == (
-            "https://www.freelancermap.de"
-            "/projekt/machine-learning-engineer-llm-rag-remote-2891234"
-        )
-
-    def test_location_carries_the_country_the_gate_matches_on(self):
-        listing = self.adapter._normalize(_raw_by_id("2891235"))
-        assert listing.location == "München, Deutschland"
+        assert listing.title == "Machine Learning Engineer (m/w/d)"
+        assert listing.company == "Randstad Professional GmbH (vorm. GULP)"
+        assert "RAG pipelines" in listing.description
 
     def test_posted_date_is_timezone_aware(self):
         """Incremental sync compares this against a previous run, so a naive
         timestamp would raise rather than compare. The source's own +02:00 offset is
         kept rather than normalised to UTC."""
-        listing = self.adapter._normalize(_raw_by_id("2891234"))
+        listing = self.adapter._normalize(_raw_by_id("3026337"))
         assert listing.posted_date == datetime(
-            2026, 7, 16, 15, 38, 4, tzinfo=timezone(timedelta(hours=2))
+            2026, 7, 22, 9, 23, 10, tzinfo=timezone(timedelta(hours=2))
         )
-        assert listing.posted_date.tzinfo is not None
 
     def test_an_unparseable_created_value_yields_none_rather_than_raising(self):
         listing = self.adapter._normalize(_project(1, created="last Tuesday"))
         assert listing.posted_date is None
 
     def test_remote_percentage_comes_from_remote_in_percent(self):
-        assert self.adapter._normalize(_raw_by_id("2891234")).remote_percentage == 100
-        assert self.adapter._normalize(_raw_by_id("2891235")).remote_percentage == 60
+        assert self.adapter._normalize(_raw_by_id("3026337")).remote_percentage == 100
+        assert self.adapter._normalize(_raw_by_id("3026469")).remote_percentage == 60
+        # Zero is a real value, not a missing one — the distinction the falsy
+        # `or None` idiom would destroy.
+        assert self.adapter._normalize(_raw_by_id("3026737")).remote_percentage == 0
 
     def test_remote_policy_text_is_constant_not_specified(self):
         """freelancermap publishes no free-text policy, so the derived
         `remote_policy` must always resolve off the percentage."""
-        listing = self.adapter._normalize(_raw_by_id("2891235"))
+        listing = self.adapter._normalize(_raw_by_id("3026469"))
         assert listing.remote_policy_text == "not_specified"
         assert listing.remote_policy == "hybrid"   # derived from 60, not from text
 
     def test_contract_type_maps_one_to_one(self):
-        assert self.adapter._normalize(_raw_by_id("2891234")).contract_type == "contracting"
-        assert self.adapter._normalize(_raw_by_id("2891235")).contract_type == "employee_leasing"
+        assert self.adapter._normalize(_raw_by_id("3026337")).contract_type == "contracting"
+        assert self.adapter._normalize(_raw_by_id("3026469")).contract_type == "employee_leasing"
 
     def test_unrecognised_contract_type_becomes_unknown_not_an_error(self):
         """A new vocabulary value must cost precision on one row, not drop it."""
-        listing = self.adapter._normalize(_raw_by_id("2891236"))
+        listing = self.adapter._normalize(_raw_by_id("3026169"))
         assert listing.contract_type == "unknown"
 
-    def test_duration_is_months_with_the_raw_text_preserved(self):
-        listing = self.adapter._normalize(_raw_by_id("2891234"))
+    def test_duration_is_months(self):
+        listing = self.adapter._normalize(_raw_by_id("3026337"))
         assert listing.duration_months == 6
-        assert listing.duration_text == "6 Monate"
         assert listing.duration_is_open_ended is False
 
     def test_missing_duration_reads_as_unknown_not_open_ended(self):
-        listing = self.adapter._normalize(_raw_by_id("2891235"))
+        listing = self.adapter._normalize(_raw_by_id("3026469"))
         assert listing.duration_months is None
         assert listing.duration_is_open_ended is False
+
+    def test_duration_text_is_kept_even_when_there_is_no_integer(self):
+        """"Auf Anfrage" is the whole of what the source said about length."""
+        listing = self.adapter._normalize(_raw_by_id("3026737"))
+        assert listing.duration_months is None
+        assert listing.duration_text == "Auf Anfrage"
 
     def test_ambiguous_duration_text_survives_the_month_parse(self):
         """"3 MM" is plausibly Mannmonate, not three calendar months. The integer is
         taken at face value per the mapping, so `duration_text` is what makes the
         misread recoverable."""
-        listing = self.adapter._normalize(_raw_by_id("2891236"))
+        listing = self.adapter._normalize(_raw_by_id("3026169"))
         assert listing.duration_months == 3
         assert listing.duration_text == "3 MM"
 
     def test_freelancermap_embedding_is_not_mistaken_for_ours(self):
         """The source ships a 1024-dim vector; ours is 384-dim and asymmetric.
         It must reach no model field — only `raw_data`."""
-        listing = self.adapter._normalize(_raw_by_id("2891234"))
+        listing = self.adapter._normalize(_raw_by_id("3026737"))
         assert listing.raw_data["embedding"] == [0.014, -0.221, 0.098]
 
     def test_raw_payload_is_retained(self):
-        listing = self.adapter._normalize(_raw_by_id("2891234"))
-        assert listing.raw_data["pid"] == "P-2891234"
+        listing = self.adapter._normalize(_raw_by_id("3026737"))
+        assert listing.raw_data["pid"] == "P-3026737"
+
+
+class TestProjectUrl:
+    """The top-level `url` field is null on every row measured. Reading it and
+    stopping is how every digest entry ends up pointing at the homepage."""
+
+    def setup_method(self):
+        self.adapter = FreelancermapAdapter(_make_config())
+
+    def test_the_link_comes_from_links_project_when_url_is_null(self):
+        listing = self.adapter._normalize(_raw_by_id("3026337"))
+        assert listing.raw_data["url"] is None
+        assert listing.url == (
+            "https://www.freelancermap.de/projekt/machine-learning-engineer-m-w-d-3026337"
+        )
+
+    def test_no_listing_falls_back_to_the_bare_homepage(self):
+        for raw in _raw_results():
+            listing = self.adapter._normalize(raw)
+            assert listing.url != "https://www.freelancermap.de"
+            assert "/projekt/" in listing.url
+
+    def test_the_slug_reconstructs_the_path_when_links_is_missing(self):
+        listing = self.adapter._normalize(
+            _project(1, url=None, links=None, slug="ml-engineer-1")
+        )
+        assert listing.url == "https://www.freelancermap.de/projekt/ml-engineer-1"
+
+    def test_a_populated_url_field_still_wins(self):
+        listing = self.adapter._normalize(_project(1, url="/projekt/from-url-field"))
+        assert listing.url == "https://www.freelancermap.de/projekt/from-url-field"
+
+
+class TestLocation:
+    """`country` is an object, not a string, and `city` is free text the poster
+    typed — both discovered against the live payload, not the written research."""
+
+    def setup_method(self):
+        self.adapter = FreelancermapAdapter(_make_config())
+
+    def test_city_and_country_name_are_joined(self):
+        listing = self.adapter._normalize(_raw_by_id("3026469"))
+        assert listing.location == "Hamburg, Deutschland"
+
+    def test_the_country_object_is_not_stringified_into_the_location(self):
+        listing = self.adapter._normalize(_raw_by_id("3026469"))
+        assert "iso2" not in listing.location
+
+    def test_a_city_that_merely_restates_the_country_is_dropped(self):
+        """"D" is a real value in this field and means Deutschland, so "D, Deutschland"
+        would be noise in a string a human reads in the digest."""
+        listing = self.adapter._normalize(_raw_by_id("3026737"))
+        assert listing.location == "Deutschland"
+
+    def test_the_country_is_present_for_the_gate_to_match_on(self):
+        """`target_countries` is dormant while every row publishes a remote
+        percentage, but it is not dead — it decides for a future text-only source,
+        and it can only decide if the country reached `location` at all."""
+        for raw in _raw_results():
+            assert "Deutschland" in self.adapter._normalize(raw).location
+
+
+class TestDescriptionIsFlattened:
+    """The description is editor HTML, not the plain prose the written research
+    described — <br /> on 19/22 live rows, ql-editor wrappers on 18/22, <ul> lists
+    on 13/22. Left as-is it reaches the digest a human reads, the LLM evaluator,
+    and an embedding window the descriptions already overflow.
+    """
+
+    def setup_method(self):
+        self.adapter = FreelancermapAdapter(_make_config())
+
+    def test_no_listing_carries_markup_through(self):
+        for raw in _raw_results():
+            description = self.adapter._normalize(raw).description
+            for marker in ("<div", "<br", "<span", "<ul", "<li", "ql-editor", "rgb("):
+                assert marker not in description, (raw["id"], marker)
+
+    def test_the_text_itself_survives(self):
+        listing = self.adapter._normalize(_raw_by_id("3026169"))
+        assert "Prognosemodellen" in listing.description
+        assert "scikit-learn" in listing.description
+
+    def test_list_items_do_not_run_together(self):
+        """Without break handling, "<li>Python</li><li>SQL</li>" flattens to
+        "PythonSQL" — one token that matches neither."""
+        listing = self.adapter._normalize(_raw_by_id("3026169"))
+        assert "SQLErfahrung" not in listing.description
+        assert "Gute Kenntnisse in Python & SQL" in listing.description
+
+    def test_entities_are_decoded(self):
+        listing = self.adapter._normalize(_raw_by_id("3026169"))
+        assert "&amp;" not in listing.description
+        assert " & " in listing.description
+
+    def test_plain_text_passes_through_unharmed(self):
+        listing = self.adapter._normalize(_raw_by_id("3026469"))
+        assert listing.description.startswith("Wir bauen eine interne NLP-Plattform")
+
+    def test_the_marked_up_original_is_still_in_raw_data(self):
+        listing = self.adapter._normalize(_raw_by_id("3026169"))
+        assert "ql-editor" in listing.raw_data["description"]
+
+    def test_an_absent_description_becomes_empty_string(self):
+        assert self.adapter._normalize(_project(1, description=None)).description == ""
 
 
 class TestRateIsNeverParsed:
@@ -287,7 +390,7 @@ class TestRateIsNeverParsed:
         self.adapter = FreelancermapAdapter(_make_config())
 
     def test_populated_budget_still_yields_no_rate(self):
-        raw = _raw_by_id("2891236")
+        raw = _raw_by_id("3026169")
         assert raw["budget"], "fixture must carry a populated budget for this to mean anything"
 
         listing = self.adapter._normalize(raw)
@@ -296,8 +399,8 @@ class TestRateIsNeverParsed:
         assert listing.rate_unit is None
         assert listing.rate_currency is None
 
-    def test_empty_budget_yields_no_rate(self):
-        listing = self.adapter._normalize(_raw_by_id("2891234"))
+    def test_absent_budget_yields_no_rate(self):
+        listing = self.adapter._normalize(_raw_by_id("3026737"))
         assert (listing.rate_min, listing.rate_max) == (None, None)
 
 
@@ -308,13 +411,13 @@ class TestStartPrecedence:
         self.adapter = FreelancermapAdapter(_make_config())
 
     def test_immediate_start_sets_the_flag_and_no_date(self):
-        listing = self.adapter._normalize(_raw_by_id("2891234"))
+        listing = self.adapter._normalize(_raw_by_id("3026337"))
         assert listing.start_is_immediate is True
         assert listing.start_date is None
         assert listing.start_text == "ab sofort"
 
     def test_exact_day_is_parsed(self):
-        listing = self.adapter._normalize(_raw_by_id("2891235"))
+        listing = self.adapter._normalize(_raw_by_id("3026469"))
         assert listing.start_date == date(2026, 9, 1)
         assert listing.start_is_immediate is False
         assert listing.start_text == "01.09.2026"
@@ -322,10 +425,21 @@ class TestStartPrecedence:
     def test_month_granular_start_never_fakes_a_day(self):
         """"Ab September 2026" gives a month, not a day. Synthesising the 1st would
         present an invented date as a known one."""
-        listing = self.adapter._normalize(_raw_by_id("2891236"))
+        listing = self.adapter._normalize(_raw_by_id("3026169"))
         assert listing.start_date is None
         assert listing.start_is_immediate is False
         assert listing.start_text == "Ab September 2026"
+
+    def test_string_month_and_year_are_synthesised_when_there_is_no_text(self):
+        """`beginningMonth` / `beginningYear` arrive as strings ("01", "2024"), which
+        is why they are coerced rather than trusted as integers."""
+        raw = _raw_by_id("3026737")
+        assert raw["beginningText"] is None
+        assert raw["beginningMonth"] == "01"
+
+        listing = self.adapter._normalize(raw)
+        assert listing.start_text == "01/2024"
+        assert listing.start_date is None
 
     def test_nach_vereinbarung_is_not_immediate(self):
         listing = self.adapter._normalize(_project(1, beginningText="nach Vereinbarung"))
@@ -363,12 +477,12 @@ class TestClientTypeFromTheBoolean:
         self.adapter = FreelancermapAdapter(_make_config())
 
     def test_true_means_direct(self):
-        listing = self.adapter._normalize(_raw_by_id("2891235"))
+        listing = self.adapter._normalize(_raw_by_id("3026469"))
         assert listing.raw_data["endcustomer"] is True
         assert listing.client_type == "direct"
 
     def test_false_means_unknown(self):
-        listing = self.adapter._normalize(_raw_by_id("2891234"))
+        listing = self.adapter._normalize(_raw_by_id("3026737"))
         assert listing.client_type == "unknown"
 
     def test_agency_is_never_produced(self):
@@ -756,18 +870,18 @@ class TestRealListingsSurviveTheGates:
 
         survivors = apply_hard_filter(listings, profile)
 
-        assert [j.id for j in survivors] == ["2891234"]
+        assert [j.id for j in survivors] == ["3026337"]
 
     def test_the_employee_leasing_row_is_rejected_by_the_contract_gate(self):
         adapter = FreelancermapAdapter(_make_config())
-        listing = adapter._normalize(_raw_by_id("2891235"))
+        listing = adapter._normalize(_raw_by_id("3026469"))
         assert listing.contract_type in _real_profile().dealbreakers.exclude_contract_types
 
     def test_the_eighty_percent_row_is_rejected_by_the_remote_floor(self):
         """At `minimum_remote_percentage: 100` the gate is deterministic, and it is
         the single largest reduction in the pipeline (~50% of the German pool)."""
         adapter = FreelancermapAdapter(_make_config())
-        listing = adapter._normalize(_raw_by_id("2891236"))
+        listing = adapter._normalize(_raw_by_id("3026169"))
         assert listing.remote_percentage == 80
         assert apply_hard_filter([listing], _real_profile()) == []
 
