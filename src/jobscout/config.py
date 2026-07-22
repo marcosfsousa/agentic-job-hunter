@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from jobscout.models import UserProfile
 
@@ -36,6 +36,33 @@ class AppConfig(BaseModel):
 
     # Minimum cosine similarity a job must reach to proceed to LLM evaluation — avoids wasting tokens on poor matches.
     embedding_min_score: float = 0.30
+
+    # --- freelancermap operational thresholds -----------------------------
+    # Operational, not preferences: these describe how hard we may lean on the
+    # source and when to call it broken. Job preferences live in profile.yaml.
+
+    # Hard ceiling on outgoing requests per run, enforced in code rather than by
+    # convention, so a looping bug cannot turn a personal tool into a crawler.
+    # This is one of the three binding constraints under which ingesting
+    # freelancermap was accepted at all (issue #11) — it is a legal commitment,
+    # not a tuning knob. Above the five seeded queries with headroom to add more.
+    #
+    # Deliberately NOT reachable from an environment variable, unlike every other
+    # value below: a cap an operator can raise at runtime is a convention, which is
+    # the thing this exists instead of. Widening it is a code change and a review.
+    freelancermap_max_requests: int = Field(default=10, ge=1)
+
+    # Floor on DISTINCT project ids across the whole run, below which the source
+    # is treated as broken and the run fails loudly. With one source, silence in
+    # the inbox would otherwise be indistinguishable from a quiet market.
+    #
+    # Must stay above 22: the anonymous view returns at most 22 rows per query, so
+    # a floor at or below that cannot tell "every query collapsed onto the same
+    # page" from "one query answered normally" — which is the failure this exists
+    # to catch. The standing German inventory is ~115 and eight distinct queries
+    # measured 128 distinct projects, so a healthy union across the seeded queries
+    # lands far above 30.
+    freelancermap_min_raw_ingest: int = Field(default=30, gt=22)
 
     # Jobs scoring below this threshold on the first LLM pass are re-evaluated once;
     # the higher of the two scores is kept. None resolves to profile.email_min_score
@@ -131,6 +158,7 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
         email_from=os.environ.get("EMAIL_FROM") or None,
         feedback_weight=float(os.environ.get("FEEDBACK_WEIGHT", "0.2")),
         embedding_min_score=float(os.environ.get("EMBEDDING_MIN_SCORE", "0.30")),
+        freelancermap_min_raw_ingest=int(os.environ.get("FREELANCERMAP_MIN_RAW_INGEST", "30")),
     )
 
     logger.debug(

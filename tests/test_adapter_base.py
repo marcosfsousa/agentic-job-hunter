@@ -6,7 +6,7 @@ incremental sync — so its coverage moves here rather than disappearing.
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
 from jobscout.adapters.base import filter_by_since
 from jobscout.models import JobListing
@@ -57,3 +57,24 @@ class TestFilterBySince:
 
     def test_empty_input_returns_empty(self):
         assert filter_by_since([], date(2026, 3, 18)) == []
+
+    def test_timezone_aware_posted_date_compares_without_raising(self):
+        """The case a real adapter actually produces.
+
+        `posted_date` is a full timestamp and freelancermap publishes it with its
+        own `+02:00` offset, while `--since` is a plain `date`. Comparing the two
+        directly raises TypeError, and mixing aware and naive datetimes raises
+        again — so this was latent until an adapter first built an aware one.
+        """
+        aware = datetime(2026, 3, 20, 8, 0, 0, tzinfo=timezone(timedelta(hours=2)))
+        job = _make_listing(aware)
+
+        assert filter_by_since([job], date(2026, 3, 18)) == [job]
+        assert filter_by_since([job], date(2026, 3, 25)) == []
+
+    def test_aware_and_naive_listings_can_be_filtered_together(self):
+        """Two sources need not agree on tz-awareness for one cutoff to apply."""
+        aware = _make_listing(datetime(2026, 3, 20, 8, 0, tzinfo=timezone.utc))
+        naive = _make_listing(datetime(2026, 3, 20, 8, 0))
+
+        assert filter_by_since([aware, naive], date(2026, 3, 18)) == [aware, naive]

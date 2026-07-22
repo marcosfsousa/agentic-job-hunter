@@ -34,6 +34,23 @@ class JobScoutAdapterError(Exception):
     """
 
 
+class JobScoutSourceIntegrityError(Exception):
+    """Raised when a source is not merely unavailable but *broken* — its payload
+    no longer parses, or its yield has collapsed to a level no live market explains.
+
+    **Deliberately not a subclass of `JobScoutAdapterError`, and that is the whole
+    mechanism.** `run.py`'s ingest catch is scoped to `JobScoutAdapterError`, so a
+    recoverable failure degrades to an empty list with a warning while this
+    propagates, exits the run non-zero, and trips the workflow's existing
+    `if: failure()` alarm. No orchestration code knows this class exists.
+
+    The distinction it encodes: a timeout or a 429 is a transient bad day and the
+    right response is to shrug. A payload whose shape changed is a bug in *us* that
+    will otherwise present as a quiet job market — indistinguishable, on a
+    single-source roster, from there being nothing to send.
+    """
+
+
 class JobAdapter(ABC):
     """Abstract base class for all job source adapters.
 
@@ -64,7 +81,7 @@ class JobAdapter(ABC):
             async def fetch(self, max_results: int = 100, since: date | None = None) -> list[JobListing]:
                 results = []
                 async with httpx.AsyncClient() as client:
-                    # paginate until max_results reached ...
+                    # request, accumulate, and stop at max_results ...
                     pass
                 return results
 
@@ -87,14 +104,18 @@ class JobAdapter(ABC):
 
     @abstractmethod
     async def fetch(self, max_results: int = 100, since: date | None = None) -> list[JobListing]:
-        """Fetch, paginate, and normalise job listings from this source.
+        """Fetch and normalise job listings from this source.
+
+        How a source is covered is the adapter's own business — pages, repeated
+        queries, or one request. freelancermap, for instance, cannot paginate at
+        all and reaches the market by issuing one request per configured query.
 
         Args:
             max_results: Upper bound on the number of listings to return.
-                Adapters should stop paginating once this limit is reached.
+                Adapters should stop requesting once this limit is reached.
                 Default (100) is appropriate for production daily runs.
                 Pass a smaller value during development or ``--dry-run`` mode
-                to avoid exhausting free-tier API quotas.
+                to keep a run cheap.
             since: If provided, only return listings posted on or after this
                 date. Listings with no posted_date are always kept.
 
@@ -105,4 +126,6 @@ class JobAdapter(ABC):
         Raises:
             JobScoutAdapterError: For recoverable API failures such as rate
                 limiting, transient 5xx responses, or network timeouts.
+            JobScoutSourceIntegrityError: For a source that is broken rather than
+                unavailable. Not caught by the orchestrator — see that class.
         """

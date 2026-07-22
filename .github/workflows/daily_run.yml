@@ -1,13 +1,16 @@
 name: Daily Job Scout
 
 on:
-  # The schedule is deliberately absent for the duration of the freelance pivot.
-  # With no adapter registered a scheduled run fetches nothing and exits 0 with a
-  # clean "No evaluated matches for today" — a silent failure indistinguishable
-  # from a genuinely quiet day. Re-arm it with the freelancermap adapter, not before.
-  # Previous cadence, for restoration: cron '15 3 * * *' (targets ~08:00–09:00 CEST;
-  # off-minute avoids the thundering herd; observed queue delay ~5h at 04:00 UTC,
-  # lower at 03:00 UTC).
+  # Re-armed with the freelancermap adapter, which is what disarming it was waiting
+  # for: while the registry was empty a scheduled run fetched nothing and exited 0
+  # with a clean "No evaluated matches for today" — a silent failure indistinguishable
+  # from a genuinely quiet day.
+  #
+  # Cadence targets ~08:00–09:00 CEST delivery. The off-minute avoids the thundering
+  # herd on the hour; 03:00 UTC was chosen over 04:00 because the observed Actions
+  # queue delay there was materially lower (~5h at 04:00).
+  schedule:
+    - cron: '15 3 * * *'
   workflow_dispatch:       # allow manual trigger from GitHub UI
 
 concurrency:
