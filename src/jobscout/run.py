@@ -9,6 +9,7 @@ import anthropic
 import yaml
 
 from jobscout.adapters.base import JobAdapter, JobScoutAdapterError
+from jobscout.adapters.freelancermap import FreelancermapAdapter
 from jobscout.config import get_config
 from jobscout.delivery.email_sender import send_digest
 from jobscout.delivery.formatter import format_digest
@@ -99,14 +100,15 @@ def _sync_feedback(db: "JobDatabase", feedback_path: Path) -> None:
 
 
 # All registered adapters run on every pipeline execution.
-# An adapter self-disables if its API key is absent from .env.
 #
-# Deliberately empty: the three FTE adapters (adzuna, jsearch, jobspy) were
-# deleted with the contract-model pivot, and freelancermap has not landed yet.
-# The pipeline is dark until it does — the daily schedule is disarmed to match.
-# Their implementations are recoverable from git history if a text-only source
-# ever needs a reference. Add the new adapter here.
-_ADAPTER_REGISTRY: dict[str, type[JobAdapter]] = {}
+# One entry, and that is the whole roster rather than a starting point: the source
+# landscape closed with freelancermap as the only viable DACH source, so this
+# adapter *is* the corpus. The three FTE adapters (adzuna, jsearch, jobspy) were
+# deleted with the contract-model pivot and are recoverable from git history if a
+# text-only source ever needs a reference. Add a new adapter here.
+_ADAPTER_REGISTRY: dict[str, type[JobAdapter]] = {
+    "freelancermap": FreelancermapAdapter,
+}
 
 
 async def run_pipeline(
@@ -129,8 +131,11 @@ async def run_pipeline(
 
     # ------------------------------------------------------------------
     # Ingest — all registered adapters fetched concurrently.
-    # Each adapter self-disables when its API key is absent.
-    # To add/remove a source: update _ADAPTER_REGISTRY and .env.
+    # To add/remove a source: update _ADAPTER_REGISTRY.
+    #
+    # `gather` without return_exceptions=True is deliberate on a single-source
+    # roster: if the one adapter reports its source is broken, the corpus is
+    # broken and so is the run. Revisit if a second adapter ever lands.
     # ------------------------------------------------------------------
     if since is not None:
         logger.info("Running with --since %s — filtering to jobs posted on or after that date", since)

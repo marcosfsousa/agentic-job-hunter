@@ -34,6 +34,23 @@ class JobScoutAdapterError(Exception):
     """
 
 
+class JobScoutSourceIntegrityError(Exception):
+    """Raised when a source is not merely unavailable but *broken* — its payload
+    no longer parses, or its yield has collapsed to a level no live market explains.
+
+    **Deliberately not a subclass of `JobScoutAdapterError`, and that is the whole
+    mechanism.** `run.py`'s ingest catch is scoped to `JobScoutAdapterError`, so a
+    recoverable failure degrades to an empty list with a warning while this
+    propagates, exits the run non-zero, and trips the workflow's existing
+    `if: failure()` alarm. No orchestration code knows this class exists.
+
+    The distinction it encodes: a timeout or a 429 is a transient bad day and the
+    right response is to shrug. A payload whose shape changed is a bug in *us* that
+    will otherwise present as a quiet job market — indistinguishable, on a
+    single-source roster, from there being nothing to send.
+    """
+
+
 class JobAdapter(ABC):
     """Abstract base class for all job source adapters.
 

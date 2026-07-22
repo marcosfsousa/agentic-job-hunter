@@ -1,0 +1,132 @@
+<!--
+  Trimmed capture of https://www.freelancermap.de/projekte?query=... — three projects
+  instead of the live page's 22.
+
+  The script-tag wrapper is deliberately NOT flattened to bare JSON: the adapter's job
+  starts at finding the `data-component-name="ProjectSearch"` payload among the other
+  react-on-rails components on the page, so a JSON fixture would skip the step under
+  test. The `HeaderSearch` component below is a decoy for exactly that reason.
+
+  Field names, types and example values follow the inventory measured in
+  docs/research/freelance-source-landscape.md ("Field population, measured across the
+  22 results on page 1"). Per-project field sets are shaped to exercise the mapping
+  branches, not to reproduce one real page verbatim:
+
+    2891234 — contracting, 100% remote, "ab sofort", integer duration, empty budget
+    2891235 — employee_leasing, 60% remote, exact-day start, endcustomer True
+    2891236 — unrecognised contract type, month-granular start, POPULATED budget
+              (no live row has ever carried one; it exists to pin the never-parse rule)
+-->
+<!doctype html>
+<html lang="de">
+<head><title>Projekte — freelancermap</title></head>
+<body>
+<div id="header">
+  <script type="application/json" class="js-react-on-rails-component"
+          data-component-name="HeaderSearch"
+          data-dom-id="HeaderSearch-react-component-0">{"placeholder": "Projekt suchen", "initialResults": "decoy — must not be read"}</script>
+</div>
+
+<div id="project-search">
+  <script type="application/json" class="js-react-on-rails-component"
+          data-component-name="ProjectSearch"
+          data-dom-id="ProjectSearch-react-component-1"
+          data-trace="false">{
+  "initialPagination": {"currentPage": 1, "totalPages": 6, "perPage": 22},
+  "aggregations": {
+    "countries": {"Deutschland": 115, "Österreich": 12, "Schweiz": 8},
+    "remote": {"remote": 57, "hybrid": 53, "on_site": 5}
+  },
+  "initialState": {
+    "filter": {"countries": [], "remoteInPercent": null, "projectContractTypes": [], "endcustomer": false}
+  },
+  "initialResults": [
+    {
+      "id": 2891234,
+      "pid": "P-2891234",
+      "title": "Machine Learning Engineer (LLM / RAG) — remote",
+      "company": "Nexon IT Consulting GmbH",
+      "description": "Für ein laufendes Projekt im Bereich Generative AI suchen wir einen erfahrenen Machine Learning Engineer. Aufgaben: Aufbau und Betrieb von RAG-Pipelines, Evaluierung von LLM-Ansätzen, Integration in bestehende Python-Services. Erforderlich: mehrjährige Erfahrung mit Python, Erfahrung mit Vektordatenbanken und Sentence Transformers. Die Zusammenarbeit erfolgt vollständig remote.",
+      "city": "Berlin",
+      "country": "Deutschland",
+      "states": ["Berlin"],
+      "url": "/projekt/machine-learning-engineer-llm-rag-remote-2891234",
+      "slug": "machine-learning-engineer-llm-rag-remote",
+      "created": "2026-07-16T15:38:04+02:00",
+      "updated": "2026-07-16T15:38:04+02:00",
+      "expires": 1758024000,
+      "projectContractType": {"type": "contracting", "remoteInPercent": 100},
+      "contractType": "CONTRACT",
+      "duration": 6,
+      "durationText": "6 Monate",
+      "beginningText": "ab sofort",
+      "beginningMonth": null,
+      "beginningYear": 2026,
+      "endcustomer": false,
+      "budget": [],
+      "skills": [{"de": "MLOps", "en": "MLOps", "url": "/projekte/mlops"}],
+      "verlaengerung": 1,
+      "embedding": [0.014, -0.221, 0.098],
+      "topProject": false
+    },
+    {
+      "id": 2891235,
+      "pid": "P-2891235",
+      "title": "AI Engineer — NLP Plattform (Arbeitnehmerüberlassung)",
+      "company": "Direktkunde Süd AG",
+      "description": "Wir bauen eine interne NLP-Plattform und suchen Verstärkung für das Team. Schwerpunkt: Textklassifikation, Named Entity Recognition und der Betrieb der zugehörigen Modelle. Deep Learning Erfahrung mit PyTorch wird vorausgesetzt. Hybrides Arbeiten, zwei Tage vor Ort in München.",
+      "city": "München",
+      "country": "Deutschland",
+      "states": ["Bayern"],
+      "url": "/projekt/ai-engineer-nlp-plattform-2891235",
+      "slug": "ai-engineer-nlp-plattform",
+      "created": "2026-07-15T09:12:47+02:00",
+      "updated": "2026-07-15T09:12:47+02:00",
+      "expires": 1757937600,
+      "projectContractType": {"type": "employee_leasing", "remoteInPercent": 60},
+      "contractType": "CONTRACT",
+      "duration": null,
+      "durationText": null,
+      "beginningText": "01.09.2026",
+      "beginningMonth": 9,
+      "beginningYear": 2026,
+      "endcustomer": true,
+      "budget": [],
+      "skills": [],
+      "verlaengerung": null,
+      "embedding": [0.101, 0.044, -0.017],
+      "topProject": false
+    },
+    {
+      "id": 2891236,
+      "pid": "P-2891236",
+      "title": "Data Scientist / KI-Spezialist",
+      "company": "Talentbridge Personalservice GmbH",
+      "description": "Unterstützung eines Data-Science-Teams bei der Entwicklung von Prognosemodellen und dem Aufbau einer Machine Learning Infrastruktur. Gute Kenntnisse in Python, SQL und scikit-learn erforderlich. Start voraussichtlich im September.",
+      "city": "Hamburg",
+      "country": "Deutschland",
+      "states": ["Hamburg"],
+      "url": "/projekt/data-scientist-ki-spezialist-2891236",
+      "slug": "data-scientist-ki-spezialist",
+      "created": "2026-07-14T17:02:31+02:00",
+      "updated": "2026-07-14T17:02:31+02:00",
+      "expires": 1757851200,
+      "projectContractType": {"type": "werkvertrag_neu", "remoteInPercent": 80},
+      "contractType": "CONTRACT",
+      "duration": 3,
+      "durationText": "3 MM",
+      "beginningText": "Ab September 2026",
+      "beginningMonth": 9,
+      "beginningYear": 2026,
+      "endcustomer": false,
+      "budget": [{"value": "70,00 €", "type": "hourly"}],
+      "skills": [{"de": "Python", "en": "Python", "url": "/projekte/python"}],
+      "verlaengerung": null,
+      "embedding": [-0.052, 0.130, 0.076],
+      "topProject": true
+    }
+  ]
+}</script>
+</div>
+</body>
+</html>

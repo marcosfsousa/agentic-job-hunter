@@ -205,4 +205,9 @@ class UserProfile(_StrictProfileModel):
 
     # Free-text search terms sent to freelancermap's `query=` parameter. Named
     # per-source so a second source adds its own list with no migration.
+    #
+    # Also the freelancermap adapter's sole coverage mechanism: its anonymous view
+    # caps at 22 results per query and cannot paginate, so the adapter issues one
+    # request per entry and unions them. The length of this list is the size of the
+    # corpus, which is why the request cap in `config.py` bounds it.
     freelancermap_queries: list[str]

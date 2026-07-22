@@ -107,8 +107,15 @@ dealbreakers:
   # which is exempt from the country check either way.
   minimum_remote_percentage: 100
 
-# Free-text search terms sent to freelancermap. German terms are seeded from the
-# start because the source is DACH and its corpus measures 81% German.
+# Free-text search terms sent to freelancermap — and the adapter's ONLY coverage
+# lever, not merely a targeting convenience. The anonymous view returns 22 results
+# per query and nothing reaches result 23 (pagination was measured and refuted, not
+# left unverified), so the adapter issues one request per term below and unions the
+# results. Adding a term is how you see more of the market; removing one shrinks the
+# corpus. German terms are seeded from the start because the source is DACH and its
+# corpus measures 81% German — dropping them would cost coverage, not just focus.
+#
+# One request per entry, capped by config.freelancermap_max_requests.
 freelancermap_queries:
   - "Machine Learning"
   - "LLM"

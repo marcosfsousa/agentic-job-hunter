@@ -5,6 +5,7 @@
 - **Wayfinder ticket:** [E — Freelance profile.yaml schema](https://github.com/marcosfsousa/agentic-job-hunter/issues/8)
 - **Amended by:** [P — Reconcile ADR 0002 with F](https://github.com/marcosfsousa/agentic-job-hunter/issues/22) (2026-07-18) — `rate:` restated per-unit with no derivation and marked a knowingly-consumer-less exception; remote gate moved from F's hardcode into `dealbreakers.minimum_remote_percentage`; the `deprioritise` "5+ years" entry deleted; Risks 1 and 2 discharged. Amendments are marked inline.
 - **Amended by:** [Spec 2 — Freelance profile schema + hard-filter gates](https://github.com/marcosfsousa/agentic-job-hunter/issues/27) (2026-07-22) — the `_passes_location` statement in Boundaries was ambiguous in a way that made `target_countries` dead config under a literal reading; replaced with the resolved predicate and its rationale. The `freelancermap_queries` English-only comment is flagged as disputed and deferred to spec 4. Amended in place, per P's precedent, so the ADR reads correct rather than merged-then-patched.
+- **Amended by:** [Spec 3 — freelancermap adapter + fail-loud raw-ingest floor](https://github.com/marcosfsousa/agentic-job-hunter/issues/28) (2026-07-22) — the "DACH-widening of `target_countries`" tuning flag is struck: measurement shows `remoteInPercent` is populated on every freelancermap row, so `_passes_location` never reaches the country check and the flag is a no-op. The field stays (dormant, correct for a future text-only source); only its description as a live knob goes. `freelancermap_queries` is additionally noted as load-bearing for **coverage**, not just targeting.
 - **Depends on:** [B — Contract data model](https://github.com/marcosfsousa/agentic-job-hunter/issues/5) ([ADR 0001](0001-contract-data-model.md); enums + removed job fields), [D — Hard filter semantics](https://github.com/marcosfsousa/agentic-job-hunter/issues/7) (which predicates read which config), [K — Repoint yield](https://github.com/marcosfsousa/agentic-job-hunter/issues/15) (adapter roster; "supply skews senior")
 - **Part of:** [Wayfinder: JobScout FTE → freelance pivot](https://github.com/marcosfsousa/agentic-job-hunter/issues/3)
 
@@ -183,6 +184,16 @@ them identically; do not go looking for an `Enum` class that was never specified
   phrasing genuinely differ; if Upwork ever clears its deferred gate it adds `upwork_queries` with
   no migration. German terms (`Maschinelles Lernen`, `KI`) are included from the start because the
   source is DACH.
+  ⚠️ **Spec 3 (#28) amendment — this list is now load-bearing in a way this ADR did not
+  anticipate.** It was specified as per-source *targeting*. Pagination on freelancermap's anonymous
+  view was then measured and **refuted**: 22 results per query and nothing reaches result 23, with
+  four bare page parameters and the site's own canonical paginator URL all inert. The adapter
+  therefore issues one request per entry here and unions the results, which makes this list the
+  **sole coverage mechanism** — the only thing standing between the adapter and a 22-row corpus.
+  Two consequences: adding a term is how coverage is widened (a value edit, not a code change),
+  and the disputed English-only line above now bears on **coverage**, not merely on retargeting.
+  Dropping the German terms would shrink the corpus. Spec 4 still owns that call, but should make
+  it knowing this.
 - **`target_roles` stays structurally unchanged.** It feeds the embedding query (`embedder.py`)
   and the eval prompt (`prompt.py`); its `list[str]` shape survives the pivot untouched. Refreshing
   its *values* toward contract/German phrasing is a `profile.yaml` value = tuning, owned by the
@@ -269,8 +280,16 @@ Handed down by D and surfaced here so they aren't lost; all are `profile.yaml` *
 - **German-adequacy of keyword lists** — `require_any_keyword` / `exclude_keywords` English phrases
   (e.g. "machine learning") will not fire on German text ("maschinelles Lernen"); add German terms
   and/or lean on the acronyms (ML/AI/NLP/LLM/RAG), which fire cross-language.
-- **DACH-widening of `target_countries`** — currently `["Germany", "Deutschland"]`; onsite projects
-  in Austria/Switzerland are dropped though the user is EU-authorized and the sources are DACH.
+- ~~**DACH-widening of `target_countries`** — currently `["Germany", "Deutschland"]`; onsite projects
+  in Austria/Switzerland are dropped though the user is EU-authorized and the sources are DACH.~~
+  — ⚠️ **currently a no-op, and should stop being described as a live knob.** Spec 3
+  ([#28](https://github.com/marcosfsousa/agentic-job-hunter/issues/28)) measured
+  `remoteInPercent` populated on **22/22** search rows and, at pool level, **115/115** German
+  projects bucketed by the payload's own aggregation. `_passes_location` reaches
+  `target_countries` **only** on rows whose percentage is unknown, of which freelancermap has
+  none — so every row takes the `pct >= floor` path and widening this list changes nothing.
+  It is **dormant, not dead**: it is the correct behaviour for a future text-only source, which
+  is why it is not being removed. Re-read this flag as live the day a second source lands.
 - **Annotation-shop exclusions** — add Mercor / Surge / Outlier / Scale to `exclude_companies`
   (they title labelling piecework as "AI Engineer" and will rank well while being wrong).
 - **`target_roles` refresh** toward contract/German phrasing.
