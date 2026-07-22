@@ -81,7 +81,7 @@ class JobAdapter(ABC):
             async def fetch(self, max_results: int = 100, since: date | None = None) -> list[JobListing]:
                 results = []
                 async with httpx.AsyncClient() as client:
-                    # paginate until max_results reached ...
+                    # request, accumulate, and stop at max_results ...
                     pass
                 return results
 
@@ -104,14 +104,18 @@ class JobAdapter(ABC):
 
     @abstractmethod
     async def fetch(self, max_results: int = 100, since: date | None = None) -> list[JobListing]:
-        """Fetch, paginate, and normalise job listings from this source.
+        """Fetch and normalise job listings from this source.
+
+        How a source is covered is the adapter's own business — pages, repeated
+        queries, or one request. freelancermap, for instance, cannot paginate at
+        all and reaches the market by issuing one request per configured query.
 
         Args:
             max_results: Upper bound on the number of listings to return.
-                Adapters should stop paginating once this limit is reached.
+                Adapters should stop requesting once this limit is reached.
                 Default (100) is appropriate for production daily runs.
                 Pass a smaller value during development or ``--dry-run`` mode
-                to avoid exhausting free-tier API quotas.
+                to keep a run cheap.
             since: If provided, only return listings posted on or after this
                 date. Listings with no posted_date are always kept.
 
@@ -122,4 +126,6 @@ class JobAdapter(ABC):
         Raises:
             JobScoutAdapterError: For recoverable API failures such as rate
                 limiting, transient 5xx responses, or network timeouts.
+            JobScoutSourceIntegrityError: For a source that is broken rather than
+                unavailable. Not caught by the orchestrator — see that class.
         """

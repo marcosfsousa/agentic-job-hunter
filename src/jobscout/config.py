@@ -46,6 +46,10 @@ class AppConfig(BaseModel):
     # This is one of the three binding constraints under which ingesting
     # freelancermap was accepted at all (issue #11) — it is a legal commitment,
     # not a tuning knob. Above the five seeded queries with headroom to add more.
+    #
+    # Deliberately NOT reachable from an environment variable, unlike every other
+    # value below: a cap an operator can raise at runtime is a convention, which is
+    # the thing this exists instead of. Widening it is a code change and a review.
     freelancermap_max_requests: int = Field(default=10, ge=1)
 
     # Floor on DISTINCT project ids across the whole run, below which the source
@@ -154,7 +158,6 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
         email_from=os.environ.get("EMAIL_FROM") or None,
         feedback_weight=float(os.environ.get("FEEDBACK_WEIGHT", "0.2")),
         embedding_min_score=float(os.environ.get("EMBEDDING_MIN_SCORE", "0.30")),
-        freelancermap_max_requests=int(os.environ.get("FREELANCERMAP_MAX_REQUESTS", "10")),
         freelancermap_min_raw_ingest=int(os.environ.get("FREELANCERMAP_MIN_RAW_INGEST", "30")),
     )
 

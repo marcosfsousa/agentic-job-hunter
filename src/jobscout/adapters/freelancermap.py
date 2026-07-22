@@ -39,9 +39,10 @@ import json
 import logging
 import re
 from datetime import date, datetime, timezone
-from typing import Any, get_args
+from typing import Annotated, Any, cast, get_args
 
 import httpx
+from pydantic import BaseModel, BeforeValidator, ValidationError
 
 from jobscout.adapters.base import (
     JobAdapter,
@@ -68,12 +69,22 @@ _USER_AGENT = (
     "+https://github.com/marcosfsousa/agentic-job-hunter)"
 )
 
-# Germany, in freelancermap's own country vocabulary. Pushed server-side so the
+# Germany's id in freelancermap's own `countries` filter vocabulary — an opaque
+# vendor id, not a name, which is why it is not derived from
+# `profile.location.target_countries`: that list holds display names ("Germany",
+# "Deutschland") the source's filter would not accept, and the mapping between the
+# two is the adapter's business rather than the user's. Pushed server-side so the
 # request returns less rather than being filtered down locally — the no-overload
 # duty in §4(1)(a) is served by asking for less, not by discarding more.
 _COUNTRY_GERMANY = "1"
 
 _REQUEST_TIMEOUT = 30.0
+
+# Statuses worth shrugging at: a rate limit or a server-side wobble is a transient
+# bad day. Everything else non-200 — a 403 block page, a 404 moved endpoint, a 3xx
+# to somewhere else — means the route we were given no longer works, which is a
+# broken source and must not degrade to an empty digest.
+_RECOVERABLE_STATUSES = frozenset({408, 429})
 
 # The payload is the props of the `ProjectSearch` component. Matched on the
 # component name rather than on position or class, because the page carries
@@ -92,6 +103,100 @@ _IMMEDIATE_START_TERMS = frozenset({"sofort", "ab sofort", "asap", "immediately"
 _EXACT_DAY_FORMATS = ("%d.%m.%Y", "%Y-%m-%d")
 
 _KNOWN_CONTRACT_TYPES: frozenset[str] = frozenset(get_args(ContractType))
+
+
+# ---------------------------------------------------------------------------
+# Raw payload models
+# ---------------------------------------------------------------------------
+#
+# Validation of the source's own shape, per the repo's "Pydantic for external API
+# validation" convention. These are not the pipeline's model — `JobListing` is —
+# they exist so the mapping below reads typed attributes instead of untyped
+# `dict.get` chains, and so a shape change is caught at one named place.
+#
+# Permissive on purpose, in two different directions, and the distinction matters:
+#
+#   * Unknown keys are ignored. The payload carries ~35 fields and freelancermap
+#     may add more; that is not our business and must not fail a run. (Contrast
+#     `profile.yaml`, where an unknown key IS an error — that file is ours.)
+#   * Every field is optional and un-coercible values degrade to None rather than
+#     failing the row, because these are optional metadata on a listing whose
+#     title and description we can still use. What is left able to fail is a
+#     structural break — a result that is not an object at all — which is exactly
+#     the case that should stop the run.
+
+def _nullable_int(value: Any) -> Any:
+    """Coerce to int, or to None. Never raises.
+
+    `bool` is excluded deliberately: it is an `int` subclass in Python, so without
+    this a `True` would silently arrive as a duration of 1.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _nullable_str(value: Any) -> Any:
+    """Stringify a scalar, or None. A numeric id or title should not fail a row.
+
+    Scalars only. A list or an object reaching a text field is a shape change, and
+    rendering its `repr` into `title` or `description` would put Python syntax in
+    front of the user and into the embedding.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    return None
+
+
+def _as_mapping(value: Any) -> Any:
+    """Nested blocks arrive absent, null, or as an object. Normalise the first two."""
+    return value if isinstance(value, dict) else {}
+
+
+_NullableInt = Annotated[int | None, BeforeValidator(_nullable_int)]
+_NullableStr = Annotated[str | None, BeforeValidator(_nullable_str)]
+
+
+class _RawContractBlock(BaseModel):
+    """`projectContractType` — the engagement form and the remote percentage."""
+
+    type: _NullableStr = None
+    remoteInPercent: _NullableInt = None
+
+
+class _RawProject(BaseModel):
+    """One entry of the search payload's `initialResults`."""
+
+    id: _NullableStr = None
+    title: _NullableStr = None
+    company: _NullableStr = None
+    description: _NullableStr = None
+    city: _NullableStr = None
+    country: _NullableStr = None
+    url: _NullableStr = None
+    created: _NullableStr = None
+
+    projectContractType: Annotated[_RawContractBlock, BeforeValidator(_as_mapping)] = (
+        _RawContractBlock()
+    )
+
+    # A tri-state on purpose: None means the source did not say, which is not the
+    # same as False. Only an explicit True yields `client_type="direct"`.
+    endcustomer: bool | None = None
+
+    duration: _NullableInt = None
+    durationText: _NullableStr = None
+
+    beginningText: _NullableStr = None
+    beginningMonth: _NullableInt = None
+    beginningYear: _NullableInt = None
 
 
 class FreelancermapAdapter(JobAdapter):
@@ -135,11 +240,11 @@ class FreelancermapAdapter(JobAdapter):
         """Fetch one page per configured query, union the results, and normalise.
 
         Raises:
-            JobScoutAdapterError: Transient network trouble — a timeout, a 429, a
-                5xx. Recoverable, so the orchestrator degrades to an empty list.
-            JobScoutSourceIntegrityError: The payload no longer parses, or the
-                distinct-id yield collapsed. Not recoverable, and not caught
-                anywhere — the run fails.
+            JobScoutAdapterError: Transient trouble — a timeout, a 429, a 5xx.
+                Recoverable, so the orchestrator degrades to an empty list.
+            JobScoutSourceIntegrityError: The route or the payload no longer works
+                — a block page, a moved endpoint, an unparseable payload, or a
+                collapsed distinct-id yield. Not caught anywhere; the run fails.
         """
         queries = self._budgeted_queries()
 
@@ -154,13 +259,28 @@ class FreelancermapAdapter(JobAdapter):
             transport=self._transport,
             headers={"User-Agent": _USER_AGENT},
             timeout=_REQUEST_TIMEOUT,
-            follow_redirects=True,
+            # Both of these keep a binding constraint honest rather than merely
+            # tidy, so neither is a default worth "simplifying" back.
+            #
+            # No redirect following: the cap counts queries, and only "one query =
+            # exactly one outgoing request" makes that a cap on requests. A
+            # redirect chain would multiply real requests behind a cap that still
+            # reads as satisfied. A 3xx is therefore an error (the route moved),
+            # not something to chase.
+            follow_redirects=False,
         ) as client:
             for query in queries:
                 for raw in await self._fetch_query(client, query):
                     project_id = _project_id(raw)
                     if project_id is not None:
                         raw_by_id.setdefault(project_id, raw)
+
+                # Never carry state between requests. `AsyncClient` persists
+                # `Set-Cookie` across a session by default, which would let the
+                # source start a session we then present on every later request —
+                # the opposite of "the adapter never authenticates". Anonymity has
+                # to mean each request stands alone.
+                client.cookies.clear()
 
         # The floor is on DISTINCT ids and is measured here — after the union, and
         # deliberately before the `since` filter. Both halves matter:
@@ -173,19 +293,17 @@ class FreelancermapAdapter(JobAdapter):
         #   * Before `since`, so a genuinely quiet week cannot trip an alarm about a
         #     broken source. A healthy raw count that the hard filter then rejects
         #     down to nothing stays silent for the same reason.
-        logger.info(
-            "freelancermap raw yield: %d distinct project(s) across %d quer%s",
-            len(raw_by_id), len(queries), "y" if len(queries) == 1 else "ies",
-        )
+        yield_summary = f"{len(raw_by_id)} distinct project(s) across {_queries(len(queries))}"
+        logger.info("freelancermap raw yield: %s", yield_summary)
+
         floor = self._config.freelancermap_min_raw_ingest
         if len(raw_by_id) < floor:
             raise JobScoutSourceIntegrityError(
-                f"freelancermap returned {len(raw_by_id)} distinct project(s) across "
-                f"{len(queries)} quer{'y' if len(queries) == 1 else 'ies'}, below the "
-                f"floor of {floor}. This is a broken source, not a quiet market — the "
-                "anonymous view returns up to 22 rows per query, so a healthy union "
-                "sits far above this. Check whether the search response shape or the "
-                "query parameter changed."
+                f"freelancermap returned {yield_summary}, below the floor of {floor}. "
+                "This is a broken source, not a quiet market — the anonymous view "
+                "returns up to 22 rows per query, so a healthy union sits far above "
+                "this. Check whether the search response shape or the query parameter "
+                "changed."
             )
 
         listings = [self._normalize(raw) for raw in raw_by_id.values()]
@@ -219,17 +337,32 @@ class FreelancermapAdapter(JobAdapter):
         client: httpx.AsyncClient,
         query: str,
     ) -> list[dict[str, Any]]:
-        """One request; the search payload's results, unnormalised."""
+        """Exactly one request; the search payload's results, unnormalised."""
         params = {"query": query, "countries[0]": _COUNTRY_GERMANY}
         try:
             response = await client.get(_SEARCH_URL, params=params)
-            response.raise_for_status()
         except httpx.HTTPError as exc:
-            # Transient by assumption. A shape change surfaces below as an
-            # integrity error instead, which is the failure we refuse to swallow.
+            # A timeout or a connection failure — the network, not the source.
             raise JobScoutAdapterError(
                 f"freelancermap request failed for query {query!r}: {exc}"
             ) from exc
+
+        # Which exception a bad status becomes is the whole point, so it is decided
+        # here rather than by `raise_for_status`, whose one error type would put a
+        # 403 block page and a 503 wobble in the same bucket — and the recoverable
+        # bucket is the one that degrades to an empty digest.
+        if response.status_code in _RECOVERABLE_STATUSES or response.status_code >= 500:
+            raise JobScoutAdapterError(
+                f"freelancermap returned {response.status_code} for query {query!r} "
+                "— treating as transient."
+            )
+        if response.status_code != 200:
+            raise JobScoutSourceIntegrityError(
+                f"freelancermap returned {response.status_code} for query {query!r}. "
+                "A block, a moved endpoint or an unexpected redirect — the ingest "
+                "route no longer works, which is not something to deliver as an "
+                "empty digest."
+            )
 
         results = _extract_results(response.text)
         logger.debug("freelancermap query %r returned %d result(s)", query, len(results))
@@ -240,48 +373,67 @@ class FreelancermapAdapter(JobAdapter):
     # -----------------------------------------------------------------
 
     def _normalize(self, raw: dict[str, Any]) -> JobListing:
-        """Map one raw search result onto the contract `JobListing`."""
-        contract_block = raw.get("projectContractType") or {}
-        start_date, start_is_immediate, start_text = _parse_start(raw)
+        """Map one raw search result onto the contract `JobListing`.
+
+        Takes the untyped dict rather than the validated model because `raw_data`
+        must keep the payload exactly as it arrived — a mapping question should be
+        answerable later without a new request — and because this is the seam
+        `base.py` documents for every adapter.
+        """
+        try:
+            project = _RawProject.model_validate(raw)
+        except ValidationError as exc:
+            raise JobScoutSourceIntegrityError(
+                f"A freelancermap result did not validate: {exc}. Optional fields "
+                "degrade to None rather than failing, so reaching here means the "
+                "result's structure changed, not merely its contents."
+            ) from exc
+
+        start_date, start_is_immediate, start_text = _parse_start(project)
 
         return JobListing(
-            id=_project_id(raw) or "",
+            id=project.id or "",
             source=self.source,
-            title=raw.get("title") or "",
+            title=project.title or "",
             # The poster, which on an intermediated listing is the agency. The
-            # end-client is not stored even when `endcustomer` names one.
-            company=raw.get("company") or "",
-            description=raw.get("description") or "",
-            location=_location(raw),
-            url=_absolute_url(raw.get("url")),
-            posted_date=_parse_created(raw.get("created")),
+            # end-client is not stored even when `endcustomer` says there is one.
+            company=project.company or "",
+            description=project.description or "",
+            location=_location(project),
+            url=_absolute_url(project.url),
+            posted_date=_parse_created(project.created),
             fetched_at=datetime.now(timezone.utc),
+            # The payload verbatim, including the fields nothing maps — notably
+            # freelancermap's own 1024-dim `embedding`, which is incompatible with
+            # our 384-dim asymmetric model and must reach no model field.
             raw_data=raw,
 
             # The authoritative remote signal, published as a number on every row.
             # The `None` branch is defensive, not expected: `remoteInPercent` was
             # measured 22/22 on the page and 115/115 against the pool aggregation.
-            remote_percentage=_coerce_int(contract_block.get("remoteInPercent")),
+            remote_percentage=project.projectContractType.remoteInPercent,
             # freelancermap publishes no free-text remote policy, so the derived
             # `remote_policy` always resolves off the percentage above.
             remote_policy_text="not_specified",
 
-            # Rate is left empty unconditionally — see `_normalize`'s note below.
-            # `budget` is NEVER parsed, even when populated.
+            # Never populated, and `budget` is never parsed even when it carries a
+            # value. Its unit is not determinable from the payload, and a rate whose
+            # scale is guessed is worse than no rate: it would compare silently
+            # against an hourly or daily floor that means something else.
             rate_min=None,
             rate_max=None,
             rate_unit=None,
             rate_currency=None,
 
-            contract_type=_contract_type(contract_block.get("type")),
-            client_type="direct" if raw.get("endcustomer") is True else "unknown",
+            contract_type=_contract_type(project.projectContractType.type),
+            client_type="direct" if project.endcustomer is True else "unknown",
 
-            duration_months=_coerce_int(raw.get("duration")),
+            duration_months=project.duration,
             # Never positively observed on this source, so asserting it would be
             # inventing signal. `duration_months=None` with this False reads
             # honestly as "length unknown" rather than as "open-ended".
             duration_is_open_ended=False,
-            duration_text=raw.get("durationText") or None,
+            duration_text=project.durationText or None,
 
             start_date=start_date,
             start_is_immediate=start_is_immediate,
@@ -346,11 +498,19 @@ def _parse_payload(script_body: str) -> dict[str, Any]:
 # Field helpers
 # ---------------------------------------------------------------------------
 
+def _queries(count: int) -> str:
+    """"3 queries" / "1 query" — pluralised once, used in the log and the raise."""
+    return f"{count} quer{'y' if count == 1 else 'ies'}"
+
+
 def _project_id(raw: dict[str, Any]) -> str | None:
     """The project id as a string, or None if the row carries none.
 
     A row without an id cannot be deduped or marked seen, so it is dropped rather
     than admitted under a synthetic key that would re-deliver it every day.
+
+    Reads the untyped dict rather than `_RawProject` because it runs during the
+    union, before normalisation — the id is what the union is keyed on.
     """
     value = raw.get("id")
     return str(value) if value is not None else None
@@ -362,38 +522,34 @@ def _absolute_url(url: str | None) -> str:
     return url if url.startswith("http") else f"{_BASE_URL}{url}"
 
 
-def _location(raw: dict[str, Any]) -> str:
+def _location(project: _RawProject) -> str:
     """City and country, as a display string.
 
     The country is included because it is what `target_countries` matches against
     on rows the remote gate does not decide.
     """
-    parts = [str(raw[key]) for key in ("city", "country") if raw.get(key)]
-    return ", ".join(parts)
+    return ", ".join(p for p in (project.city, project.country) if p)
 
 
-def _coerce_int(value: Any) -> int | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _contract_type(value: Any) -> ContractType:
+def _contract_type(value: str | None) -> ContractType:
     """The engagement form, 1:1 where recognised.
 
     An unrecognised value becomes `unknown` rather than an error: freelancermap can
     add to its vocabulary at any time, and the hard filter's blocklist passes
     `unknown`, so a new value costs precision on one row instead of dropping it.
     """
-    return value if value in _KNOWN_CONTRACT_TYPES else "unknown"
+    if value in _KNOWN_CONTRACT_TYPES:
+        # The membership test is the check; `cast` only tells the type checker so,
+        # since it cannot narrow a `str` through a runtime set. Deriving the set
+        # from `ContractType` keeps this in step with the model automatically,
+        # which restating the literals here would not.
+        return cast(ContractType, value)
+    return "unknown"
 
 
-def _parse_created(value: Any) -> datetime | None:
+def _parse_created(value: str | None) -> datetime | None:
     """`created` as a timezone-aware datetime; the offset is kept, not normalised."""
-    if not isinstance(value, str):
+    if value is None:
         return None
     try:
         return datetime.fromisoformat(value)
@@ -402,7 +558,7 @@ def _parse_created(value: Any) -> datetime | None:
         return None
 
 
-def _parse_start(raw: dict[str, Any]) -> tuple[date | None, bool, str | None]:
+def _parse_start(project: _RawProject) -> tuple[date | None, bool, str | None]:
     """Resolve the three start cases in precedence order.
 
     Returns `(start_date, start_is_immediate, start_text)`.
@@ -413,8 +569,8 @@ def _parse_start(raw: dict[str, Any]) -> tuple[date | None, bool, str | None]:
     `start_text` carries the raw value in every case, so a parse that misses
     degrades precision rather than losing information.
     """
-    beginning_text = raw.get("beginningText") or None
-    start_text = beginning_text or _synthesised_start_text(raw)
+    beginning_text = project.beginningText or None
+    start_text = beginning_text or _synthesised_start_text(project)
 
     if beginning_text and beginning_text.strip().lower() in _IMMEDIATE_START_TERMS:
         return None, True, start_text
@@ -429,14 +585,13 @@ def _parse_start(raw: dict[str, Any]) -> tuple[date | None, bool, str | None]:
     return None, False, start_text
 
 
-def _synthesised_start_text(raw: dict[str, Any]) -> str | None:
+def _synthesised_start_text(project: _RawProject) -> str | None:
     """A month-granular `start_text` for rows where `beginningText` is blank.
 
     Keeps the month/year signal reachable by the LLM evaluator without letting it
     reach `start_date`, which would need a day the source never gave us.
     """
-    month = _coerce_int(raw.get("beginningMonth"))
-    year = _coerce_int(raw.get("beginningYear"))
+    month, year = project.beginningMonth, project.beginningYear
     if year is None:
         return None
     return f"{month:02d}/{year}" if month is not None else str(year)

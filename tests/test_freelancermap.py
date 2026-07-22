@@ -59,7 +59,9 @@ def _make_config(
     query list, the request cap and the raw floor at fetch time.
     """
     if profile is None:
-        profile = SimpleNamespace(freelancermap_queries=queries or ["Machine Learning"])
+        # A real `UserProfile`, not a namespace: it is cheap to build and a renamed
+        # field should fail here rather than pass against a stand-in.
+        profile = _real_profile(queries=queries or ["Machine Learning"])
     return SimpleNamespace(
         profile=profile,
         freelancermap_max_requests=max_requests,
@@ -502,6 +504,44 @@ class TestBindingConstraints:
             assert "Authorization" not in request.headers
             assert "Cookie" not in request.headers
 
+    async def test_a_session_cookie_is_not_carried_to_the_next_request(self):
+        """`AsyncClient` persists Set-Cookie across a session by default, so the
+        source could start a session on request 1 that we then present on every
+        request after it. That is authentication by another name."""
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(
+                200,
+                text=_page([_project(len(requests))]),
+                headers={"Set-Cookie": "PHPSESSID=abc123; Path=/"},
+            )
+
+        adapter = _adapter(handler, queries=["LLM", "KI", "RAG"], min_raw_ingest=1)
+        await adapter.fetch()
+
+        assert len(requests) == 3
+        for request in requests:
+            assert "Cookie" not in request.headers, request.headers.get("Cookie")
+
+    async def test_redirects_are_not_followed(self):
+        """The cap counts queries, so "one query = exactly one request" is what makes
+        it a cap on requests at all. A redirect chain would multiply real requests
+        behind a cap that still reads as satisfied — so a 3xx is an error, not a
+        hop to chase."""
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            return httpx.Response(302, headers={"Location": "https://elsewhere.example/x"})
+
+        adapter = _adapter(handler, queries=["LLM"])
+        with pytest.raises(JobScoutSourceIntegrityError):
+            await adapter.fetch()
+
+        assert len(requests) == 1
+
     async def test_the_request_cap_holds_even_with_more_queries_configured(self):
         """Capped in code rather than by convention, so a looping bug cannot turn a
         personal tool into a crawler."""
@@ -582,9 +622,69 @@ class TestSourceIntegrity:
             except JobScoutAdapterError:  # pragma: no cover — the bug this guards
                 pytest.fail("JobScoutSourceIntegrityError was caught as a recoverable error")
 
-    async def test_transient_http_failure_stays_recoverable(self):
+    async def test_a_row_that_is_structurally_wrong_raises(self):
+        """`endcustomer` is tri-state and decides `client_type`, with no reading that
+        degrades — so unlike the text and numeric fields it has no fallback, and a
+        non-boolean there is a shape change worth failing the run over."""
+        page = _page([_project(1, endcustomer=["not", "a", "bool"])])
+        adapter = _adapter(_serving({"LLM": page}), queries=["LLM"], min_raw_ingest=1)
+        with pytest.raises(JobScoutSourceIntegrityError):
+            await adapter.fetch()
+
+    def test_junk_in_an_optional_field_degrades_rather_than_dropping_the_row(self):
+        """The other side of the same rule: a title and a description are still
+        useful when the duration is unreadable."""
+        adapter = FreelancermapAdapter(_make_config())
+        listing = adapter._normalize(_project(1, duration="drei Monate", beginningYear="zwei"))
+        assert listing.duration_months is None
+        assert listing.title == "Machine Learning Engineer 1"
+
+    def test_a_structured_value_in_a_text_field_is_dropped_not_repr_ed(self):
+        """`str(["a", "b"])` in a description would put Python syntax in front of the
+        user and into the embedding."""
+        adapter = FreelancermapAdapter(_make_config())
+        listing = adapter._normalize(_project(1, description={"de": "Beschreibung"}))
+        assert listing.description == ""
+
+    def test_a_boolean_duration_is_not_read_as_one_month(self):
+        """`bool` is an `int` subclass in Python, so an un-guarded coercion would
+        turn `True` into a one-month contract."""
+        adapter = FreelancermapAdapter(_make_config())
+        assert adapter._normalize(_project(1, duration=True)).duration_months is None
+
+
+class TestStatusClassification:
+    """Which exception a bad status becomes is the difference between an alarm and
+    an empty digest, so each class of status is pinned."""
+
+    async def test_a_rate_limit_is_recoverable(self):
+        adapter = _adapter(lambda request: httpx.Response(429), queries=["LLM"])
+        with pytest.raises(JobScoutAdapterError):
+            await adapter.fetch()
+
+    async def test_a_server_error_is_recoverable(self):
         """A 503 is a bad day, not a broken source, so it degrades rather than alarms."""
         adapter = _adapter(lambda request: httpx.Response(503), queries=["LLM"])
+        with pytest.raises(JobScoutAdapterError):
+            await adapter.fetch()
+
+    async def test_a_block_page_is_not_recoverable(self):
+        """403 is the source telling us to stop. Degrading to an empty digest would
+        hide exactly the outcome the honest User-Agent exists to make possible."""
+        adapter = _adapter(lambda request: httpx.Response(403), queries=["LLM"])
+        with pytest.raises(JobScoutSourceIntegrityError):
+            await adapter.fetch()
+
+    async def test_a_moved_endpoint_is_not_recoverable(self):
+        adapter = _adapter(lambda request: httpx.Response(404), queries=["LLM"])
+        with pytest.raises(JobScoutSourceIntegrityError):
+            await adapter.fetch()
+
+    async def test_a_timeout_is_recoverable(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectTimeout("timed out", request=request)
+
+        adapter = _adapter(handler, queries=["LLM"])
         with pytest.raises(JobScoutAdapterError):
             await adapter.fetch()
 
@@ -672,7 +772,7 @@ class TestRealListingsSurviveTheGates:
         assert apply_hard_filter([listing], _real_profile()) == []
 
 
-def _real_profile() -> UserProfile:
+def _real_profile(queries: list[str] | None = None) -> UserProfile:
     """A profile shaped like the committed `profile.yaml`, built in code."""
     return UserProfile(
         name="Marcos",
@@ -685,5 +785,5 @@ def _real_profile() -> UserProfile:
             exclude_contract_types=["employee_leasing", "permanent_position"],
             minimum_remote_percentage=100,
         ),
-        freelancermap_queries=["Machine Learning"],
+        freelancermap_queries=queries or ["Machine Learning"],
     )

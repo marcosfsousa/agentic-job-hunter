@@ -45,12 +45,14 @@ never authenticating is one of the binding constraints under which ingesting it 
 (issue #11). Do not add a freelancermap credential.
 
 Operational overrides, all optional and all with sane defaults in `config.py`:
-- `FREELANCERMAP_MAX_REQUESTS` (default 10) — hard ceiling on outgoing requests per run. One
-  request per entry in `profile.freelancermap_queries`, so this also caps how many queries run.
-  Exceeding it truncates and logs a WARNING naming the dropped queries.
 - `FREELANCERMAP_MIN_RAW_INGEST` (default 30) — distinct-project floor below which the run
   fails loudly rather than delivering an empty digest. Must stay above 22; see `config.py`.
 - `FEEDBACK_WEIGHT`, `EMBEDDING_MIN_SCORE`, `REEVAL_BELOW` — ranking and evaluation tuning.
+
+`freelancermap_max_requests` (default 10) is **not** in that list on purpose. It is the hard
+request cap — one of issue #11's binding constraints — and a ceiling an operator can raise from
+the environment is a convention, which is the thing a cap exists instead of. Changing it is a
+code change and a review.
 
 ## Key files
 - `profile.yaml` — User profile (skills, preferences, dealbreakers)
