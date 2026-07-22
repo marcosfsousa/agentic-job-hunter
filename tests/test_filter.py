@@ -18,6 +18,7 @@ from jobscout.models import (
     DealbreakersConfig,
     JobListing,
     LocationConfig,
+    RateConfig,
     SkillsConfig,
     UserProfile,
 )
@@ -50,17 +51,21 @@ def _make_profile(**overrides) -> UserProfile:
         name="Marcos",
         target_roles=["ML Engineer"],
         skills=SkillsConfig(),
-        location=LocationConfig(
-            target_countries=["Germany"],
-            preferred_cities=["Berlin"],
-            remote_acceptable=True,
-            eu_work_authorization=True,
-        ),
+        location=LocationConfig(target_countries=["Germany"]),
+        rate=RateConfig(),
         dealbreakers=DealbreakersConfig(
             exclude_companies=[],
             exclude_keywords=["Unpaid", "Volunteer"],
             require_any_keyword=["machine learning", "ML", "AI", "LLM"],
+            # Both new gates are stated explicitly rather than inherited from the
+            # model defaults. The shipped default floor is 100, which would reject
+            # the 50%-remote default job — so every test unrelated to the remote
+            # gate would be silently gated on it and read as testing something
+            # else. Tests that mean to exercise a gate set its value themselves.
+            exclude_contract_types=[],
+            minimum_remote_percentage=None,
         ),
+        freelancermap_queries=["Machine Learning"],
     )
     defaults.update(overrides)
     return UserProfile(**defaults)

@@ -54,10 +54,20 @@ skills:
     - AWS SageMaker
 
 location:
-  target_countries: ["Germany", "Deutschland"]
-  preferred_cities: ["Berlin", "Munich", "Hamburg", "Remote"]
-  remote_acceptable: true
-  eu_work_authorization: true
+  target_countries: ["Germany", "Deutschland"]   # only surviving location field
+
+# Negotiating position. NO PIPELINE CONSUMER — no filter, no ranking, no prompt
+# reads this, and that is deliberate, not dead config awaiting deletion. A rate
+# floor is a position held independently of this tool, and profile.yaml is the
+# single source of truth for preferences. Hourly and daily are stated separately
+# and never converted: a Tagessatz records what you would actually quote, and
+# deriving one from the other would fabricate it.
+rate:
+  minimum_hourly: 50      # Stundensatz floor (EUR/hour)
+  target_hourly: 70       # hourly negotiation target
+  minimum_daily: 450      # Tagessatz floor — STATED, never derived
+  target_daily: 600       # daily negotiation target
+  currency: "EUR"
 
 dealbreakers:
   exclude_companies: []
@@ -84,6 +94,26 @@ dealbreakers:
     - "agentic"
     - "generative AI"
     - "LLM application"
+
+  # Engagement forms never wanted. A blocklist, so contracting AND unknown both
+  # pass — an allowlist would silently delete every unknown row the day a source
+  # that cannot determine the engagement form is added. Empty rejects nothing.
+  exclude_contract_types: ["employee_leasing", "permanent_position"]
+
+  # Remote floor. A job whose remote_percentage is below this is rejected; one at
+  # or above it passes without a country check. A job with no percentage is not
+  # rejected for remoteness but still faces target_countries. null disables the
+  # gate entirely and leaves the country check to decide.
+  minimum_remote_percentage: 100
+
+# Free-text search terms sent to freelancermap. German terms are seeded from the
+# start because the source is DACH and its corpus measures 81% German.
+freelancermap_queries:
+  - "Machine Learning"
+  - "LLM"
+  - "Generative AI"
+  - "Maschinelles Lernen"
+  - "KI"
 
 # Minimum LLM match score (1–10) to include a job in the email digest.
 # Jobs below this threshold are still written to the daily digest file.

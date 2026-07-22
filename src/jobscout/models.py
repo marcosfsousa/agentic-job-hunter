@@ -16,8 +16,10 @@ ContractType = Literal["contracting", "employee_leasing", "permanent_position", 
 ClientType = Literal["agency", "direct", "unknown"]
 FeedbackStatus = Literal["applied", "rejected", "interested", "skipped"]
 
-# The remote cut points. Sole definition — the hard filter and any future
-# ranking boost read `JobListing.remote_policy`, never these directly.
+# The remote cut points. Sole definition — nothing outside `remote_policy` below
+# re-derives the remote/onsite boundary. `_passes_location` compares the raw
+# percentage against the user's configured floor, which is a different question,
+# and still reads `remote_policy` for the bucket.
 FULLY_REMOTE_PERCENTAGE = 100
 FULLY_ONSITE_PERCENTAGE = 0
 
@@ -51,7 +53,9 @@ class JobListing:
 
     # Remote — `remote_percentage` is authoritative, `remote_policy_text` is the
     # adapter's text inference and is consulted only when the percentage is unknown.
-    # Read `remote_policy` (below), never these two directly.
+    # For the coarse bucket read `remote_policy` (below), never `remote_policy_text`;
+    # `remote_percentage` is read directly only where the number itself is the point
+    # (the hard filter's configurable remote floor).
     remote_percentage: int | None = None
     remote_policy_text: RemotePolicy = "not_specified"
 
@@ -122,26 +126,71 @@ class ScoredJob:
 # User profile — validated from profile.yaml by config.py
 # ---------------------------------------------------------------------------
 
-class LocationConfig(BaseModel):
+class _StrictProfileModel(BaseModel):
+    """Base for the profile models: an unrecognised key is an error, not a default.
+
+    `profile.yaml` is the single source of truth, and two hard-filter gates now read
+    it. Without this, a misspelled key falls back to its Pydantic default, the gates
+    quietly change what gets filtered, and nothing fails — the tests build
+    `UserProfile` in code, so only the file is wrong.
+
+    Scoped to the profile models deliberately. `EvaluationResult` and `FeedbackEntry`
+    validate data from outside the repo — Haiku's JSON and `feedback.yaml` — and stay
+    permissive so a provider adding a response field cannot break the pipeline. This
+    is a rule about our config file, not about Pydantic usage in general.
+    """
+
+    model_config = {"extra": "forbid"}
+
+
+class LocationConfig(_StrictProfileModel):
     target_countries: list[str]
-    preferred_cities: list[str]
-    remote_acceptable: bool
-    eu_work_authorization: bool
 
 
-class DealbreakersConfig(BaseModel):
+class RateConfig(_StrictProfileModel):
+    """The user's negotiating position, stated per unit.
+
+    Hourly and daily are independent statements, not two views of one number: a
+    *Tagessatz* carries bulk-engagement premiums that no `hourly × hours_per_day`
+    can know, so divergence between them is signal rather than a consistency bug.
+    Nothing is derived in either direction, and there is deliberately no
+    `hours_per_day`.
+
+    **No pipeline consumer.** No filter, no ranking, no prompt reads this — see the
+    note in `profile.yaml`. An acknowledged exception to "add the field with its
+    consumer", on the basis that a rate floor is a position the user holds
+    independently of this tool.
+    """
+
+    minimum_hourly: float | None = None
+    target_hourly: float | None = None
+    minimum_daily: float | None = None
+    target_daily: float | None = None
+    currency: str = "EUR"
+
+
+class DealbreakersConfig(_StrictProfileModel):
     exclude_companies: list[str] = Field(default_factory=list)
     exclude_keywords: list[str] = Field(default_factory=list)
     require_any_keyword: list[str] = Field(default_factory=list)
 
+    # Blocklist, never an allowlist: an allowlist of ["contracting"] would silently
+    # empty the corpus the day a source that emits `unknown` in bulk is added. Empty
+    # rejects nothing.
+    exclude_contract_types: list[ContractType] = Field(default_factory=list)
 
-class SkillsConfig(BaseModel):
+    # The remote floor `_passes_location` compares `remote_percentage` against.
+    # None disables the remote gate and leaves the country check to decide.
+    minimum_remote_percentage: int | None = 100
+
+
+class SkillsConfig(_StrictProfileModel):
     strong: list[str] = Field(default_factory=list)
     working_knowledge: list[str] = Field(default_factory=list)
     learning: list[str] = Field(default_factory=list)
 
 
-class UserProfile(BaseModel):
+class UserProfile(_StrictProfileModel):
     name: str
     background: str = ""
     ideal_role: str = ""
@@ -149,5 +198,10 @@ class UserProfile(BaseModel):
     target_roles: list[str]
     skills: SkillsConfig
     location: LocationConfig
+    rate: RateConfig
     dealbreakers: DealbreakersConfig
     email_min_score: int = Field(default=7, ge=1, le=10)
+
+    # Free-text search terms sent to freelancermap's `query=` parameter. Named
+    # per-source so a second source adds its own list with no migration.
+    freelancermap_queries: list[str]

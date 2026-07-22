@@ -14,6 +14,7 @@ from jobscout.models import (
     DealbreakersConfig,
     JobListing,
     LocationConfig,
+    RateConfig,
     SkillsConfig,
     UserProfile,
 )
@@ -88,13 +89,10 @@ def ml_profile() -> UserProfile:
             ],
             working_knowledge=["Python", "PyTorch", "Docker", "REST APIs"],
         ),
-        location=LocationConfig(
-            target_countries=["Germany"],
-            preferred_cities=["Berlin"],
-            remote_acceptable=True,
-            eu_work_authorization=True,
-        ),
+        location=LocationConfig(target_countries=["Germany"]),
+        rate=RateConfig(),
         dealbreakers=DealbreakersConfig(),
+        freelancermap_queries=["Machine Learning"],
     )
 
 

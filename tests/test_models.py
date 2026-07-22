@@ -9,7 +9,14 @@ from datetime import datetime
 
 import pytest
 
-from jobscout.models import JobListing
+from pydantic import ValidationError
+
+from jobscout.models import (
+    EvaluationResult,
+    FeedbackEntry,
+    JobListing,
+    LocationConfig,
+)
 
 
 def _make_job(**overrides) -> JobListing:
@@ -63,3 +70,42 @@ class TestRemotePolicyDerivation:
     def test_out_of_range_percentages_clamp_to_the_nearest_end(self, percentage, expected):
         """>= and <= rather than ==, so a malformed source value cannot land in hybrid."""
         assert _make_job(remote_percentage=percentage).remote_policy == expected
+
+
+class TestStrictnessIsScopedToTheProfile:
+    """Profile models reject unknown keys; models fed from outside the repo do not.
+
+    The distinction is the point, not an accident of which models happened to get
+    `extra="forbid"`. `profile.yaml` is ours and a typo in it must fail loudly;
+    Haiku's JSON and `feedback.yaml` are not, and a provider adding a response
+    field must not break the pipeline.
+    """
+
+    # All three go through `model_validate`, which is the production path for the
+    # two permissive models — evaluator.py parses Haiku's JSON and run.py reads
+    # feedback.yaml, neither of which arrives as keyword arguments.
+
+    def test_profile_model_rejects_an_unknown_key(self):
+        with pytest.raises(ValidationError):
+            LocationConfig.model_validate(
+                {"target_countries": ["Germany"], "remote_acceptable": True}
+            )
+
+    def test_evaluation_result_ignores_an_unknown_key(self):
+        result = EvaluationResult.model_validate({
+            "match_score": 7,
+            "matching_skills": ["RAG"],
+            "gaps": [],
+            "explanation": "Good fit.",
+            "confidence": "high",        # a field Haiku might start returning
+        })
+        assert result.match_score == 7
+
+    def test_feedback_entry_ignores_an_unknown_key(self):
+        entry = FeedbackEntry.model_validate({
+            "id": "job-1",
+            "source": "freelancermap",
+            "status": "applied",
+            "noted_on": "2026-07-22",    # a column a future feedback.yaml might add
+        })
+        assert entry.status == "applied"

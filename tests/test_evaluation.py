@@ -17,6 +17,7 @@ from jobscout.models import (
     DealbreakersConfig,
     JobListing,
     LocationConfig,
+    RateConfig,
     SkillsConfig,
     ScoredJob,
     UserProfile,
@@ -36,13 +37,10 @@ def profile() -> UserProfile:
             strong=["RAG systems", "LangChain", "LLM application development"],
             working_knowledge=["Python", "PyTorch", "Docker"],
         ),
-        location=LocationConfig(
-            target_countries=["Germany"],
-            preferred_cities=["Berlin"],
-            remote_acceptable=True,
-            eu_work_authorization=True,
-        ),
+        location=LocationConfig(target_countries=["Germany"]),
+        rate=RateConfig(),
         dealbreakers=DealbreakersConfig(),
+        freelancermap_queries=["Machine Learning"],
     )
 
 
