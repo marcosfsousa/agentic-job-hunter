@@ -10,16 +10,32 @@ on:
   pull_request_review:
     types: [submitted]
   # Automatic review. Deliberately NOT `synchronize` — that re-reviews on every
-  # push and bills for it. Push follow-up commits freely, then comment @claude
-  # to re-review when the branch is actually ready.
+  # push. Push follow-up commits freely, then comment @claude to re-review when
+  # the branch is actually ready.
+  #
+  # `paths-ignore` skips prose-only PRs. One run spent a full agentic review on a
+  # five-line comment correction in CLAUDE.md; a human reads that faster than the
+  # review takes to start. A PR touching ANY path outside this list is reviewed as
+  # normal, so a spec PR that also amends an ADR still gets reviewed.
+  #
+  # `.github/**` is deliberately NOT ignored: workflow diffs carry permissions and
+  # secret handling, which is the last thing that should merge unreviewed.
   pull_request:
     types: [opened, ready_for_review]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Automatic PR review. CodeRabbit skips any PR whose base is not the default
-  # branch, which is every pivot spec PR (#26-#29 target v2-freelance-pivot), so
-  # this is the only automated review those PRs get.
+  # Automatic PR review. This is the ONLY automated review any PR here gets:
+  # `.coderabbit.yaml` disables CodeRabbit's auto-review outright (it was already
+  # skipping every pivot spec PR — its auto-review only runs against the default
+  # branch — and two bots on one diff produced findings nobody reconciled).
+  #
+  # That is why the `paths-ignore` above is narrow. Widening it does not hand the
+  # review to another bot; it removes the review. `@coderabbitai review` still
+  # works on demand if a second opinion is ever wanted.
   # ---------------------------------------------------------------------------
   review:
     if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
@@ -38,7 +54,20 @@ jobs:
       - name: Review
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Authenticates against the Claude subscription, not the API credit
+          # balance — the review is the subscription's cost, not a per-run charge.
+          # Generate with `claude setup-token` locally; it is a personal account
+          # credential, so rotate it like one.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Required with OAuth. This defaults to `true`, which buffers inline
+          # comments and runs a separate classification pass over them — and that
+          # pass authenticates with `anthropic_api_key`, which this job no longer
+          # supplies. `false` restores the pre-buffering behaviour: inline comments
+          # post immediately. Only safe to drop if this job stops asking for inline
+          # comments, which its prompt below does.
+          classify_inline_comments: "false"
+
           use_sticky_comment: true  # one comment per PR, updated — not a new one each run
           prompt: |
             REPO: ${{ github.repository }}
@@ -104,7 +133,18 @@ jobs:
         id: claude
         uses: anthropics/claude-code-action@v1
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Same subscription auth as the review job above. Switched together on
+          # purpose: leaving this one on the API key would mean @claude — the
+          # escape hatch for a PR the review skipped — is the one path that still
+          # fails when the credit balance is empty.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+
+          # Set for the same reason as the review job: this job can post inline
+          # comments too, and the classification pass wants an API key that is no
+          # longer here. Documented to be skipped rather than fatal when the key is
+          # absent, but that is stated for federation, not OAuth — so it is set
+          # explicitly rather than left to undocumented behaviour.
+          classify_inline_comments: "false"
 
           # Optional: Customize the trigger phrase (default: @claude)
           # trigger_phrase: "/claude"
