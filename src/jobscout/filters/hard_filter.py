@@ -64,12 +64,8 @@ def _passes_require_keywords(job: JobListing, profile: UserProfile) -> bool:
 def _passes_location(job: JobListing, profile: UserProfile) -> bool:
     if job.remote_policy == "remote":
         return True
-    if job.remote_policy == "not_specified":
-        # Trust the location string — if it mentions Germany, keep it
-        return any(
-            country.lower() in job.location.lower()
-            for country in profile.location.target_countries
-        )
+    # hybrid, onsite and not_specified all take the same path: trust the location
+    # string — if it mentions a target country, keep it.
     return any(
         country.lower() in job.location.lower()
         for country in profile.location.target_countries
