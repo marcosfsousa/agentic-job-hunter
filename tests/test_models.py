@@ -59,7 +59,7 @@ class TestRemotePolicyDerivation:
         """A source that publishes neither signal says so, rather than guessing."""
         assert _make_job().remote_policy == "not_specified"
 
-    @pytest.mark.parametrize("percentage", [-10, 120])
-    def test_out_of_range_percentages_clamp_to_the_ends(self, percentage):
-        """>= and <= rather than == , so a malformed source value cannot land in hybrid."""
-        assert _make_job(remote_percentage=percentage).remote_policy in ("remote", "onsite")
+    @pytest.mark.parametrize("percentage,expected", [(-10, "onsite"), (120, "remote")])
+    def test_out_of_range_percentages_clamp_to_the_nearest_end(self, percentage, expected):
+        """>= and <= rather than ==, so a malformed source value cannot land in hybrid."""
+        assert _make_job(remote_percentage=percentage).remote_policy == expected

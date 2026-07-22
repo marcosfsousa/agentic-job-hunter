@@ -8,7 +8,7 @@ from pathlib import Path
 import anthropic
 import yaml
 
-from jobscout.adapters.base import JobScoutAdapterError
+from jobscout.adapters.base import JobAdapter, JobScoutAdapterError
 from jobscout.config import get_config
 from jobscout.delivery.email_sender import send_digest
 from jobscout.delivery.formatter import format_digest
@@ -106,7 +106,7 @@ def _sync_feedback(db: "JobDatabase", feedback_path: Path) -> None:
 # The pipeline is dark until it does — the daily schedule is disarmed to match.
 # Their implementations are recoverable from git history if a text-only source
 # ever needs a reference. Add the new adapter here.
-_ADAPTER_REGISTRY: dict[str, type] = {}
+_ADAPTER_REGISTRY: dict[str, type[JobAdapter]] = {}
 
 
 async def run_pipeline(

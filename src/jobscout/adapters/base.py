@@ -37,24 +37,29 @@ class JobScoutAdapterError(Exception):
 class JobAdapter(ABC):
     """Abstract base class for all job source adapters.
 
-    Each concrete adapter handles one data source (e.g. Adzuna, JSearch),
+    Each concrete adapter handles one data source (e.g. freelancermap, Upwork),
     translates its API response into the common ``JobListing`` schema, and
     returns a flat list to the pipeline. The pipeline never imports a concrete
     adapter directly — it works through this interface.
 
     Subclassing convention
     ----------------------
-    Implement ``source`` (a fixed string identifier, e.g. ``"adzuna_de"``) and
-    ``fetch()``. Implement a private ``_normalize(raw: dict) -> JobListing``
+    Implement ``source`` (a fixed string identifier, e.g. ``"freelancermap"``)
+    and ``fetch()``. Implement a private ``_normalize(raw: dict) -> JobListing``
     method to keep normalization logic separate from HTTP logic — this makes
     normalization independently testable without making network calls.
 
+    ``_normalize`` owns the remote signal: set ``remote_percentage`` when the
+    source publishes a number, and fall back to ``remote_policy_text`` only when
+    it does not. ``JobListing.remote_policy`` is derived from the two and is not
+    a constructor argument.
+
     Example skeleton::
 
-        class AdzunaAdapter(JobAdapter):
+        class FreelancermapAdapter(JobAdapter):
             @property
             def source(self) -> str:
-                return "adzuna_de"
+                return "freelancermap"
 
             async def fetch(self, max_results: int = 100, since: date | None = None) -> list[JobListing]:
                 results = []
@@ -77,7 +82,7 @@ class JobAdapter(ABC):
 
         Used as the ``source`` field on every ``JobListing`` produced by this
         adapter and as part of the deduplication key in the seen-jobs cache.
-        Must be unique across all registered adapters (e.g. ``"adzuna_de"``).
+        Must be unique across all registered adapters (e.g. ``"freelancermap"``).
         """
 
     @abstractmethod

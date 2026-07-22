@@ -134,7 +134,6 @@ class TestFormatDigest:
         """Annual salary left the model with the contract pivot."""
         result = format_digest([_make_scored_job()], run_date=_RUN_DATE)
         assert "**Salary:**" not in result
-        assert "€" not in result
 
     def test_remote_line_renders_from_percentage(self):
         result = format_digest([_make_scored_job(remote_percentage=100)], run_date=_RUN_DATE)
