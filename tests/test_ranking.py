@@ -6,7 +6,7 @@ from local cache via a module-scoped fixture.
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 
 import pytest
 
@@ -14,8 +14,6 @@ from jobscout.models import (
     DealbreakersConfig,
     JobListing,
     LocationConfig,
-    SalaryConfig,
-    SeniorityConfig,
     SkillsConfig,
     UserProfile,
 )
@@ -35,12 +33,9 @@ def _make_job(id: str, title: str, description: str) -> JobListing:
         company="Test GmbH",
         description=description,
         location="Berlin, Germany",
-        remote_policy="hybrid",
-        salary_min=55_000.0,
-        salary_max=75_000.0,
-        seniority="mid",
+        remote_percentage=50,
         url=f"https://example.com/job/{id}",
-        posted_date=date(2026, 3, 19),
+        posted_date=datetime(2026, 3, 19, 9, 30, 0),
         fetched_at=datetime(2026, 3, 19, 12, 0, 0),
         raw_data={},
     )
@@ -99,8 +94,6 @@ def ml_profile() -> UserProfile:
             remote_acceptable=True,
             eu_work_authorization=True,
         ),
-        salary=SalaryConfig(minimum_annual_eur=50_000.0, target_annual_eur=65_000.0),
-        seniority=SeniorityConfig(target=["junior", "mid"], exclude=["intern", "director"]),
         dealbreakers=DealbreakersConfig(),
     )
 

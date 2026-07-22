@@ -4,9 +4,10 @@
 # Spec Markdown
 job-scout-spec.md
 
-# Data and output — track DB and feedback, ignore everything else
+# Data and output — track feedback only. The database is never committed:
+# it carries the full description of every ingested listing, and publishing
+# ingested source content from a public repo is not ours to do.
 data/*
-!data/jobscout.db
 !data/feedback.yaml
 digests/
 

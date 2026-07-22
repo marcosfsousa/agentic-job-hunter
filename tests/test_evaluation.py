@@ -5,7 +5,7 @@ No real API calls — Haiku responses are mocked via unittest.mock.
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -17,8 +17,6 @@ from jobscout.models import (
     DealbreakersConfig,
     JobListing,
     LocationConfig,
-    SalaryConfig,
-    SeniorityConfig,
     SkillsConfig,
     ScoredJob,
     UserProfile,
@@ -44,8 +42,6 @@ def profile() -> UserProfile:
             remote_acceptable=True,
             eu_work_authorization=True,
         ),
-        salary=SalaryConfig(minimum_annual_eur=50_000.0, target_annual_eur=65_000.0),
-        seniority=SeniorityConfig(target=["junior", "mid"], exclude=["intern"]),
         dealbreakers=DealbreakersConfig(),
     )
 
@@ -58,12 +54,9 @@ def _make_scored_job(id: str, embedding_score: float = 0.8) -> ScoredJob:
         company="Test GmbH",
         description="Build and deploy machine learning models using PyTorch and LangChain.",
         location="Berlin, Germany",
-        remote_policy="hybrid",
-        salary_min=55_000.0,
-        salary_max=75_000.0,
-        seniority="mid",
+        remote_percentage=50,
         url=f"https://example.com/job/{id}",
-        posted_date=date(2026, 3, 20),
+        posted_date=datetime(2026, 3, 20, 9, 30, 0),
         fetched_at=datetime(2026, 3, 20, 12, 0, 0),
         raw_data={},
     )

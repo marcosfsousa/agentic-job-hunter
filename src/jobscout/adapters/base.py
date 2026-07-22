@@ -1,15 +1,30 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from datetime import date
+from datetime import date, datetime
 
 from jobscout.config import AppConfig
 from jobscout.models import JobListing
 
 
+def _as_date(value: date) -> date:
+    """Narrow a date-or-datetime to a calendar date.
+
+    ``posted_date`` is a full timestamp but ``--since`` is day-granular, and
+    Python raises TypeError on a datetime-to-date comparison rather than
+    coercing. Both sides are narrowed so the cutoff means "posted on or after
+    this day" regardless of which type reaches it.
+    """
+    return value.date() if isinstance(value, datetime) else value
+
+
 def filter_by_since(listings: list[JobListing], since: date) -> list[JobListing]:
     """Return listings posted on or after ``since``. Listings with no posted_date are kept."""
-    return [j for j in listings if j.posted_date is None or j.posted_date >= since]
+    cutoff = _as_date(since)
+    return [
+        j for j in listings
+        if j.posted_date is None or _as_date(j.posted_date) >= cutoff
+    ]
 
 
 class JobScoutAdapterError(Exception):
@@ -22,24 +37,29 @@ class JobScoutAdapterError(Exception):
 class JobAdapter(ABC):
     """Abstract base class for all job source adapters.
 
-    Each concrete adapter handles one data source (e.g. Adzuna, JSearch),
+    Each concrete adapter handles one data source (e.g. freelancermap, Upwork),
     translates its API response into the common ``JobListing`` schema, and
     returns a flat list to the pipeline. The pipeline never imports a concrete
     adapter directly — it works through this interface.
 
     Subclassing convention
     ----------------------
-    Implement ``source`` (a fixed string identifier, e.g. ``"adzuna_de"``) and
-    ``fetch()``. Implement a private ``_normalize(raw: dict) -> JobListing``
+    Implement ``source`` (a fixed string identifier, e.g. ``"freelancermap"``)
+    and ``fetch()``. Implement a private ``_normalize(raw: dict) -> JobListing``
     method to keep normalization logic separate from HTTP logic — this makes
     normalization independently testable without making network calls.
 
+    ``_normalize`` owns the remote signal: set ``remote_percentage`` when the
+    source publishes a number, and fall back to ``remote_policy_text`` only when
+    it does not. ``JobListing.remote_policy`` is derived from the two and is not
+    a constructor argument.
+
     Example skeleton::
 
-        class AdzunaAdapter(JobAdapter):
+        class FreelancermapAdapter(JobAdapter):
             @property
             def source(self) -> str:
-                return "adzuna_de"
+                return "freelancermap"
 
             async def fetch(self, max_results: int = 100, since: date | None = None) -> list[JobListing]:
                 results = []
@@ -62,7 +82,7 @@ class JobAdapter(ABC):
 
         Used as the ``source`` field on every ``JobListing`` produced by this
         adapter and as part of the deduplication key in the seen-jobs cache.
-        Must be unique across all registered adapters (e.g. ``"adzuna_de"``).
+        Must be unique across all registered adapters (e.g. ``"freelancermap"``).
         """
 
     @abstractmethod

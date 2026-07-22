@@ -35,9 +35,12 @@ python -m pytest tests/          # Run tests
 - No Docker needed for development
 
 Required keys:
-- `ADZUNA_APP_ID` + `ADZUNA_APP_KEY` — job data source
 - `ANTHROPIC_API_KEY` — LLM evaluation (Claude Haiku)
-- `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` — delivery
+
+Optional: `RESEND_API_KEY` + `EMAIL_FROM` + `EMAIL_TO` — email delivery, skipped if unset.
+
+The Adzuna and Open Web Ninja keys are gone with their adapters. No source key is required
+during the pivot, because no adapter is registered — see `_ADAPTER_REGISTRY` in `run.py`.
 
 ## Key files
 - `profile.yaml` — User profile (skills, preferences, dealbreakers)
@@ -51,7 +54,7 @@ Required keys:
 ### Sync local with remote before working
 ```bash
 git fetch origin && git status
-git pull  # keep remote DB: git checkout data/jobscout.db && git pull
+git pull  # data/jobscout.db is untracked — a pull never touches it
 ```
 
 ### Check what the daily pipeline did

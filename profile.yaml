@@ -59,16 +59,6 @@ location:
   remote_acceptable: true
   eu_work_authorization: true
 
-salary:
-  minimum_annual_eur: 50000
-  target_annual_eur: 65000
-  currency: "EUR"
-
-seniority:
-  target: ["junior", "mid"]
-  exclude: ["intern", "director", "vp"]
-  max_years_experience: 4
-
 dealbreakers:
   exclude_companies: []
   exclude_keywords:
@@ -98,25 +88,3 @@ dealbreakers:
 # Minimum LLM match score (1–10) to include a job in the email digest.
 # Jobs below this threshold are still written to the daily digest file.
 email_min_score: 4
-
-# Search queries sent to JSearch (one API call per query).
-# Deduplication handles overlap — tune queries to target different supply segments.
-jsearch_queries:
-  - "AI software engineer Germany"
-  - "LLM engineer Germany"
-  - "NLP engineer Germany"
-
-# JobSpy scraper queries and per-site config.
-# results_wanted: max listings per query per site.
-# fetch_description: LinkedIn only — slower but required for embedding quality.
-jobspy_queries:
-  - "AI engineer Germany"
-  - "machine learning engineer Berlin Munich Hamburg"
-
-jobspy_sites:
-  indeed:
-    results_wanted: 25
-    country_indeed: "Germany"
-  linkedin:
-    results_wanted: 12
-    fetch_description: true

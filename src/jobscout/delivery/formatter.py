@@ -39,7 +39,6 @@ def _format_job(rank: int, job: ScoredJob) -> str:
     listing = job.listing
     ev = job.evaluation  # guaranteed non-None (caller filters)
 
-    salary = _format_salary(listing.salary_min, listing.salary_max)
     skills = ", ".join(ev.matching_skills) if ev.matching_skills else "none"
     gaps = ", ".join(ev.gaps) if ev.gaps else "none"
 
@@ -49,12 +48,6 @@ def _format_job(rank: int, job: ScoredJob) -> str:
         f"**Score:** {ev.match_score}/10 | **Embedding:** {job.embedding_score:.3f}",
         f"**Location:** {listing.location}",
         f"**Remote:** {listing.remote_policy}",
-    ]
-
-    if salary:
-        lines.append(f"**Salary:** {salary}")
-
-    lines += [
         f"**Matching skills:** {skills}",
         f"**Gaps:** {gaps}",
         f"**Summary:** {ev.explanation}",
@@ -63,13 +56,3 @@ def _format_job(rank: int, job: ScoredJob) -> str:
     ]
 
     return "\n".join(lines)
-
-
-def _format_salary(salary_min: float | None, salary_max: float | None) -> str:
-    if salary_min is not None and salary_max is not None:
-        return f"€{salary_min:,.0f} – €{salary_max:,.0f}"
-    if salary_max is not None:
-        return f"up to €{salary_max:,.0f}"
-    if salary_min is not None:
-        return f"from €{salary_min:,.0f}"
-    return ""
