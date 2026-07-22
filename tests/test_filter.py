@@ -303,8 +303,11 @@ class TestPassesLocationWhenPercentageIsUnknown:
     def test_text_only_remote_is_exempt_from_the_country_check(self):
         """Story 19: read the best signal available, not only the structured one.
 
-        Under ADR 0001 a non-null percentage always wins, so this branch can only
-        fire when the percentage is absent — it cannot contradict the floor above.
+        Scoped to this class, the exemption fires because the source published no
+        percentage — `remote_policy` falls back to the text. It cannot contradict
+        the floor, which returned already whenever both values were present. (The
+        same branch also carries fully-remote work when the gate is switched off;
+        `TestPassesLocationWhenGateDisabled` covers that case.)
         """
         job = _make_job(
             remote_percentage=None,
