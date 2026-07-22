@@ -1,0 +1,11 @@
+# Automated review on this repo is Claude's job — see .github/workflows/claude.yml.
+# CodeRabbit was skipping every pivot spec PR anyway ("auto reviews are disabled on
+# base/target branches other than the default branch"), and two bots reviewing the
+# same diff produces duplicate findings nobody reconciles.
+#
+# This disables CodeRabbit's automatic reviews. It does NOT uninstall the app — an
+# explicit `@coderabbitai review` still works if you ever want a second opinion.
+reviews:
+  auto_review:
+    enabled: false
+  review_status: false

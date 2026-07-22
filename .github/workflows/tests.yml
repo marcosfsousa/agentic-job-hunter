@@ -1,0 +1,42 @@
+name: Tests
+
+# The deterministic gate. Runs on every PR regardless of base branch — the pivot
+# specs target v2-freelance-pivot, not main, and a check that only fires on the
+# default branch would skip the entire pivot.
+on:
+  pull_request:
+  push:
+    branches: [main, v2-freelance-pivot]
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true  # a superseded push has nothing worth finishing
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # tests/test_ranking.py constructs a real ProfileEmbedder, which downloads
+      # the sentence-transformer on a cold runner. Same key as daily_run.yml so
+      # the two share one cache entry.
+      - name: Cache HuggingFace model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: huggingface-multi-qa-MiniLM
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests
+        run: pytest -q
