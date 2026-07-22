@@ -80,8 +80,14 @@ Single-context — `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agen
 
 ## Session State
 
-Before starting work, read `docs/session-state.md` for where we left off.
+Before starting work, read the **[Wayfinder map (issue #3)](https://github.com/marcosfsousa/agentic-job-hunter/issues/3)**
+for where we left off — its "Decisions so far" section is the running record, and the four hand-off
+specs (#26 → #27 → #28 → #29, each blocking the next) are the work queue. Open work generally lives
+in GitHub issues via `gh` → `docs/agents/issue-tracker.md`.
+
+`docs/session-state.md` is **closed** (2026-07-22) and is not maintained. It is kept only as a
+historical record of the FTE-era pipeline; do not read it for current state or update it.
+
 Full build history in `docs/build-log.md`.
 Setup and run instructions → `docs/dev-notes.md`
 Ops checks (sync, pipeline inspection, queue delays) → `docs/dev-notes.md#ops-checks`
-Session state template → `docs/dev-notes.md#session-state-template`
