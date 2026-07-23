@@ -79,6 +79,19 @@ class TestShippedProfileLoads:
         assert rate.currency == "EUR"
 
 
+class TestPoolBoundConfig:
+    """`top_n` is the sole constant carrying CLAUDE.md's 'top 20–30 jobs only', and the
+    scale-coupled `embedding_min_score` cosine floor is gone with no replacement."""
+
+    def test_top_n_present_with_sane_default(self):
+        config = get_config(profile_path=SHIPPED_PROFILE)
+        assert config.top_n == 25
+
+    def test_embedding_min_score_no_longer_exists(self):
+        config = get_config(profile_path=SHIPPED_PROFILE)
+        assert not hasattr(config, "embedding_min_score")
+
+
 # ---------------------------------------------------------------------------
 # Strict validation
 # ---------------------------------------------------------------------------

@@ -27,7 +27,7 @@ Goal: fewer, higher-quality matches. This tool finds and ranks. User decides wha
 ## Constraints
 
 - **NEVER auto-apply to jobs.**
-- Use Claude Haiku for evaluation (not Sonnet); local `multi-qa-MiniLM-L6-cos-v1` for embeddings (asymmetric semantic search — profile query vs job document).
+- Use Claude Haiku for evaluation (not Sonnet); local `intfloat/multilingual-e5-small` for embeddings (asymmetric semantic search — profile query vs job document, expressed through e5's `query:` / `passage:` prefixes).
 - LLM evaluation runs on top 20–30 jobs only, after hard filter and ranking reduce the pool.
 - Hard filter is deterministic and cheap — no LLM calls, ever.
 - Pipeline must be idempotent — same day = same digest.

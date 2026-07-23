@@ -34,8 +34,12 @@ class AppConfig(BaseModel):
     # Ranking — blend weight for feedback centroid (0 = profile only, 1 = feedback only)
     feedback_weight: float = 0.2
 
-    # Minimum cosine similarity a job must reach to proceed to LLM evaluation — avoids wasting tokens on poor matches.
-    embedding_min_score: float = 0.30
+    # Size of the LLM-evaluation pool: the top-N ranked jobs are evaluated, the rest
+    # dropped. This is the sole constant carrying CLAUDE.md's "top 20–30 jobs only"
+    # — a rank cut, not an absolute-score floor, so it survives an embedding-model
+    # swap that rescales cosine. Lives here rather than as an evaluate_jobs signature
+    # default because "all config via config.py".
+    top_n: int = Field(default=25, ge=1)
 
     # --- freelancermap operational thresholds -----------------------------
     # Operational, not preferences: these describe how hard we may lean on the
@@ -157,7 +161,6 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
         email_to=os.environ.get("EMAIL_TO") or None,
         email_from=os.environ.get("EMAIL_FROM") or None,
         feedback_weight=float(os.environ.get("FEEDBACK_WEIGHT", "0.2")),
-        embedding_min_score=float(os.environ.get("EMBEDDING_MIN_SCORE", "0.30")),
         freelancermap_min_raw_ingest=int(os.environ.get("FREELANCERMAP_MIN_RAW_INGEST", "30")),
     )
 

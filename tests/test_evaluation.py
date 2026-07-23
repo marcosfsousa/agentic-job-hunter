@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from jobscout.evaluation.evaluator import evaluate_jobs
-from jobscout.evaluation.prompt import build_prompt
+from jobscout.evaluation.prompt import SYSTEM_PROMPT, build_prompt
 from jobscout.models import (
     DealbreakersConfig,
     JobListing,
@@ -88,15 +88,18 @@ def _mock_client(response_payload: dict | None = None, raise_exc: Exception | No
 
 class TestEvaluateJobs:
     async def test_populates_llm_score_and_final_score(self, profile):
-        jobs = [_make_scored_job("job-1", embedding_score=0.8)]
+        # embedding_score deliberately != llm_score so final == llm is a real assertion:
+        # under the old 0.4*emb + 0.6*llm blend this would have been 0.4*0.3 + 0.6*0.8 = 0.6.
+        jobs = [_make_scored_job("job-1", embedding_score=0.3)]
         client = _mock_client()
 
-        results = await evaluate_jobs(jobs, profile, client, model="mock-model")
+        results = await evaluate_jobs(jobs, profile, client, model="mock-model", top_n=25)
 
         assert len(results) == 1
         result = results[0]
         assert result.llm_score == pytest.approx(0.8)          # match_score=8 → 8/10
-        assert result.final_score == pytest.approx(0.4 * 0.8 + 0.6 * 0.8)
+        assert result.final_score == pytest.approx(0.8)        # == llm_score, no blend
+        assert result.final_score == result.llm_score
         assert result.evaluation is not None
         assert result.evaluation.match_score == 8
 
@@ -104,7 +107,7 @@ class TestEvaluateJobs:
         jobs = [_make_scored_job("job-2")]
         client = _mock_client(raise_exc=Exception("API error"))
 
-        results = await evaluate_jobs(jobs, profile, client, model="mock-model")
+        results = await evaluate_jobs(jobs, profile, client, model="mock-model", top_n=25)
 
         assert len(results) == 1
         assert results[0].llm_score is None
@@ -120,7 +123,7 @@ class TestEvaluateJobs:
             return_value=SimpleNamespace(content=[SimpleNamespace(text=fenced)])
         )
 
-        results = await evaluate_jobs([_make_scored_job("fence-1")], profile, client, model="mock-model")
+        results = await evaluate_jobs([_make_scored_job("fence-1")], profile, client, model="mock-model", top_n=25)
 
         assert results[0].evaluation is not None
         assert results[0].evaluation.match_score == 7
@@ -131,7 +134,7 @@ class TestEvaluateJobs:
         client.messages.create = AsyncMock(return_value=bad_message)
 
         results = await evaluate_jobs(
-            [_make_scored_job("job-3")], profile, client, model="mock-model"
+            [_make_scored_job("job-3")], profile, client, model="mock-model", top_n=25
         )
 
         assert results[0].llm_score is None
@@ -147,7 +150,7 @@ class TestEvaluateJobs:
 
     async def test_empty_input_returns_empty(self, profile):
         client = _mock_client()
-        results = await evaluate_jobs([], profile, client, model="mock-model")
+        results = await evaluate_jobs([], profile, client, model="mock-model", top_n=25)
         assert results == []
         client.messages.create.assert_not_called()
 
@@ -166,7 +169,7 @@ class TestEvaluateJobs:
         client.messages.create = AsyncMock(side_effect=[good_msg, fail_exc])
 
         jobs = [_make_scored_job("ok-1"), _make_scored_job("fail-1")]
-        results = await evaluate_jobs(jobs, profile, client, model="mock-model")
+        results = await evaluate_jobs(jobs, profile, client, model="mock-model", top_n=25)
 
         assert results[0].llm_score == pytest.approx(0.7)
         assert results[1].llm_score is None
@@ -182,7 +185,7 @@ class TestEvaluateJobs:
         client.messages.create = AsyncMock(side_effect=[low_msg, high_msg])
 
         results = await evaluate_jobs(
-            [_make_scored_job("reeval-1")], profile, client, model="mock-model", reeval_below=4
+            [_make_scored_job("reeval-1")], profile, client, model="mock-model", top_n=25, reeval_below=4
         )
 
         assert client.messages.create.call_count == 2
@@ -195,7 +198,7 @@ class TestEvaluateJobs:
         client = _mock_client(response_payload=payload)
 
         results = await evaluate_jobs(
-            [_make_scored_job("no-reeval-1")], profile, client, model="mock-model", reeval_below=4
+            [_make_scored_job("no-reeval-1")], profile, client, model="mock-model", top_n=25, reeval_below=4
         )
 
         assert client.messages.create.call_count == 1
@@ -213,7 +216,7 @@ class TestEvaluateJobs:
         client.messages.create = AsyncMock(side_effect=[first_msg, second_msg])
 
         results = await evaluate_jobs(
-            [_make_scored_job("keep-first-1")], profile, client, model="mock-model", reeval_below=4
+            [_make_scored_job("keep-first-1")], profile, client, model="mock-model", top_n=25, reeval_below=4
         )
 
         assert client.messages.create.call_count == 2
@@ -229,12 +232,86 @@ class TestEvaluateJobs:
         client.messages.create = AsyncMock(side_effect=[first_msg, Exception("network error")])
 
         results = await evaluate_jobs(
-            [_make_scored_job("reeval-fail-1")], profile, client, model="mock-model", reeval_below=4
+            [_make_scored_job("reeval-fail-1")], profile, client, model="mock-model", top_n=25, reeval_below=4
         )
 
         assert client.messages.create.call_count == 2
         assert results[0].evaluation is not None
         assert results[0].evaluation.match_score == 3
+
+
+class TestSortOrder:
+    """evaluate_jobs sorts its return descending by final_score.
+
+    This is the stage that produces the score, so it is the stage that orders by it —
+    which is what formatter.py's docstring has always presupposed and what nothing
+    did before (F #9 decision 9). reeval_below=1 disables re-evaluation (match_score
+    is never < 1) so each job consumes exactly one mocked response.
+    """
+
+    @staticmethod
+    def _msg(match_score: int) -> SimpleNamespace:
+        payload = {
+            "match_score": match_score,
+            "matching_skills": [],
+            "gaps": [],
+            "explanation": "x",
+        }
+        return SimpleNamespace(content=[SimpleNamespace(text=json.dumps(payload))])
+
+    async def test_returns_descending_by_final_score(self, profile):
+        # Input order does not match score order — the sort must reorder.
+        jobs = [
+            _make_scored_job("low", embedding_score=0.9),
+            _make_scored_job("high", embedding_score=0.5),
+        ]
+        client = MagicMock()
+        client.messages.create = AsyncMock(side_effect=[self._msg(4), self._msg(9)])
+
+        results = await evaluate_jobs(jobs, profile, client, model="mock-model", top_n=25, reeval_below=1)
+
+        assert [r.listing.id for r in results] == ["high", "low"]
+
+    async def test_ties_broken_by_embedding_score_descending(self, profile):
+        # Equal LLM scores → the higher embedding_score must come first. Ties dominate
+        # at ten distinct llm values across a pool of twenty-five, so this is the case
+        # that matters most; a stable sort would silently preserve input order instead.
+        jobs = [
+            _make_scored_job("lower-emb", embedding_score=0.4),
+            _make_scored_job("higher-emb", embedding_score=0.8),
+        ]
+        client = MagicMock()
+        client.messages.create = AsyncMock(side_effect=[self._msg(7), self._msg(7)])
+
+        results = await evaluate_jobs(jobs, profile, client, model="mock-model", top_n=25, reeval_below=1)
+
+        assert results[0].llm_score == results[1].llm_score
+        assert [r.listing.id for r in results] == ["higher-emb", "lower-emb"]
+
+    async def test_failed_evaluation_sorts_last_without_raising(self, profile):
+        # A failed eval leaves final_score=None; a naive sort key would raise TypeError
+        # and take the run down on one bad Haiku response. It must sort last instead.
+        jobs = [
+            _make_scored_job("fails", embedding_score=0.95),
+            _make_scored_job("ok", embedding_score=0.2),
+        ]
+        client = MagicMock()
+        client.messages.create = AsyncMock(side_effect=[Exception("boom"), self._msg(6)])
+
+        results = await evaluate_jobs(jobs, profile, client, model="mock-model", top_n=25, reeval_below=1)
+
+        assert [r.listing.id for r in results] == ["ok", "fails"]
+        assert results[-1].final_score is None
+
+    async def test_top_n_read_from_argument(self, profile):
+        # top_n now lives in config.py and is passed through run.py; the evaluator still
+        # honours it as the pool bound.
+        jobs = [_make_scored_job(f"job-{i}") for i in range(10)]
+        client = _mock_client()
+
+        results = await evaluate_jobs(jobs, profile, client, model="mock-model", top_n=4)
+
+        assert len(results) == 4
 
 
 # ---------------------------------------------------------------------------
@@ -258,3 +335,42 @@ class TestBuildPrompt:
         prompt = build_prompt(job, profile)
         assert "ML Engineer" in prompt
         assert "AI Engineer" in prompt
+
+    def test_carries_deprioritise_entries_but_not_five_years(self):
+        """The rewritten profile prose reaches Haiku, and the deleted penalty's config
+        half does not — this catches removing the prompt line but not the YAML line."""
+        profile = UserProfile(
+            name="Marcos",
+            background="Application-layer builder.",
+            ideal_role="Ship LLM applications end to end.",
+            deprioritise=[
+                "Requires fluent German as a stated condition",
+                "Primarily model research or academic role",
+            ],
+            target_roles=["ML Engineer"],
+            skills=SkillsConfig(strong=["RAG systems"], working_knowledge=["Python"]),
+            location=LocationConfig(target_countries=["Germany"]),
+            rate=RateConfig(),
+            dealbreakers=DealbreakersConfig(),
+            freelancermap_queries=["Machine Learning"],
+        )
+        prompt = build_prompt(_make_scored_job("j1").listing, profile)
+
+        assert "Requires fluent German as a stated condition" in prompt
+        assert "Primarily model research or academic role" in prompt
+        assert "5+ years" not in prompt
+
+    def test_system_prompt_drops_year_count_penalties(self):
+        """The 2–4yr and 5+yr penalties fired on nearly a senior-skewing pool; gone."""
+        assert "5+ years" not in SYSTEM_PROMPT
+        assert "2–4 years" not in SYSTEM_PROMPT
+        assert "€80k" not in SYSTEM_PROMPT
+
+    def test_system_prompt_grades_ramp_up_risk(self):
+        """The year-count trigger is replaced by a graded deliverable-evidence judgement."""
+        assert "RAMP-UP RISK" in SYSTEM_PROMPT
+
+    def test_system_prompt_keeps_german_penalty(self):
+        """Kept deliberately — a stated German requirement is a real disqualifier, not
+        a bad proxy like the year-count penalties were."""
+        assert "fluent German" in SYSTEM_PROMPT
