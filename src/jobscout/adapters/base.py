@@ -31,7 +31,16 @@ class JobScoutAdapterError(Exception):
     """Raised by adapters for recoverable API failures (rate limits, timeouts,
     5xx responses). Unexpected errors (auth failures, bugs) bubble up as-is.
     The pipeline orchestrator catches this type for retry / graceful fallback.
+
+    `status` carries the originating HTTP status when there was one (None for a
+    timeout or connection failure, which have no status). Adapters that treat some
+    recoverable statuses differently from others — e.g. backing off on a 429 while
+    shrugging at a 5xx — read it rather than parsing the message string.
     """
+
+    def __init__(self, *args: object, status: int | None = None) -> None:
+        super().__init__(*args)
+        self.status = status
 
 
 class JobScoutSourceIntegrityError(Exception):
