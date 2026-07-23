@@ -118,7 +118,7 @@ class ScoredJob:
     listing: JobListing
     embedding_score: float
     llm_score: float | None = None        # None until LLM evaluation runs
-    final_score: float | None = None      # 0.4 * embedding + 0.6 * llm
+    final_score: float | None = None      # == llm_score; the reranker orders, the retriever only picks
     evaluation: EvaluationResult | None = None
 
 

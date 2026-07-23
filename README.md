@@ -38,7 +38,7 @@ This is not a demo wrapper around one API. It is a full decision pipeline with c
 Highlights:
 - async Python pipeline with source adapters behind a shared interface
 - deterministic hard filters before any model call
-- semantic ranking with `multi-qa-MiniLM-L6-cos-v1`
+- multilingual semantic ranking with `intfloat/multilingual-e5-small`
 - LLM-based scoring on the reduced candidate set only
 - fingerprint-based deduplication for unstable third-party job IDs
 - GitHub Actions daily scheduler with persisted SQLite state

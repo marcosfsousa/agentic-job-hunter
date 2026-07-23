@@ -1,23 +1,32 @@
 name: "Marcos"
 
+# background / ideal_role are written POSITIVE-ONLY. Both feed the embedding query
+# (embedder.py), and the model encodes topics not inversions — a clause like "not
+# classical ML" would pull the query TOWARD classical ML. Every negative clause lives
+# in `deprioritise` below instead, where prompt.py injects it into Haiku and the
+# embedder never sees it. (F #9 decision 3; N #19 §5.)
 background: >
   2.5 years software engineering and tech lead experience (enterprise, client-facing projects).
   3 months hands-on AI engineering: built RAG pipelines, NLP systems, LLM fine-tuning workflows,
-  and agentic applications. Strong on the application layer; weaker on MLOps, cloud infrastructure,
-  and classical ML. Not a researcher — a builder.
+  and agentic applications. Strong on the application layer — a builder.
 
 ideal_role: >
-  Building and deploying LLM-based applications, RAG pipelines, or NLP systems — not model research
-  or classical ML. End-to-end ownership from prototype to deployed interface. Consulting-adjacent
-  or product-facing. Small-to-mid size company, or a specialist AI/consulting unit within a larger
-  company where individual contributions are visible.
+  Building and deploying LLM-based applications, RAG pipelines, or NLP systems. End-to-end ownership
+  from prototype to deployed interface. Consulting-adjacent or product-facing. Small-to-mid size
+  company, or a specialist AI/consulting unit within a larger company where individual contributions
+  are visible.
 
+# The negative half of background / ideal_role lives here (see the note above). These
+# four already cover "weaker on MLOps/cloud/classical ML", "Not a researcher", and
+# "not model research or classical ML", so consolidation was deletion, not restatement.
+# The FTE-era "5+ years senior" entry is GONE (P #22 decision 3): it is the config half
+# of the year-count penalty deleted from prompt.py, and on a senior-skewing freelance
+# corpus it fired on nearly every row.
 deprioritise:
   - "Requires fluent German as a stated condition"
   - "Focused primarily on recommendation systems, forecasting, or classical ML pipelines"
   - "Heavy MLOps, Kubernetes, or cloud infrastructure as core job requirements"
   - "Primarily model research or academic role"
-  - "Senior-level role requiring 5+ years dedicated ML engineering experience"
 
 target_roles:
   - "ML Engineer"

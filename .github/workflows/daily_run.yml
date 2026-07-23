@@ -42,7 +42,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: huggingface-multi-qa-MiniLM
+          key: huggingface-multilingual-e5-small
 
       # The database is no longer carried by git, so dedup state has to survive
       # between runs some other way. Rolling key: restore the newest previous

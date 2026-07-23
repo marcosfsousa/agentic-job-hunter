@@ -6,6 +6,7 @@
 - **Amended by:** [P — Reconcile ADR 0002 with F](https://github.com/marcosfsousa/agentic-job-hunter/issues/22) (2026-07-18) — `rate:` restated per-unit with no derivation and marked a knowingly-consumer-less exception; remote gate moved from F's hardcode into `dealbreakers.minimum_remote_percentage`; the `deprioritise` "5+ years" entry deleted; Risks 1 and 2 discharged. Amendments are marked inline.
 - **Amended by:** [Spec 2 — Freelance profile schema + hard-filter gates](https://github.com/marcosfsousa/agentic-job-hunter/issues/27) (2026-07-22) — the `_passes_location` statement in Boundaries was ambiguous in a way that made `target_countries` dead config under a literal reading; replaced with the resolved predicate and its rationale. The `freelancermap_queries` English-only comment is flagged as disputed and deferred to spec 4. Amended in place, per P's precedent, so the ADR reads correct rather than merged-then-patched.
 - **Amended by:** [Spec 3 — freelancermap adapter + fail-loud raw-ingest floor](https://github.com/marcosfsousa/agentic-job-hunter/issues/28) (2026-07-22) — the "DACH-widening of `target_countries`" tuning flag is struck: measurement shows `remoteInPercent` is populated on every freelancermap row, so `_passes_location` never reaches the country check and the flag is a no-op. The field stays (dormant, correct for a future text-only source); only its description as a live knob goes. `freelancermap_queries` is additionally noted as load-bearing for **coverage**, not just targeting.
+- **Amended by:** [Spec 4 — e5 embedding swap + freelance ranking query and eval prompt](https://github.com/marcosfsousa/agentic-job-hunter/issues/29) (2026-07-23) — the disputed English-only `freelancermap_queries` comment is adjudicated and struck: N #19 §5 amends the *embedding query*, not the source's own HTTP search terms, so the German terms stay. `background` / `ideal_role` were rewritten positive-only and the "5+ years senior" `deprioritise` entry deleted as this ADR's decision table specified. Amended in place, per P's precedent.
 - **Depends on:** [B — Contract data model](https://github.com/marcosfsousa/agentic-job-hunter/issues/5) ([ADR 0001](0001-contract-data-model.md); enums + removed job fields), [D — Hard filter semantics](https://github.com/marcosfsousa/agentic-job-hunter/issues/7) (which predicates read which config), [K — Repoint yield](https://github.com/marcosfsousa/agentic-job-hunter/issues/15) (adapter roster; "supply skews senior")
 - **Part of:** [Wayfinder: JobScout FTE → freelance pivot](https://github.com/marcosfsousa/agentic-job-hunter/issues/3)
 
@@ -37,13 +38,12 @@ below.
 #   email_min_score
 # — `background` / `ideal_role` become positive-only prose, negatives consolidated
 #   into `deprioritise`; the `deprioritise` "5+ years senior" entry is DELETED (P #22).
-# — `freelancermap_queries` values go English-only once e5 lands (N #19 §5).
-#   ⚠️ DISPUTED, deferred to spec 4 (#29) — this line appears to conflate two different
-#   strings. N §5 amends F decision 1, the *embedding query*; `freelancermap_queries` is
-#   what goes to freelancermap's HTTP `query=` parameter, and the embedding model has no
-#   bearing on what a source's own search endpoint matches. Spec 2 (#27) therefore seeded
-#   the German terms as the decision table below specifies, and left the call to the spec
-#   that lands N §5. See #27 for the full argument.
+# — `freelancermap_queries` keeps its German terms (ADJUDICATED by spec 4 (#29), not
+#   overlooked). N #19 §5's English-only amendment governs the *embedding query*
+#   (embedder.py), not the HTTP `query=` terms sent to freelancermap's own search
+#   endpoint — which an embedding-model swap has no bearing on. Spec 3 (#28) then made
+#   those terms the adapter's sole coverage mechanism, so dropping the German ones would
+#   shrink the corpus, not merely retarget it. See #29.
 
 location:
   target_countries: ["Germany", "Deutschland"]   # only surviving location field

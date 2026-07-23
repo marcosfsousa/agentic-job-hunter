@@ -30,6 +30,8 @@ def _make_scored_job(
     *,
     with_evaluation: bool = True,
     remote_percentage: int | None = 50,
+    match_score: int = 8,
+    embedding_score: float = 0.6,
 ) -> ScoredJob:
     listing = JobListing(
         id=id,
@@ -46,19 +48,19 @@ def _make_scored_job(
     )
     if with_evaluation:
         evaluation = EvaluationResult(
-            match_score=8,
+            match_score=match_score,
             matching_skills=["LangChain", "RAG systems"],
             gaps=["MLOps"],
             explanation="Strong match on core LLM skills.",
         )
         return ScoredJob(
             listing=listing,
-            embedding_score=0.6,
-            llm_score=0.8,
-            final_score=0.72,
+            embedding_score=embedding_score,
+            llm_score=match_score / 10,
+            final_score=match_score / 10,   # final_score == llm_score, no blend
             evaluation=evaluation,
         )
-    return ScoredJob(listing=listing, embedding_score=0.6)
+    return ScoredJob(listing=listing, embedding_score=embedding_score)
 
 
 def _make_config(**overrides) -> SimpleNamespace:
@@ -151,6 +153,33 @@ class TestFormatDigest:
         result = format_digest([_make_scored_job("abc-123")], run_date=_RUN_DATE)
         assert "**ID:** abc-123" in result
         assert "**Source:** test" in result
+
+    def test_digest_order_follows_final_score(self):
+        """Rank 1 is the highest final_score. The formatter renders in the order it is
+        handed — the evaluator now sorts before this point (F #9 decision 9), so a
+        highest-first input must render highest-first, and rank order must track score
+        descending. Before the sort landed the digest was ordered by embedding score."""
+        jobs = [
+            _make_scored_job("top", match_score=9),
+            _make_scored_job("mid", match_score=6),
+            _make_scored_job("low", match_score=4),
+        ]
+        result = format_digest(jobs, run_date=_RUN_DATE)
+
+        top_pos = result.index("top")
+        mid_pos = result.index("mid")
+        low_pos = result.index("low")
+        assert top_pos < mid_pos < low_pos
+        assert result.index("## 1.") < result.index("## 2.") < result.index("## 3.")
+        # rank 1 carries the 9/10 job
+        rank1_block = result.split("## 2.")[0]
+        assert "9/10" in rank1_block
+
+    def test_embedding_line_still_rendered(self):
+        """The **Embedding:** line stays — it no longer orders the digest but it is the
+        retriever's confidence, worth seeing on the first live runs of a swapped model."""
+        result = format_digest([_make_scored_job(embedding_score=0.512)], run_date=_RUN_DATE)
+        assert "**Embedding:** 0.512" in result
 
 
 # ---------------------------------------------------------------------------
