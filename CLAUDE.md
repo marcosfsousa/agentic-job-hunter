@@ -73,6 +73,10 @@ Still to do: tag `v2.0.0` on `main` once the integration branch has merged **and
 ≥5-listing validation has passed — the pivot is complete when it is validated, not when it
 compiles.
 
+**Automatic PR review is disarmed** (2026-07-23) — the `review:` job in `.github/workflows/claude.yml`
+is gated `if: false` after repeated unexplained failures. `@claude <request>` on a PR still reviews on
+demand; re-arm by restoring that job's `if:` condition.
+
 ## Agent skills
 
 ### Issue tracker

@@ -9,9 +9,19 @@ on:
     types: [opened, assigned]
   pull_request_review:
     types: [submitted]
-  # Automatic review. Deliberately NOT `synchronize` — that re-reviews on every
-  # push. Push follow-up commits freely, then comment @claude to re-review when
-  # the branch is actually ready.
+  # Automatic review is DISARMED as of 2026-07-23 — the `review:` job below is
+  # gated `if: false`. Several consecutive PRs had their auto-review fail for a
+  # reason no session could pin down, so it was switched off rather than left
+  # failing. To re-arm: restore the `review:` job's `if:` condition (see the note
+  # on that job). The `@claude <request>` escape hatch still works on demand and
+  # is unaffected by this.
+  #
+  # The `pull_request` trigger and `paths-ignore` below are LEFT IN PLACE so
+  # re-arming is a one-line `if:` flip. While the job is gated off they fire the
+  # workflow but do nothing. Notes kept for whoever re-arms:
+  #
+  # Deliberately NOT `synchronize` — that re-reviews on every push. Push follow-up
+  # commits freely, then comment @claude to re-review when the branch is ready.
   #
   # `paths-ignore` skips prose-only PRs. One run spent a full agentic review on a
   # five-line comment correction in CLAUDE.md; a human reads that faster than the
@@ -38,7 +48,9 @@ jobs:
   # works on demand if a second opinion is ever wanted.
   # ---------------------------------------------------------------------------
   review:
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    # DISARMED 2026-07-23. To re-arm, restore the original condition:
+    #   github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    if: false
     runs-on: ubuntu-latest
     permissions:
       contents: read
