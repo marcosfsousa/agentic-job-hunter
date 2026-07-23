@@ -265,12 +265,23 @@ class FreelancermapAdapter(JobAdapter):
     ) -> list[JobListing]:
         """Fetch one page per configured query, union the results, and normalise.
 
+        Transient per-query trouble — a timeout, a 429, a 5xx — is caught *here*,
+        logged, and degrades that one query rather than the whole fetch. Earlier
+        queries' rows stay in the union, and the distinct-id floor below is the
+        single arbiter of run health: a partial union that still clears the floor
+        is a fine day, and one that does not fails loud via
+        `JobScoutSourceIntegrityError`. This is what stops a persistently
+        rate-limiting or flapping source from presenting as a quiet market — the
+        floor's own failure mode, otherwise reachable through the recoverable path
+        (issue #43). The failed query still consumed its one request, so the cap
+        semantics are unchanged.
+
         Raises:
-            JobScoutAdapterError: Transient trouble — a timeout, a 429, a 5xx.
-                Recoverable, so the orchestrator degrades to an empty list.
             JobScoutSourceIntegrityError: The route or the payload no longer works
                 — a block page, a moved endpoint, an unparseable payload, or a
-                collapsed distinct-id yield. Not caught anywhere; the run fails.
+                distinct-id yield below the floor (whether the source changed shape
+                or every query degraded transiently). Not caught anywhere; the run
+                fails rather than delivering a silent empty digest.
         """
         queries = self._budgeted_queries()
 
@@ -280,6 +291,11 @@ class FreelancermapAdapter(JobAdapter):
         # the pipeline's fuzzy title|company fingerprint dedup, which does
         # different work.
         raw_by_id: dict[str, dict[str, Any]] = {}
+
+        # Queries that degraded on a transient failure this run. Kept so the floor's
+        # raise below can say *why* the union is thin — a rate-limited source and a
+        # changed payload both land there, and ops needs to tell them apart.
+        degraded: list[str] = []
 
         async with httpx.AsyncClient(
             transport=self._transport,
@@ -296,17 +312,37 @@ class FreelancermapAdapter(JobAdapter):
             follow_redirects=False,
         ) as client:
             for query in queries:
-                for raw in await self._fetch_query(client, query):
+                try:
+                    results = await self._fetch_query(client, query)
+                except JobScoutAdapterError as exc:
+                    # A transient per-query failure (a 429, a 5xx, a timeout)
+                    # degrades this one query, not the whole fetch. Propagating
+                    # here — the old behaviour — discarded rows already unioned
+                    # from earlier queries AND skipped the floor check below, so a
+                    # mid-union 429 exited 0 with a silent empty digest (issue #43).
+                    # A `JobScoutSourceIntegrityError` (a block page, a moved
+                    # endpoint) is deliberately NOT caught: it must still fail loud.
+                    degraded.append(query)
+                    logger.warning(
+                        "freelancermap query %r degraded transiently — continuing "
+                        "with the remaining queries; the distinct-id floor decides "
+                        "run health: %s",
+                        query, exc,
+                    )
+                    continue
+                finally:
+                    # Never carry state between requests, on every path including
+                    # a failed one. `AsyncClient` persists `Set-Cookie` across a
+                    # session by default, which would let the source start a
+                    # session we then present on every later request — the opposite
+                    # of "the adapter never authenticates". Anonymity has to mean
+                    # each request stands alone.
+                    client.cookies.clear()
+
+                for raw in results:
                     project_id = _project_id(raw)
                     if project_id is not None:
                         raw_by_id.setdefault(project_id, raw)
-
-                # Never carry state between requests. `AsyncClient` persists
-                # `Set-Cookie` across a session by default, which would let the
-                # source start a session we then present on every later request —
-                # the opposite of "the adapter never authenticates". Anonymity has
-                # to mean each request stands alone.
-                client.cookies.clear()
 
         # The floor is on DISTINCT ids and is measured here — after the union, and
         # deliberately before the `since` filter. Both halves matter:
@@ -321,15 +357,39 @@ class FreelancermapAdapter(JobAdapter):
         #     down to nothing stays silent for the same reason.
         yield_summary = f"{len(raw_by_id)} distinct project(s) across {_queries(len(queries))}"
         logger.info("freelancermap raw yield: %s", yield_summary)
+        if degraded:
+            logger.warning(
+                "freelancermap: %s degraded transiently this run (%s); the "
+                "distinct-id floor decides run health from the %d that answered.",
+                _queries(len(degraded)), ", ".join(repr(q) for q in degraded),
+                len(queries) - len(degraded),
+            )
 
         floor = self._config.freelancermap_min_raw_ingest
         if len(raw_by_id) < floor:
+            # Why the union is thin decides what an operator should check. A changed
+            # payload is a bug in us; a run where transient failures starved the
+            # union is a bad-source day. Both must fail loud — the point of the fix
+            # for #43 is that neither exits 0 with an empty digest — but the message
+            # should not send someone hunting a shape change that did not happen.
+            if degraded:
+                cause = (
+                    f"{_queries(len(degraded))} degraded transiently this run "
+                    f"({', '.join(repr(q) for q in degraded)}), so a rate-limited or "
+                    "flapping source — not necessarily a changed payload — may be the "
+                    "cause. Either way the run fails rather than delivering a silent "
+                    "empty digest."
+                )
+            else:
+                cause = (
+                    "This is a broken source, not a quiet market — the anonymous view "
+                    "returns up to 22 rows per query, so a healthy union sits far above "
+                    "this. Check whether the search response shape or the query "
+                    "parameter changed."
+                )
             raise JobScoutSourceIntegrityError(
                 f"freelancermap returned {yield_summary}, below the floor of {floor}. "
-                "This is a broken source, not a quiet market — the anonymous view "
-                "returns up to 22 rows per query, so a healthy union sits far above "
-                "this. Check whether the search response shape or the query parameter "
-                "changed."
+                f"{cause}"
             )
 
         listings = [self._normalize(raw) for raw in raw_by_id.values()]

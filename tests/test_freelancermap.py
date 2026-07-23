@@ -810,39 +810,175 @@ class TestSourceIntegrity:
 
 
 class TestStatusClassification:
-    """Which exception a bad status becomes is the difference between an alarm and
-    an empty digest, so each class of status is pinned."""
+    """Which route a bad status takes is pinned per class of status.
 
-    async def test_a_rate_limit_is_recoverable(self):
-        adapter = _adapter(lambda request: httpx.Response(429), queries=["LLM"])
-        with pytest.raises(JobScoutAdapterError):
+    Both routes now fail loud on a single-query run — that is the #43 fix, which
+    removed the empty-digest escape from the recoverable path. The distinction that
+    remains, and that these pin, is *how*: a recoverable status (429/5xx/timeout) is
+    caught and degrades the query, so a single-query run reaches the floor and its
+    raise names the transient cause ("degraded transiently"); a non-recoverable one
+    (403/404) is a broken route and raises straight past the floor with the
+    block/moved message. `TestTransientDegradation` shows the recoverable route
+    degrading *gracefully* when other queries carry the union — the case that only
+    exists because the status was classified recoverable rather than broken.
+    """
+
+    async def test_a_rate_limit_reaches_the_floor_rather_than_a_swallowable_error(self):
+        """The #43 regression in one assertion: a 429 on the only query must NOT
+        surface as a `JobScoutAdapterError` (which `run.py` would swallow into an
+        empty digest). It degrades, starves the union, and fails loud via the floor."""
+        adapter = _adapter(lambda request: httpx.Response(429), queries=["LLM"], min_raw_ingest=1)
+        with pytest.raises(JobScoutSourceIntegrityError, match="degraded transiently"):
             await adapter.fetch()
 
-    async def test_a_server_error_is_recoverable(self):
-        """A 503 is a bad day, not a broken source, so it degrades rather than alarms."""
-        adapter = _adapter(lambda request: httpx.Response(503), queries=["LLM"])
-        with pytest.raises(JobScoutAdapterError):
+    async def test_a_server_error_takes_the_recoverable_route(self):
+        """A 503 is a bad day, not a broken source, so it degrades — and on a single
+        query that leaves the union below the floor, which alarms rather than
+        delivering silence."""
+        adapter = _adapter(lambda request: httpx.Response(503), queries=["LLM"], min_raw_ingest=1)
+        with pytest.raises(JobScoutSourceIntegrityError, match="degraded transiently"):
             await adapter.fetch()
 
     async def test_a_block_page_is_not_recoverable(self):
-        """403 is the source telling us to stop. Degrading to an empty digest would
-        hide exactly the outcome the honest User-Agent exists to make possible."""
+        """403 is the source telling us to stop. It is a broken route, so it raises
+        straight past the floor — not via the degrade path, which is why the message
+        is the block one, not the transient-cause one."""
         adapter = _adapter(lambda request: httpx.Response(403), queries=["LLM"])
-        with pytest.raises(JobScoutSourceIntegrityError):
+        with pytest.raises(JobScoutSourceIntegrityError, match="no longer work"):
             await adapter.fetch()
 
     async def test_a_moved_endpoint_is_not_recoverable(self):
         adapter = _adapter(lambda request: httpx.Response(404), queries=["LLM"])
-        with pytest.raises(JobScoutSourceIntegrityError):
+        with pytest.raises(JobScoutSourceIntegrityError, match="no longer work"):
             await adapter.fetch()
 
-    async def test_a_timeout_is_recoverable(self):
+    async def test_a_timeout_takes_the_recoverable_route(self):
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectTimeout("timed out", request=request)
 
-        adapter = _adapter(handler, queries=["LLM"])
-        with pytest.raises(JobScoutAdapterError):
+        adapter = _adapter(handler, queries=["LLM"], min_raw_ingest=1)
+        with pytest.raises(JobScoutSourceIntegrityError, match="degraded transiently"):
             await adapter.fetch()
+
+
+class TestTransientDegradation:
+    """A transient per-query failure degrades that one query, not the whole fetch,
+    and the distinct-id floor is left as the single arbiter of run health.
+
+    Before issue #43 a mid-union 429 propagated out of `fetch()`: it discarded rows
+    already unioned from earlier queries AND skipped the floor entirely, so `run.py`
+    swallowed it and exited 0 with a silent 'no matches today'. That reopened the
+    exact hole the floor exists to close — a flapping source reading as a quiet
+    market. These pin the closed door shut."""
+
+    def _serving_with_failures(self, pages_by_query, status_by_query):
+        """Serve a page per query, but return a bare status for named queries."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            query = request.url.params.get("query", "")
+            if query in status_by_query:
+                return httpx.Response(status_by_query[query])
+            return httpx.Response(200, text=pages_by_query.get(query, _page([])))
+        return handler
+
+    async def test_a_mid_union_transient_failure_keeps_earlier_queries(self):
+        """The regression itself: a 429 on the middle query must not discard the
+        rows queries before it already contributed to the union."""
+        handler = self._serving_with_failures(
+            pages_by_query={
+                "LLM": _page([_project(1)]),
+                "KI": _page([_project(3)]),
+            },
+            status_by_query={"Generative AI": 429},
+        )
+        adapter = _adapter(handler, queries=["LLM", "Generative AI", "KI"], min_raw_ingest=1)
+
+        listings = await adapter.fetch()
+        assert {j.id for j in listings} == {"1", "3"}
+
+    async def test_a_partial_union_that_clears_the_floor_is_a_fine_day(self):
+        """Degradation is not failure. If the surviving queries clear the floor the
+        run proceeds normally — no raise, no empty digest."""
+        handler = self._serving_with_failures(
+            pages_by_query={"LLM": _page([_project(1), _project(2)])},
+            status_by_query={"KI": 503},
+        )
+        adapter = _adapter(handler, queries=["LLM", "KI"], min_raw_ingest=2)
+
+        listings = await adapter.fetch()
+        assert {j.id for j in listings} == {"1", "2"}
+
+    async def test_a_transient_failure_below_the_floor_fails_loud_not_silent(self):
+        """The other half of the fix: when transient failures leave the union below
+        the floor, the run raises the fail-loud integrity error rather than
+        returning an empty list. This is what `run.py` must not be able to swallow —
+        so it must NOT be a `JobScoutAdapterError`."""
+        handler = self._serving_with_failures(
+            pages_by_query={},
+            status_by_query={"LLM": 429, "KI": 429},
+        )
+        adapter = _adapter(handler, queries=["LLM", "KI"], min_raw_ingest=1)
+
+        with pytest.raises(JobScoutSourceIntegrityError):
+            try:
+                await adapter.fetch()
+            except JobScoutAdapterError:  # pragma: no cover — the #43 regression
+                pytest.fail("a transient failure produced a swallowable empty digest")
+
+    async def test_the_floor_raise_names_the_transient_cause(self):
+        """A thin union from rate-limiting must not send an operator hunting a
+        payload-shape change that did not happen — the raise says which it was."""
+        handler = self._serving_with_failures(
+            pages_by_query={},
+            status_by_query={"LLM": 429, "KI": 503},
+        )
+        adapter = _adapter(handler, queries=["LLM", "KI"], min_raw_ingest=1)
+
+        with pytest.raises(JobScoutSourceIntegrityError, match="degraded transiently"):
+            await adapter.fetch()
+
+    async def test_a_non_recoverable_status_mid_union_still_fails_loud(self):
+        """The degradation catch is scoped to `JobScoutAdapterError`. A 403 block
+        page on a later query is a `JobScoutSourceIntegrityError` and must still
+        propagate even though earlier queries succeeded — degrading it would hide a
+        block behind whatever the first queries happened to return."""
+        handler = self._serving_with_failures(
+            pages_by_query={"LLM": _page([_project(i) for i in range(30)])},
+            status_by_query={"KI": 403},
+        )
+        adapter = _adapter(handler, queries=["LLM", "KI"], min_raw_ingest=1)
+
+        with pytest.raises(JobScoutSourceIntegrityError):
+            await adapter.fetch()
+
+    async def test_a_degraded_query_still_consumed_its_request(self):
+        """Cap semantics are unchanged: one request per query, whether it answered
+        or degraded. A failed query does not free budget for a retry."""
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            query = request.url.params.get("query", "")
+            if query == "KI":
+                return httpx.Response(429)
+            return httpx.Response(200, text=_page([_project(1)]))
+
+        adapter = _adapter(handler, queries=["LLM", "KI"], min_raw_ingest=1)
+        await adapter.fetch()
+        assert [r.url.params["query"] for r in requests] == ["LLM", "KI"]
+
+    async def test_a_degraded_query_is_logged_by_name(self, caplog):
+        """Same no-silent-degradation rule as the request and truncation caps: a
+        query that dropped out of coverage is named in the log."""
+        handler = self._serving_with_failures(
+            pages_by_query={"LLM": _page([_project(1)])},
+            status_by_query={"KI": 429},
+        )
+        adapter = _adapter(handler, queries=["LLM", "KI"], min_raw_ingest=1)
+
+        with caplog.at_level("WARNING"):
+            await adapter.fetch()
+        assert "degraded transiently" in caplog.text
+        assert "'KI'" in caplog.text
 
 
 class TestCollapseSignature:
