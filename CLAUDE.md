@@ -27,7 +27,7 @@ Goal: fewer, higher-quality matches. This tool finds and ranks. User decides wha
 ## Constraints
 
 - **NEVER auto-apply to jobs.**
-- Use Claude Haiku for evaluation (not Sonnet); local `multi-qa-MiniLM-L6-cos-v1` for embeddings (asymmetric semantic search — profile query vs job document).
+- Use Claude Haiku for evaluation (not Sonnet); local `intfloat/multilingual-e5-small` for embeddings (asymmetric semantic search — profile query vs job document, expressed through e5's `query:` / `passage:` prefixes).
 - LLM evaluation runs on top 20–30 jobs only, after hard filter and ranking reduce the pool.
 - Hard filter is deterministic and cheap — no LLM calls, ever.
 - Pipeline must be idempotent — same day = same digest.
@@ -43,7 +43,11 @@ Goal: fewer, higher-quality matches. This tool finds and ranks. User decides wha
 ## Git workflow
 
 Always run `git pull` before making any file changes in this repo.
-The pipeline commits a DB file daily via GitHub Actions, so the local copy may be behind.
+The daily GitHub Action commits `data/feedback.yaml`, so the local copy may be behind.
+**`data/jobscout.db` is never committed** — it holds the full description of every ingested
+listing, and republishing ingested source content is not ours to do. It is gitignored, lives
+only on disk locally, and survives between CI runs via an Actions cache.
+`tests/test_repo_invariants.py` fails if it becomes tracked again.
 **Never push to `main` directly, force-push, or merge into `main` by hand.** All work reaches `main`
 through a branch and a reviewed PR — a hotfix is a short-lived branch and a fast PR, not an edit on
 `main`. (This replaces the previous stash → checkout main → edit → push hotfix flow.)
@@ -59,10 +63,15 @@ integration branch, not a style preference: spec 1 deletes all three FTE adapter
 cron, so the pipeline is **deliberately dark** from spec 1 until spec 3 re-arms it, and that state
 must not sit on `main`.
 
-**Tags are semver.** Tag `main` `v1.0.0` before any pivot code lands, so the FTE-era pipeline stays
-recoverable by name — the repo has no tags today, so this establishes the scheme. Tag `v2.0.0` on
-`main` once the integration branch has merged **and** spec 4's ≥5-listing validation has passed —
-the pivot is complete when it is validated, not when it compiles.
+**Tags are semver.** ✅ **`v1.0.0` already exists** — annotated, pushed, at `af51f15` on `main`,
+tagged 2026-07-20. It marks the FTE-era pipeline so it stays recoverable by name, and it
+established the scheme. **Do not re-create or move it**; run `git tag -l` before concluding
+otherwise. (This paragraph previously read "the repo has no tags today", which was true when
+written and has since misled at least one session into reporting the tag as missing.)
+
+Still to do: tag `v2.0.0` on `main` once the integration branch has merged **and** spec 4's
+≥5-listing validation has passed — the pivot is complete when it is validated, not when it
+compiles.
 
 ## Agent skills
 

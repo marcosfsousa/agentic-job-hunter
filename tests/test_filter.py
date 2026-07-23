@@ -5,26 +5,21 @@ no config singleton.
 """
 from __future__ import annotations
 
-from datetime import date, datetime
-
-import pytest
+from datetime import datetime
 
 from jobscout.filters.hard_filter import (
     apply_hard_filter,
     _passes_company,
+    _passes_contract_type,
     _passes_exclude_keywords,
-    _passes_experience,
     _passes_location,
     _passes_require_keywords,
-    _passes_salary,
-    _passes_seniority,
 )
 from jobscout.models import (
     DealbreakersConfig,
     JobListing,
     LocationConfig,
-    SalaryConfig,
-    SeniorityConfig,
+    RateConfig,
     SkillsConfig,
     UserProfile,
 )
@@ -42,12 +37,9 @@ def _make_job(**overrides) -> JobListing:
         company="Acme GmbH",
         description="We work on machine learning and AI systems.",
         location="Berlin, Germany",
-        remote_policy="hybrid",
-        salary_min=55_000.0,
-        salary_max=75_000.0,
-        seniority="mid",
+        remote_percentage=50,
         url="https://example.com/job/1",
-        posted_date=date(2026, 3, 18),
+        posted_date=datetime(2026, 3, 18, 9, 30, 0),
         fetched_at=datetime(2026, 3, 18, 12, 0, 0),
         raw_data={},
     )
@@ -60,55 +52,48 @@ def _make_profile(**overrides) -> UserProfile:
         name="Marcos",
         target_roles=["ML Engineer"],
         skills=SkillsConfig(),
-        location=LocationConfig(
-            target_countries=["Germany"],
-            preferred_cities=["Berlin"],
-            remote_acceptable=True,
-            eu_work_authorization=True,
-        ),
-        salary=SalaryConfig(minimum_annual_eur=50_000.0, target_annual_eur=65_000.0),
-        seniority=SeniorityConfig(target=["junior", "mid"], exclude=["intern", "director", "vp"]),
+        location=LocationConfig(target_countries=["Germany"]),
+        rate=RateConfig(),
         dealbreakers=DealbreakersConfig(
             exclude_companies=[],
             exclude_keywords=["Unpaid", "Volunteer"],
             require_any_keyword=["machine learning", "ML", "AI", "LLM"],
+            # Both new gates are stated explicitly rather than inherited from the
+            # model defaults. The shipped default floor is 100, which would reject
+            # the 50%-remote default job — so every test unrelated to the remote
+            # gate would be silently gated on it and read as testing something
+            # else. Tests that mean to exercise a gate set its value themselves.
+            exclude_contract_types=[],
+            minimum_remote_percentage=None,
         ),
+        freelancermap_queries=["Machine Learning"],
     )
     defaults.update(overrides)
     return UserProfile(**defaults)
 
 
+def _gated(
+    *,
+    contract_types: list | None = None,
+    remote_floor: int | None = None,
+) -> UserProfile:
+    """A profile with one or both new gates armed, keeping the base dealbreakers.
+
+    Overriding `dealbreakers=` wholesale would silently drop `exclude_keywords` and
+    `require_any_keyword`, so an `apply_hard_filter` assertion built that way would
+    run with the surviving predicates inert — proving the new gate is wired, but
+    only in a filter that has nothing else in it.
+    """
+    base = _make_profile().dealbreakers
+    return _make_profile(
+        dealbreakers=base.model_copy(update={
+            "exclude_contract_types": contract_types or [],
+            "minimum_remote_percentage": remote_floor,
+        })
+    )
+
+
 PROFILE = _make_profile()
-
-
-# ---------------------------------------------------------------------------
-# _passes_seniority
-# ---------------------------------------------------------------------------
-
-class TestPassesSeniority:
-    def test_target_seniority_passes(self):
-        assert _passes_seniority(_make_job(seniority="mid"), PROFILE)
-
-    def test_excluded_seniority_drops(self):
-        assert not _passes_seniority(_make_job(seniority="intern"), PROFILE)
-
-    def test_not_specified_passes(self):
-        assert _passes_seniority(_make_job(seniority="not_specified"), PROFILE)
-
-    def test_none_seniority_passes(self):
-        assert _passes_seniority(_make_job(seniority=None), PROFILE)
-
-    def test_director_drops(self):
-        assert not _passes_seniority(_make_job(seniority="director"), PROFILE)
-
-    def test_senior_not_in_target_drops(self):
-        assert not _passes_seniority(_make_job(seniority="senior"), PROFILE)
-
-    def test_lead_not_in_target_drops(self):
-        assert not _passes_seniority(_make_job(seniority="lead"), PROFILE)
-
-    def test_junior_in_target_passes(self):
-        assert _passes_seniority(_make_job(seniority="junior"), PROFILE)
 
 
 # ---------------------------------------------------------------------------
@@ -206,50 +191,164 @@ class TestPassesRequireKeywords:
 
 
 # ---------------------------------------------------------------------------
-# _passes_salary
+# _passes_contract_type
 # ---------------------------------------------------------------------------
 
-class TestPassesSalary:
-    def test_salary_above_minimum_passes(self):
-        assert _passes_salary(_make_job(salary_min=55_000, salary_max=75_000), PROFILE)
+class TestPassesContractType:
+    def test_blocklisted_type_is_rejected(self):
+        profile = _gated(contract_types=["employee_leasing", "permanent_position"])
+        assert not _passes_contract_type(_make_job(contract_type="employee_leasing"), profile)
 
-    def test_salary_max_below_minimum_drops(self):
-        assert not _passes_salary(_make_job(salary_min=30_000, salary_max=45_000), PROFILE)
+    def test_second_blocklisted_type_is_rejected(self):
+        profile = _gated(contract_types=["employee_leasing", "permanent_position"])
+        assert not _passes_contract_type(_make_job(contract_type="permanent_position"), profile)
 
-    def test_salary_max_exactly_minimum_passes(self):
-        assert _passes_salary(_make_job(salary_min=None, salary_max=50_000), PROFILE)
+    def test_contracting_passes(self):
+        profile = _gated(contract_types=["employee_leasing", "permanent_position"])
+        assert _passes_contract_type(_make_job(contract_type="contracting"), profile)
 
-    def test_none_salary_max_passes(self):
-        assert _passes_salary(_make_job(salary_min=None, salary_max=None), PROFILE)
+    def test_unknown_passes(self):
+        """The whole reason this is a blocklist rather than an allowlist.
 
-    def test_none_salary_min_with_valid_max_passes(self):
-        assert _passes_salary(_make_job(salary_min=None, salary_max=60_000), PROFILE)
+        An allowlist of ["contracting"] would silently delete every `unknown` row
+        the day a source that cannot determine the engagement form is added. If
+        someone "simplifies" the predicate to an allowlist, this is what catches it.
+        """
+        profile = _gated(contract_types=["employee_leasing", "permanent_position"])
+        assert _passes_contract_type(_make_job(contract_type="unknown"), profile)
+
+    def test_empty_blocklist_rejects_nothing(self):
+        """The predicate's disabled state is expressible without deleting it."""
+        profile = _gated()
+        assert _passes_contract_type(_make_job(contract_type="employee_leasing"), profile)
+
+    def test_outcome_follows_config_not_a_constant(self):
+        """Two profiles differing only in the blocklist must disagree about one job.
+
+        A single hardcoded-looking profile would pass identically against a
+        predicate that hardcoded "drop leasing + permanent", so this is the
+        assertion that actually proves the config wiring landed.
+        """
+        job = _make_job(contract_type="employee_leasing")
+        assert _passes_contract_type(job, _gated())
+        assert not _passes_contract_type(job, _gated(contract_types=["employee_leasing"]))
 
 
 # ---------------------------------------------------------------------------
 # _passes_location
+#
+# Three tickets amended this predicate in sequence — D reshaped it, F added the
+# fail-open remote gate, P moved the threshold into config — so each composed
+# branch is pinned separately below.
 # ---------------------------------------------------------------------------
 
-class TestPassesLocation:
-    def test_remote_policy_remote_always_passes(self):
-        assert _passes_location(_make_job(remote_policy="remote", location="Anywhere"), PROFILE)
+class TestPassesLocationRemoteFloor:
+    """A known percentage decides alone — the country check does not run."""
 
-    def test_germany_location_passes(self):
-        assert _passes_location(_make_job(location="Berlin, Germany", remote_policy="onsite"), PROFILE)
+    def test_at_the_floor_passes_with_a_non_matching_country(self):
+        """Story 16: a remote project is not rejected for being posted from Lisbon."""
+        job = _make_job(remote_percentage=100, location="Lisbon, Portugal")
+        assert _passes_location(job, _gated(remote_floor=100))
 
-    def test_non_germany_onsite_drops(self):
-        assert not _passes_location(
-            _make_job(location="London, UK", remote_policy="onsite"), PROFILE
+    def test_above_the_floor_passes_with_a_non_matching_country(self):
+        job = _make_job(remote_percentage=80, location="London, UK")
+        assert _passes_location(job, _gated(remote_floor=50))
+
+    def test_below_the_floor_is_rejected_despite_a_matching_country(self):
+        """Story 17: the remote gate outranks location, not the other way round."""
+        job = _make_job(remote_percentage=40, location="Berlin, Germany")
+        assert not _passes_location(job, _gated(remote_floor=100))
+
+    def test_outcome_follows_config_not_a_constant(self):
+        """The same listing, two floors, opposite outcomes — proves P's move landed."""
+        job = _make_job(remote_percentage=60, location="Berlin, Germany")
+        assert _passes_location(job, _gated(remote_floor=50))
+        assert not _passes_location(job, _gated(remote_floor=80))
+
+
+class TestPassesLocationWhenPercentageIsUnknown:
+    """The remote axis fails open; the location axis still applies.
+
+    "Fails open" is scoped to remoteness: an unknown percentage means the row is
+    not rejected *for being insufficiently remote*. It does not mean the row skips
+    the country check — reading it that way would make `target_countries` dead
+    config, which contradicts it being the only surviving location field.
+    """
+
+    def test_matching_country_passes(self):
+        job = _make_job(
+            remote_percentage=None,
+            remote_policy_text="not_specified",
+            location="Munich, Germany",
         )
+        assert _passes_location(job, _gated(remote_floor=100))
 
-    def test_not_specified_with_germany_location_passes(self):
+    def test_non_matching_country_is_rejected(self):
+        """The assertion that pins the resolved reading.
+
+        Under the literal reading of ADR 0002 — "remote_percentage null → pass" —
+        this would pass and `target_countries` would never be consulted. Both
+        designs are indistinguishable without this test; do not drop it as an edge
+        case. It also matters in practice: freelancermap's `remoteInPercent`
+        populated-rate is still unmeasured (spec 3), so if most rows carry no
+        percentage the literal reading means no location filtering at all.
+        """
+        job = _make_job(
+            remote_percentage=None,
+            remote_policy_text="not_specified",
+            location="Amsterdam, Netherlands",
+        )
+        assert not _passes_location(job, _gated(remote_floor=100))
+
+    def test_text_only_remote_is_exempt_from_the_country_check(self):
+        """Story 19: read the best signal available, not only the structured one.
+
+        Scoped to this class, the exemption fires because the source published no
+        percentage — `remote_policy` falls back to the text. It cannot contradict
+        the floor, which returned already whenever both values were present. (The
+        same branch also carries fully-remote work when the gate is switched off;
+        `TestPassesLocationWhenGateDisabled` covers that case.)
+        """
+        job = _make_job(
+            remote_percentage=None,
+            remote_policy_text="remote",
+            location="Lisbon, Portugal",
+        )
+        assert _passes_location(job, _gated(remote_floor=100))
+
+
+class TestPassesLocationWhenGateDisabled:
+    """`minimum_remote_percentage: None` — story 20, widening without deleting config."""
+
+    def test_low_remote_percentage_in_a_target_country_passes(self):
+        """The percentage is no longer consulted; the country check decides."""
+        job = _make_job(remote_percentage=0, location="Berlin, Germany")
+        assert _passes_location(job, _gated(remote_floor=None))
+
+    def test_low_remote_percentage_outside_target_countries_is_rejected(self):
+        job = _make_job(remote_percentage=0, location="London, UK")
+        assert not _passes_location(job, _gated(remote_floor=None))
+
+    def test_fully_remote_still_passes_via_the_policy_exemption(self):
+        job = _make_job(remote_percentage=100, location="Anywhere")
+        assert _passes_location(job, _gated(remote_floor=None))
+
+    def test_unknown_percentage_falls_through_to_the_country_check(self):
         assert _passes_location(
-            _make_job(location="Munich, Germany", remote_policy="not_specified"), PROFILE
+            _make_job(
+                location="Munich, Germany",
+                remote_percentage=None,
+                remote_policy_text="not_specified",
+            ),
+            _gated(remote_floor=None),
         )
-
-    def test_not_specified_without_germany_drops(self):
         assert not _passes_location(
-            _make_job(location="Amsterdam, Netherlands", remote_policy="not_specified"), PROFILE
+            _make_job(
+                location="Amsterdam, Netherlands",
+                remote_percentage=None,
+                remote_policy_text="not_specified",
+            ),
+            _gated(remote_floor=None),
         )
 
 
@@ -263,12 +362,6 @@ class TestApplyHardFilter:
         result = apply_hard_filter(jobs, PROFILE)
         assert len(result) == 5
 
-    def test_filters_out_excluded_seniority(self):
-        jobs = [_make_job(id="1", seniority="intern"), _make_job(id="2", seniority="mid")]
-        result = apply_hard_filter(jobs, PROFILE)
-        assert len(result) == 1
-        assert result[0].id == "2"
-
     def test_empty_input_returns_empty(self):
         assert apply_hard_filter([], PROFILE) == []
 
@@ -277,64 +370,55 @@ class TestApplyHardFilter:
         result = apply_hard_filter(jobs, PROFILE)
         assert result == []
 
-    def test_filters_out_senior_not_in_target(self):
-        jobs = [_make_job(id="1", seniority="senior"), _make_job(id="2", seniority="mid")]
-        result = apply_hard_filter(jobs, PROFILE)
-        assert len(result) == 1
-        assert result[0].id == "2"
+    # Both new gates are asserted at the pipeline's own boundary as well as
+    # individually, so a predicate that is correct but never wired into
+    # `_passes_all` is caught.
+
+    def test_blocklisted_contract_type_never_reaches_evaluation(self):
+        leasing = _make_job(id="leasing", contract_type="employee_leasing")
+        contracting = _make_job(id="contracting", contract_type="contracting")
+        profile = _gated(contract_types=["employee_leasing", "permanent_position"])
+        assert apply_hard_filter([leasing, contracting], profile) == [contracting]
+
+    def test_work_below_the_remote_floor_never_reaches_evaluation(self):
+        onsite = _make_job(id="onsite", remote_percentage=40, location="Berlin, Germany")
+        remote = _make_job(id="remote", remote_percentage=100, location="Berlin, Germany")
+        assert apply_hard_filter([onsite, remote], _gated(remote_floor=100)) == [remote]
 
 
 # ---------------------------------------------------------------------------
-# _passes_experience
+# Gates removed by the contract pivot
+#
+# These assert the observable consequence of deleting _passes_seniority,
+# _passes_experience and _passes_salary: listings each of them used to reject
+# now survive the filter. Stated at the pipeline's own seam, because "the
+# predicate is gone" is not something a test can observe directly.
 # ---------------------------------------------------------------------------
 
-def _profile_with_max_years(max_years: int) -> UserProfile:
-    return _make_profile(seniority=SeniorityConfig(
-        target=["junior", "mid"], exclude=["intern"], max_years_experience=max_years
-    ))
+class TestRemovedGatesNoLongerReject:
+    def test_senior_listing_survives(self):
+        """A senior/lead framing was JobScout's own inference, and it dropped the job."""
+        job = _make_job(
+            title="Senior ML Engineer",
+            description="Senior role — mehrjährige Erfahrung with machine learning.",
+        )
+        assert apply_hard_filter([job], PROFILE) == [job]
 
+    def test_high_years_of_experience_listing_survives(self):
+        """The max_years ceiling deleted a senior-skewing freelance pool invisibly."""
+        job = _make_job(description="8+ years of professional experience in machine learning.")
+        assert apply_hard_filter([job], PROFILE) == [job]
 
-class TestPassesExperience:
-    def test_passes_when_no_limit_set(self):
-        job = _make_job(description="5+ years of professional experience required.")
-        assert _passes_experience(job, _make_profile()) is True
+    def test_german_years_of_experience_listing_survives(self):
+        job = _make_job(description="Mindestens 6 Jahre relevante Berufserfahrung. Thema: machine learning.")
+        assert apply_hard_filter([job], PROFILE) == [job]
 
-    def test_passes_when_years_within_limit(self):
-        job = _make_job(description="3+ years of experience with Python.")
-        assert _passes_experience(job, _profile_with_max_years(4)) is True
+    def test_listing_with_no_rate_survives(self):
+        """All-None rate is the DACH norm — the salary floor would reject the whole corpus."""
+        job = _make_job(rate_min=None, rate_max=None, rate_unit=None, rate_currency=None)
+        assert apply_hard_filter([job], PROFILE) == [job]
 
-    def test_fails_when_years_exceed_limit(self):
-        job = _make_job(description="5+ years of professional experience required.")
-        assert _passes_experience(job, _profile_with_max_years(4)) is False
-
-    def test_fails_for_varied_phrasing(self):
-        phrasings = [
-            "Minimum 6 years of work experience.",
-            "You have 7 years of industry experience.",
-            "At least 5 years of relevant experience.",
-            "8+ years of expertise in ML.",
-        ]
-        for desc in phrasings:
-            job = _make_job(description=desc)
-            assert _passes_experience(job, _profile_with_max_years(4)) is False, desc
-
-    def test_passes_when_no_experience_mentioned(self):
-        job = _make_job(description="Build LLM applications with LangChain.")
-        assert _passes_experience(job, _profile_with_max_years(4)) is True
-
-    def test_passes_with_range_where_minimum_is_within_limit(self):
-        # "3 to 7 years" — minimum is 3, within limit of 4
-        job = _make_job(description="3 to 7 years of experience preferred.")
-        assert _passes_experience(job, _profile_with_max_years(4)) is True
-
-    def test_fails_german_berufserfahrung(self):
-        job = _make_job(description="5 Jahre Berufserfahrung erforderlich.")
-        assert _passes_experience(job, _profile_with_max_years(4)) is False
-
-    def test_fails_german_relevante_berufserfahrung(self):
-        job = _make_job(description="Mindestens 6 Jahre relevante Berufserfahrung.")
-        assert _passes_experience(job, _profile_with_max_years(4)) is False
-
-    def test_passes_german_within_limit(self):
-        job = _make_job(description="3 Jahre Berufserfahrung gewünscht.")
-        assert _passes_experience(job, _profile_with_max_years(4)) is True
+    def test_low_rate_listing_survives(self):
+        """Nothing in the filter reads rate at all — a low day rate is a ranking concern."""
+        job = _make_job(rate_min=100.0, rate_max=100.0, rate_unit="daily", rate_currency="EUR")
+        assert apply_hard_filter([job], PROFILE) == [job]

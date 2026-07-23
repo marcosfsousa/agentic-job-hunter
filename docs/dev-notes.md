@@ -35,9 +35,26 @@ python -m pytest tests/          # Run tests
 - No Docker needed for development
 
 Required keys:
-- `ADZUNA_APP_ID` + `ADZUNA_APP_KEY` — job data source
 - `ANTHROPIC_API_KEY` — LLM evaluation (Claude Haiku)
-- `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` — delivery
+
+Optional: `RESEND_API_KEY` + `EMAIL_FROM` + `EMAIL_TO` — email delivery, skipped if unset.
+
+The Adzuna and Open Web Ninja keys are gone with their adapters. **No source key is required
+at all**: the one registered adapter, freelancermap, ingests anonymously — and must, since
+never authenticating is one of the binding constraints under which ingesting it was accepted
+(issue #11). Do not add a freelancermap credential.
+
+Operational overrides, all optional and all with sane defaults in `config.py`:
+- `FREELANCERMAP_MIN_RAW_INGEST` (default 30) — distinct-project floor below which the run
+  fails loudly rather than delivering an empty digest. Must stay above 22; see `config.py`.
+- `FEEDBACK_WEIGHT`, `REEVAL_BELOW` — ranking and evaluation tuning. (The old
+  `EMBEDDING_MIN_SCORE` cosine floor was removed in spec 4: it was scale-coupled and went
+  stale on the e5 swap. The LLM pool is bounded by the `top_n` rank cut instead.)
+
+`freelancermap_max_requests` (default 10) is **not** in that list on purpose. It is the hard
+request cap — one of issue #11's binding constraints — and a ceiling an operator can raise from
+the environment is a convention, which is the thing a cap exists instead of. Changing it is a
+code change and a review.
 
 ## Key files
 - `profile.yaml` — User profile (skills, preferences, dealbreakers)
@@ -51,7 +68,7 @@ Required keys:
 ### Sync local with remote before working
 ```bash
 git fetch origin && git status
-git pull  # keep remote DB: git checkout data/jobscout.db && git pull
+git pull  # data/jobscout.db is untracked — a pull never touches it
 ```
 
 ### Check what the daily pipeline did

@@ -21,13 +21,16 @@ def apply_hard_filter(jobs: list[JobListing], profile: UserProfile) -> list[JobL
 # ---------------------------------------------------------------------------
 
 def _passes_all(job: JobListing, profile: UserProfile) -> bool:
+    # Every predicate is a pure AND, so order is not semantically significant.
+    # `_passes_contract_type` goes first only because it is the cheapest — one
+    # membership test, no string scan — and rejects roughly 19% of the pool, so
+    # putting it ahead of the keyword predicates that build and lowercase the
+    # full job text is free.
     return (
-        _passes_seniority(job, profile)
-        and _passes_experience(job, profile)
+        _passes_contract_type(job, profile)
         and _passes_company(job, profile)
         and _passes_exclude_keywords(job, profile)
         and _passes_require_keywords(job, profile)
-        and _passes_salary(job, profile)
         and _passes_location(job, profile)
     )
 
@@ -36,36 +39,8 @@ def _passes_all(job: JobListing, profile: UserProfile) -> bool:
 # Predicates
 # ---------------------------------------------------------------------------
 
-def _passes_seniority(job: JobListing, profile: UserProfile) -> bool:
-    if job.seniority is None or job.seniority == "not_specified":
-        return True
-    if job.seniority in profile.seniority.exclude:
-        return False
-    return job.seniority in profile.seniority.target
-
-
-_YEARS_EXP_RE = re.compile(
-    r"(\d+)\s*\+?\s*(?:"
-    r"(?:to\s*\d+\s*)?years?\s+(?:of\s+)?(?:professional\s+|work\s+|industry\s+|relevant\s+)?(?:experience|expertise)"
-    r"|jahre\s+(?:(?:berufs)?erfahrung|(?:relevante[r]?\s+)?(?:berufs)?erfahrung)"
-    r")",
-    re.IGNORECASE,
-)
-
-
 def _job_text(job: JobListing) -> str:
     return f"{job.title} {job.description}"
-
-
-def _passes_experience(job: JobListing, profile: UserProfile) -> bool:
-    max_years = profile.seniority.max_years_experience
-    if max_years is None:
-        return True
-    matches = _YEARS_EXP_RE.findall(_job_text(job))
-    # Keep the job if the minimum stated requirement is within the limit
-    if not matches:
-        return True
-    return min(int(y) for y in matches) <= max_years
 
 
 def _passes_company(job: JobListing, profile: UserProfile) -> bool:
@@ -92,21 +67,45 @@ def _passes_require_keywords(job: JobListing, profile: UserProfile) -> bool:
     )
 
 
-def _passes_salary(job: JobListing, profile: UserProfile) -> bool:
-    if job.salary_max is None:
-        return True
-    return job.salary_max >= profile.salary.minimum_annual_eur
+def _passes_contract_type(job: JobListing, profile: UserProfile) -> bool:
+    """Reject the engagement forms the user has named. Everything else passes.
+
+    A blocklist, never an allowlist. An allowlist of ["contracting"] would silently
+    delete every `unknown` row the day a source that cannot determine the engagement
+    form is added — so this fails *open* (an unwanted leasing row reaches eval)
+    rather than *closed* (a silently empty digest). An empty list rejects nothing.
+    """
+    return job.contract_type not in profile.dealbreakers.exclude_contract_types
 
 
 def _passes_location(job: JobListing, profile: UserProfile) -> bool:
+    """Gate on how remote the work is, falling back to where it is.
+
+    Two axes, and which one applies depends on what the source actually told us.
+    """
+    pct = job.remote_percentage
+    floor = profile.dealbreakers.minimum_remote_percentage
+
+    if pct is not None and floor is not None:
+        # The percentage is the better signal, so it decides alone: meeting the
+        # floor is a country-blind pass (a remote project is not rejected for being
+        # posted from the wrong city), and falling short is a reject even in a
+        # target country (the floor outranks location).
+        return pct >= floor
+
+    # The floor did not decide — either the source published no percentage, or the
+    # gate is switched off. The REMOTE axis fails open (the job is not rejected for
+    # being insufficiently remote), but fully-remote work is still exempt from the
+    # country check. This reaches `remote_policy` rather than the raw percentage so
+    # that a text-only source saying "remote" is read too. It cannot contradict the
+    # branch above, which returned whenever both values were present.
     if job.remote_policy == "remote":
         return True
-    if job.remote_policy == "not_specified":
-        # Trust the location string — if it mentions Germany, keep it
-        return any(
-            country.lower() in job.location.lower()
-            for country in profile.location.target_countries
-        )
+
+    # ...and the LOCATION axis still applies. This is the half that keeps
+    # `target_countries` live: "fails open" is scoped to remoteness, not to the
+    # whole predicate. Reading it as an unconditional pass would make the only
+    # surviving location field dead config.
     return any(
         country.lower() in job.location.lower()
         for country in profile.location.target_countries

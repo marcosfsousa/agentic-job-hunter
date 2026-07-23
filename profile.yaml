@@ -1,23 +1,32 @@
 name: "Marcos"
 
+# background / ideal_role are written POSITIVE-ONLY. Both feed the embedding query
+# (embedder.py), and the model encodes topics not inversions — a clause like "not
+# classical ML" would pull the query TOWARD classical ML. Every negative clause lives
+# in `deprioritise` below instead, where prompt.py injects it into Haiku and the
+# embedder never sees it. (F #9 decision 3; N #19 §5.)
 background: >
   2.5 years software engineering and tech lead experience (enterprise, client-facing projects).
   3 months hands-on AI engineering: built RAG pipelines, NLP systems, LLM fine-tuning workflows,
-  and agentic applications. Strong on the application layer; weaker on MLOps, cloud infrastructure,
-  and classical ML. Not a researcher — a builder.
+  and agentic applications. Strong on the application layer — a builder.
 
 ideal_role: >
-  Building and deploying LLM-based applications, RAG pipelines, or NLP systems — not model research
-  or classical ML. End-to-end ownership from prototype to deployed interface. Consulting-adjacent
-  or product-facing. Small-to-mid size company, or a specialist AI/consulting unit within a larger
-  company where individual contributions are visible.
+  Building and deploying LLM-based applications, RAG pipelines, or NLP systems. End-to-end ownership
+  from prototype to deployed interface. Consulting-adjacent or product-facing. Small-to-mid size
+  company, or a specialist AI/consulting unit within a larger company where individual contributions
+  are visible.
 
+# The negative half of background / ideal_role lives here (see the note above). These
+# four already cover "weaker on MLOps/cloud/classical ML", "Not a researcher", and
+# "not model research or classical ML", so consolidation was deletion, not restatement.
+# The FTE-era "5+ years senior" entry is GONE (P #22 decision 3): it is the config half
+# of the year-count penalty deleted from prompt.py, and on a senior-skewing freelance
+# corpus it fired on nearly every row.
 deprioritise:
   - "Requires fluent German as a stated condition"
   - "Focused primarily on recommendation systems, forecasting, or classical ML pipelines"
   - "Heavy MLOps, Kubernetes, or cloud infrastructure as core job requirements"
   - "Primarily model research or academic role"
-  - "Senior-level role requiring 5+ years dedicated ML engineering experience"
 
 target_roles:
   - "ML Engineer"
@@ -54,20 +63,20 @@ skills:
     - AWS SageMaker
 
 location:
-  target_countries: ["Germany", "Deutschland"]
-  preferred_cities: ["Berlin", "Munich", "Hamburg", "Remote"]
-  remote_acceptable: true
-  eu_work_authorization: true
+  target_countries: ["Germany", "Deutschland"]   # only surviving location field
 
-salary:
-  minimum_annual_eur: 50000
-  target_annual_eur: 65000
+# Negotiating position. NO PIPELINE CONSUMER — no filter, no ranking, no prompt
+# reads this, and that is deliberate, not dead config awaiting deletion. A rate
+# floor is a position held independently of this tool, and profile.yaml is the
+# single source of truth for preferences. Hourly and daily are stated separately
+# and never converted: a Tagessatz records what you would actually quote, and
+# deriving one from the other would fabricate it.
+rate:
+  minimum_hourly: 50      # Stundensatz floor (EUR/hour)
+  target_hourly: 70       # hourly negotiation target
+  minimum_daily: 450      # Tagessatz floor — STATED, never derived
+  target_daily: 600       # daily negotiation target
   currency: "EUR"
-
-seniority:
-  target: ["junior", "mid"]
-  exclude: ["intern", "director", "vp"]
-  max_years_experience: 4
 
 dealbreakers:
   exclude_companies: []
@@ -95,28 +104,34 @@ dealbreakers:
     - "generative AI"
     - "LLM application"
 
+  # Engagement forms never wanted. A blocklist, so contracting AND unknown both
+  # pass — an allowlist would silently delete every unknown row the day a source
+  # that cannot determine the engagement form is added. Empty rejects nothing.
+  exclude_contract_types: ["employee_leasing", "permanent_position"]
+
+  # Remote floor. A job whose remote_percentage is below this is rejected; one at
+  # or above it passes without a country check. A job with no percentage is not
+  # rejected for remoteness but still faces target_countries. null switches the
+  # floor off, leaving target_countries to decide — except for fully-remote work,
+  # which is exempt from the country check either way.
+  minimum_remote_percentage: 100
+
+# Free-text search terms sent to freelancermap — and the adapter's ONLY coverage
+# lever, not merely a targeting convenience. The anonymous view returns 22 results
+# per query and nothing reaches result 23 (pagination was measured and refuted, not
+# left unverified), so the adapter issues one request per term below and unions the
+# results. Adding a term is how you see more of the market; removing one shrinks the
+# corpus. German terms are seeded from the start because the source is DACH and its
+# corpus measures 81% German — dropping them would cost coverage, not just focus.
+#
+# One request per entry, capped by config.freelancermap_max_requests.
+freelancermap_queries:
+  - "Machine Learning"
+  - "LLM"
+  - "Generative AI"
+  - "Maschinelles Lernen"
+  - "KI"
+
 # Minimum LLM match score (1–10) to include a job in the email digest.
 # Jobs below this threshold are still written to the daily digest file.
 email_min_score: 4
-
-# Search queries sent to JSearch (one API call per query).
-# Deduplication handles overlap — tune queries to target different supply segments.
-jsearch_queries:
-  - "AI software engineer Germany"
-  - "LLM engineer Germany"
-  - "NLP engineer Germany"
-
-# JobSpy scraper queries and per-site config.
-# results_wanted: max listings per query per site.
-# fetch_description: LinkedIn only — slower but required for embedding quality.
-jobspy_queries:
-  - "AI engineer Germany"
-  - "machine learning engineer Berlin Munich Hamburg"
-
-jobspy_sites:
-  indeed:
-    results_wanted: 25
-    country_indeed: "Germany"
-  linkedin:
-    results_wanted: 12
-    fetch_description: true

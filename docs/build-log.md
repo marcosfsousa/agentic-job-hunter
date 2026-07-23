@@ -501,3 +501,44 @@ Remote rescue fired for 9 linkedin.com listings with no location
 ```
 
 **Test count:** 297 passing
+
+---
+
+## Spec 4 (#29) — 2026-07-23 — e5 embedding swap + freelance ranking query and eval prompt
+
+**Goal:** Repoint the last three pipeline stages (embed → rank → evaluate) at the freelance
+corpus. Closes the FTE→freelance pivot map (#3): every decision A–S is now executed.
+Branch: `v2-freelance-pivot` (integration branch; not `main`).
+
+**Files modified**
+- `src/jobscout/ranking/embedder.py` — model → `intfloat/multilingual-e5-small`; `query:` / `passage:` prefixes applied **per call site** (`encode_profile`=query, `encode_jobs`=passage, new `encode_feedback`=query); `max_seq_length` set explicitly to 512; profile query gains `ideal_role` + `background` (English-only, `skills.learning` excluded); `_Encoder` Protocol seam so tests can inject a recording encoder and assert the prefixes (their only failure mode is silent underperformance).
+- `src/jobscout/ranking/scorer.py` — feedback centroid now goes through `encode_feedback` (`query:`-prefixed, so `feedback_weight=0.2` keeps its meaning).
+- `src/jobscout/evaluation/prompt.py` — deleted the 2–4yr, 5+yr, and €80k penalties; added a graded (0–3) ramp-up-risk criterion judged on deliverable evidence, and a flat 3-pt below-100%-remote backstop; kept the German penalty.
+- `src/jobscout/evaluation/evaluator.py` — `final_score = llm_score` (blend dropped); `evaluate_jobs` sorts descending by final score, tiebreak `embedding_score`, failed (None) evals sort last without crashing; `top_n` now required (no signature default). **`max_tokens` 256 → 512** (see validation).
+- `src/jobscout/config.py` — `embedding_min_score` deleted (field + env read); `top_n` promoted to config (default 25).
+- `src/jobscout/run.py` — embedding-floor block removed; `top_n=config.top_n` passed through.
+- `src/jobscout/models.py` — `ScoredJob.final_score` comment corrected (no longer a blend).
+- `profile.yaml` — `background` / `ideal_role` rewritten positive-only; negatives consolidated into `deprioritise` (mostly deletion — the four entries already covered them); FTE "5+ years senior" entry deleted.
+- Stale-model edits: `CLAUDE.md` constraint, `README.md`, CI cache key (`daily_run.yml`), `dev-notes.md` env-var list.
+- `docs/adr/0002-freelance-profile-schema.md` — disputed English-only `freelancermap_queries` comment adjudicated (German terms stay) and struck; spec-4 amendment line added.
+- Tests: `test_ranking.py` (+recording-encoder prefix/count/max_seq_length seam, cross-language German-ML-beats-English-backend, query composition), `test_evaluation.py` (final==llm, sort/tiebreak/None, ramp-up + no-"5+ years" prompt assertions), `test_delivery.py` (digest order follows final score), `test_config.py` (top_n present, embedding_min_score gone).
+
+**Key decisions**
+- **Centroid takes `query:`, not `passage:`** — deliberate deviation from e5's symmetric-task guidance, commented in `encode_feedback`. The tiebreaker is the blend, not the taxonomy: both terms must share a scale for `feedback_weight` to mean 0.2 (O #21).
+- **Jobs encoded once** even with feedback present (encode-twice design rejected, O #21) — pinned by a test that counts passage-encodes.
+- **Ordering made real**: the sort lives in the evaluator (the stage that produces the score), making `formatter.py`'s long-standing "assumed sorted by final_score" docstring true. The digest was ordered by embedding score before this.
+- Did **not** build the bilingual query (F decision 1 superseded by N #19 §5).
+
+**Validation (F #9's ≥5-listing check — a required deliverable)**
+- Ran `python -m jobscout.run --dry-run` against **live freelancermap**: 25 jobs fetched → hard-filtered → e5-ranked → Haiku-evaluated. Read all 25 evaluations end to end.
+- **Score distribution: 5×8, 4×5, 3×10, 2×2** (range 2–5, four distinct values; nothing ≥6).
+- **Ramp-up-risk produces a spread, not a uniform penalty** — the stated risk (Haiku noisy on a harder judgement) did not materialise. Explanations cite it explicitly and graded ("3-point RAMP-UP RISK", "ramp-up risk of 2–3 points", "significant ramp-up risk"), separating e.g. a RAG-adjacent Data Engineer (5) from an owned-ML-platform / SAP-integration role (2–3). **This check passes.**
+- **Fluent-German penalty fires on 20/25 (80%) — most rows.** This is the largest driver of the ≤5 compression on an 81%-German DACH corpus, exactly as F's structural argument predicts. Recorded as a **measurement, not a decision**: F did not revisit the German penalty and this spec must not invent that decision — it warrants its own ticket, not a silent edit. (Note: Haiku fires it on *implied* German — location/company — not only "stated condition", which over-fires slightly beyond the rubric's wording.)
+- **Remote backstop fires on 8/25 (32%)** from onsite/hybrid signals *in the prose* even though all 25 passed the `remoteInPercent=100` gate — i.e. freelancermap's structured 100% sometimes contradicts a "hybrid, München" description. Working exactly as designed.
+- **No day-rate signal surfaced in the evaluated prose** — F decision 5 (rate-in-description) stays closed on this sample.
+- **`max_tokens` bug found and fixed.** At 256, the more verbose rubric truncated the JSON mid-string on **19/25** evals (`stop_reason=max_tokens`) — only 6/25 parsed. Raised to **512** → 24/25 parse (one verbose outlier still overflows, fails loudly, and sorts last). Without this the validation was impossible to even read.
+- **`email_min_score` review (user-owned value edit — flagged, not changed):** it sits at **4**, which would email 13/25 (all 4s and 5s). With the distribution compressed to ≤5, the natural quality break is at **5** (→ 8 matches). **Recommendation for the user:** consider raising the digest gate to 5. ⚠️ It has **two consumers** — the digest gate (`run.py`) and, via `config.py`, the default `reeval_below` — so raising it to 5 also lifts re-eval volume (jobs scoring <5) from 12 to 17. The compressed distribution is now the evidence P (#22) wanted for **splitting `reeval_below` from `email_min_score`**: the digest wants ~5, re-eval cost wants ~4. Left to the user.
+
+**Test count:** 289 passing (+20 for spec 4)
+
+**Still open before tagging `v2.0.0`:** the integration branch must merge to `main` (this spec closes the map, so that unblocks it), and the `email_min_score` / `reeval_below` split above is a user call. New-ticket candidate: the 80%-firing German penalty.

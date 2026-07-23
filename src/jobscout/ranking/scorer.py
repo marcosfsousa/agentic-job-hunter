@@ -38,7 +38,7 @@ def rank_jobs(
     scores: np.ndarray = job_vecs @ profile_vec                 # (n,)
 
     if feedback_docs:
-        fb_vecs: np.ndarray = embedder.encode_texts(feedback_docs)  # (k, dim)
+        fb_vecs: np.ndarray = embedder.encode_feedback(feedback_docs)  # (k, dim), query-prefixed
         centroid: np.ndarray = fb_vecs.mean(axis=0)
         centroid /= np.linalg.norm(centroid)
         fb_scores: np.ndarray = job_vecs @ centroid                 # (n,)

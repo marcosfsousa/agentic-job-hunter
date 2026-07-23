@@ -1,0 +1,204 @@
+<!--
+  Trimmed capture of https://www.freelancermap.de/projekte?query=... — three projects
+  instead of the live page's 22, captured 2026-07-22.
+
+  The script-tag wrapper is deliberately NOT flattened to bare JSON: the adapter's job
+  starts at finding the ProjectSearch payload among the other react-on-rails components
+  on the page, so a JSON fixture would skip the step under test. The HeaderSearch
+  component below is a decoy for exactly that reason.
+
+  Field shapes are as measured against the live payload, including the ones that
+  contradicted the earlier written research:
+
+    * `url` is null on every row. The project path lives in `links.project`.
+    * `country` is an OBJECT ({id, name, iso2, nameDe, nameEn}), not a string.
+    * `city` is free text the poster typed — often a real city, sometimes "D".
+    * `description` is editor HTML (<br />, <div class="ql-editor">, <ul><li>),
+      not the plain prose the research described.
+    * `beginningMonth` / `beginningYear` are STRINGS ("01", "2024"), not integers.
+    * `budget` is null rather than [] when absent.
+
+  Per-project field sets exercise the mapping branches rather than reproducing one
+  real page verbatim:
+
+    3026737 — contracting, 0% remote, no beginningText, "D" as city, <br /> markup
+    3026337 — contracting, 100% remote, "ab sofort", the one row that survives the
+              hard filter
+    3026469 — employee_leasing, 60% remote, exact-day start, endcustomer True
+    3026169 — unrecognised contract type, month-granular start, POPULATED budget
+              (no live row has ever carried one; it exists to pin the never-parse
+              rule), <div class="ql-editor"> + <ul><li> markup
+-->
+<!doctype html>
+<html lang="de">
+<head><title>Projekte — freelancermap</title></head>
+<body>
+<div id="header">
+  <script type="application/json" class="js-react-on-rails-component"
+          data-component-name="HeaderSearch"
+          data-dom-id="HeaderSearch-react-component-0">{"placeholder": "Projekt suchen", "initialResults": "decoy — must not be read"}</script>
+</div>
+
+<div id="project-search">
+  <script type="application/json" class="js-react-on-rails-component"
+          data-component-name="ProjectSearch"
+          data-dom-id="ProjectSearch-react-component-1"
+          data-trace="false">{
+  "initialPagination": {"currentPage": 1, "totalPages": 6, "perPage": 22},
+  "aggregations": {
+    "countries": {"Deutschland": 115, "Österreich": 12, "Schweiz": 8},
+    "remote": {"remote": 57, "hybrid": 53, "on_site": 5}
+  },
+  "initialState": {
+    "filter": {"countries": [], "remoteInPercent": null, "projectContractTypes": [], "endcustomer": false}
+  },
+  "initialResults": [
+    {
+      "id": 3026737,
+      "pid": "P-3026737",
+      "title": "4362-3315 - AI Business Analyst (m/w/d)",
+      "company": "MegaPart GmbH",
+      "description": "Für ein Projekt im Bereich Machine Learning suchen wir einen erfahrenen AI Business Analyst (m/w/d).<br />\nRahmenbedingungen:<br />\n<br />\nStart: so schnell wie möglich<br />\nSehr hoher Remote-Anteil<br />\n<br />\nAnforderungen:<br />\nMehrjährige Erfahrung als Business Analyst im AI-/KI-Umfeld<br />\nGute Kenntnisse aktueller AI-Technologien (Generative AI, Large Language Models)<br />",
+      "city": "D",
+      "country": {"id": 1, "name": "Deutschland", "iso2": "DE", "nameDe": "Deutschland", "nameEn": "Germany"},
+      "locations": [],
+      "states": null,
+      "url": null,
+      "plink": "megapart4362-3315",
+      "slug": "4362-3315-ai-business-analyst-m-w-d",
+      "links": {
+        "company": {"name": "MegaPart GmbH", "url": "/projektanbieter/megapart-gmbh-pid_96.html"},
+        "project": "/projekt/4362-3315-ai-business-analyst-m-w-d",
+        "location": {"city": "https://www.freelancermap.de/projekte/d", "locations": [], "country": "/projekte/deutschland"}
+      },
+      "created": "2026-07-22T15:09:04+02:00",
+      "updated": 1784725744,
+      "expires": 1792674544,
+      "projectContractType": {"type": "contracting", "remoteInPercent": 0},
+      "contractType": null,
+      "duration": null,
+      "durationText": "Auf Anfrage",
+      "beginningText": null,
+      "beginningMonth": "01",
+      "beginningYear": "2024",
+      "endcustomer": false,
+      "budget": null,
+      "skills": [{"de": "MLOps", "en": "MLOps", "url": "/projekte/mlops"}],
+      "verlaengerung": 0,
+      "embedding": [0.014, -0.221, 0.098],
+      "topProject": null,
+      "user": {"membership": 4, "is_premium": true}
+    },
+    {
+      "id": 3026337,
+      "pid": "P-3026337",
+      "title": "Machine Learning Engineer (m/w/d)",
+      "company": "Randstad Professional GmbH (vorm. GULP)",
+      "description": "<div class=\"ql-editor\"><div><span style=\"color: rgb(0, 0, 0);\">On behalf of one of our clients in the fashion sector, we are seeking a Machine Learning Engineer to build and operate RAG pipelines and LLM-backed services.</span></div><div>Remote, EU time zones.</div></div>",
+      "city": "München",
+      "country": {"id": 1, "name": "Deutschland", "iso2": "DE", "nameDe": "Deutschland", "nameEn": "Germany"},
+      "locations": [{"id": 2867714, "name": "München", "latLon": {"lat": "48.1374300", "lon": "11.5754900"}}],
+      "states": [2951839],
+      "url": null,
+      "plink": null,
+      "slug": "machine-learning-engineer-m-w-d-3026337",
+      "links": {
+        "company": {"name": "Randstad Professional GmbH", "url": "/projektanbieter/randstad-pid_18.html"},
+        "project": "/projekt/machine-learning-engineer-m-w-d-3026337",
+        "location": {"city": "https://www.freelancermap.de/projekte/muenchen", "locations": [], "country": "/projekte/deutschland"}
+      },
+      "created": "2026-07-22T09:23:10+02:00",
+      "updated": 1784705390,
+      "expires": 1792654990,
+      "projectContractType": {"type": "contracting", "remoteInPercent": 100},
+      "contractType": "CONTRACT",
+      "duration": 6,
+      "durationText": null,
+      "beginningText": "ab sofort",
+      "beginningMonth": null,
+      "beginningYear": null,
+      "endcustomer": false,
+      "budget": null,
+      "skills": [{"de": "Machine Learning", "en": "Machine Learning", "url": "/projekte/machine-learning"}],
+      "verlaengerung": null,
+      "embedding": [0.220, -0.014, 0.033],
+      "topProject": false,
+      "user": {"membership": 4, "is_premium": true}
+    },
+    {
+      "id": 3026469,
+      "pid": "P-3026469",
+      "title": "AI Engineer — NLP Plattform (Arbeitnehmerüberlassung)",
+      "company": "Lampenwelt GmbH",
+      "description": "Wir bauen eine interne NLP-Plattform und suchen Verstärkung. Schwerpunkt: Textklassifikation und der Betrieb der zugehörigen Modelle. Deep Learning Erfahrung mit PyTorch wird vorausgesetzt.",
+      "city": "Hamburg",
+      "country": {"id": 1, "name": "Deutschland", "iso2": "DE", "nameDe": "Deutschland", "nameEn": "Germany"},
+      "locations": [{"id": 2911298, "name": "Hamburg", "latLon": {"lat": "53.5753200", "lon": "10.0153400"}}],
+      "states": [2911297],
+      "url": null,
+      "plink": null,
+      "slug": "ai-engineer-nlp-plattform-3026469",
+      "links": {
+        "company": {"name": "Lampenwelt GmbH", "url": "/projektanbieter/lampenwelt-gmbh-pid_412.html"},
+        "project": "/projekt/ai-engineer-nlp-plattform-3026469",
+        "location": {"city": "https://www.freelancermap.de/projekte/hamburg", "locations": [], "country": "/projekte/deutschland"}
+      },
+      "created": "2026-07-15T09:12:47+02:00",
+      "updated": 1784639567,
+      "expires": 1757937600,
+      "projectContractType": {"type": "employee_leasing", "remoteInPercent": 60},
+      "contractType": "CONTRACT",
+      "duration": null,
+      "durationText": null,
+      "beginningText": "01.09.2026",
+      "beginningMonth": "09",
+      "beginningYear": "2026",
+      "endcustomer": true,
+      "budget": null,
+      "skills": [],
+      "verlaengerung": null,
+      "embedding": [0.101, 0.044, -0.017],
+      "topProject": false,
+      "user": {"membership": 1, "is_premium": false}
+    },
+    {
+      "id": 3026169,
+      "pid": "P-3026169",
+      "title": "Data Scientist / KI-Spezialist",
+      "company": "Talentbridge Personalservice GmbH",
+      "description": "<div class=\"ql-editor\"><div><span style=\"color: rgb(0, 0, 0);\">Unterstützung eines Data-Science-Teams bei der Entwicklung von Prognosemodellen und dem Aufbau einer Machine Learning Infrastruktur.</span></div><ul><li>Gute Kenntnisse in Python &amp; SQL</li><li>Erfahrung mit scikit-learn</li></ul><div>Start voraussichtlich im September.</div></div>",
+      "city": "München",
+      "country": {"id": 1, "name": "Deutschland", "iso2": "DE", "nameDe": "Deutschland", "nameEn": "Germany"},
+      "locations": [{"id": 2867714, "name": "München", "latLon": {"lat": "48.1374300", "lon": "11.5754900"}}],
+      "states": [2951839],
+      "url": null,
+      "plink": null,
+      "slug": "data-scientist-ki-spezialist-3026169",
+      "links": {
+        "company": {"name": "Talentbridge Personalservice GmbH", "url": "/projektanbieter/talentbridge-pid_77.html"},
+        "project": "/projekt/data-scientist-ki-spezialist-3026169",
+        "location": {"city": "https://www.freelancermap.de/projekte/muenchen", "locations": [], "country": "/projekte/deutschland"}
+      },
+      "created": "2026-07-14T17:02:31+02:00",
+      "updated": 1784553751,
+      "expires": 1757851200,
+      "projectContractType": {"type": "werkvertrag_neu", "remoteInPercent": 80},
+      "contractType": "CONTRACT",
+      "duration": 3,
+      "durationText": "3 MM",
+      "beginningText": "Ab September 2026",
+      "beginningMonth": "09",
+      "beginningYear": "2026",
+      "endcustomer": false,
+      "budget": [{"value": "70,00 €", "type": "hourly"}],
+      "skills": [{"de": "Python", "en": "Python", "url": "/projekte/python"}],
+      "verlaengerung": null,
+      "embedding": [-0.052, 0.130, 0.076],
+      "topProject": true,
+      "user": {"membership": 4, "is_premium": true}
+    }
+  ]
+}</script>
+</div>
+</body>
+</html>

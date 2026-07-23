@@ -8,10 +8,8 @@ from pathlib import Path
 import anthropic
 import yaml
 
-from jobscout.adapters.adzuna import AdzunaAdapter
-from jobscout.adapters.base import JobScoutAdapterError
-from jobscout.adapters.jsearch import JSearchAdapter
-from jobscout.adapters.jobspy import JobSpyAdapter
+from jobscout.adapters.base import JobAdapter, JobScoutAdapterError
+from jobscout.adapters.freelancermap import FreelancermapAdapter
 from jobscout.config import get_config
 from jobscout.delivery.email_sender import send_digest
 from jobscout.delivery.formatter import format_digest
@@ -102,11 +100,14 @@ def _sync_feedback(db: "JobDatabase", feedback_path: Path) -> None:
 
 
 # All registered adapters run on every pipeline execution.
-# An adapter self-disables if its API key is absent from .env.
-_ADAPTER_REGISTRY = {
-    "germany": AdzunaAdapter,
-    "jsearch": JSearchAdapter,
-    "jobspy": JobSpyAdapter,
+#
+# One entry, and that is the whole roster rather than a starting point: the source
+# landscape closed with freelancermap as the only viable DACH source, so this
+# adapter *is* the corpus. The three FTE adapters (adzuna, jsearch, jobspy) were
+# deleted with the contract-model pivot and are recoverable from git history if a
+# text-only source ever needs a reference. Add a new adapter here.
+_ADAPTER_REGISTRY: dict[str, type[JobAdapter]] = {
+    "freelancermap": FreelancermapAdapter,
 }
 
 
@@ -130,8 +131,11 @@ async def run_pipeline(
 
     # ------------------------------------------------------------------
     # Ingest — all registered adapters fetched concurrently.
-    # Each adapter self-disables when its API key is absent.
-    # To add/remove a source: update _ADAPTER_REGISTRY and .env.
+    # To add/remove a source: update _ADAPTER_REGISTRY.
+    #
+    # `gather` without return_exceptions=True is deliberate on a single-source
+    # roster: if the one adapter reports its source is broken, the corpus is
+    # broken and so is the run. Revisit if a second adapter ever lands.
     # ------------------------------------------------------------------
     if since is not None:
         logger.info("Running with --since %s — filtering to jobs posted on or after that date", since)
@@ -178,16 +182,20 @@ async def run_pipeline(
     )
 
     # ------------------------------------------------------------------
-    # LLM evaluate (top 25 only, above embedding floor)
+    # LLM evaluate — top_n ranked jobs only. A rank cut bounds cost; there is
+    # deliberately no absolute cosine floor (it was scale-coupled and went stale on
+    # every model swap). The emailed digest is still quality-gated downstream by
+    # email_min_score (the written markdown archive keeps every evaluated job).
     # ------------------------------------------------------------------
-    floor = config.embedding_min_score
-    above_floor = [j for j in ranked if j.embedding_score >= floor]
-    dropped = len(ranked) - len(above_floor)
-    if dropped:
-        logger.info("Embedding floor %.2f dropped %d job(s) before LLM evaluation", floor, dropped)
-
     client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
-    evaluated = await evaluate_jobs(above_floor, config.profile, client, config.llm_model, reeval_below=config.reeval_below or config.profile.email_min_score)
+    evaluated = await evaluate_jobs(
+        ranked,
+        config.profile,
+        client,
+        config.llm_model,
+        top_n=config.top_n,
+        reeval_below=config.reeval_below or config.profile.email_min_score,
+    )
 
     # ------------------------------------------------------------------
     # Deliver

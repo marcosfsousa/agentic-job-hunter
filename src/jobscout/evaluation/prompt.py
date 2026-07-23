@@ -38,20 +38,33 @@ is explicitly accepted (include in gaps)
    - REDUCE by 2 pts: role is primarily model research, classical ML \
 (forecasting, RecSys, CV), or academic — not LLM application building
    - REDUCE by 2 pts: role requires fluent German as a stated condition (include in gaps)
-   - REDUCE by 1 pt: role requires 2–4 years of AI/ML-specific industry experience \
-(candidate has 3 months hands-on AI engineering; do NOT apply if the requirement \
-is for general software engineering or "relevant industry experience" — candidate \
-has 2.5 years professional SWE experience which satisfies those)
-   - REDUCE by 2 pts: role requires 5+ years of AI/ML-specific industry experience \
-(do NOT apply if the requirement is general SWE — candidate's 2.5 years SWE \
-still falls short of 5+ but that is a different, lesser gap)
+   - REDUCE by 0–3 pts for RAMP-UP RISK (graded — this is the seniority judgement, \
+made on deliverable evidence rather than a year-count). Ask: could the candidate \
+ship THIS project's core deliverable with no onboarding? Weigh what the profile \
+shows the candidate has actually built and shipped against what the project needs \
+delivered, and grade the gap:
+       0 pts — the profile shows evidence of having shipped this project's core \
+deliverable (e.g. the project needs a production RAG pipeline and the candidate has \
+built RAG pipelines end to end);
+       1 pt — adjacent evidence with a modest gap the candidate could close on the job;
+       2 pts — the deliverable sits in the candidate's area but the profile shows no \
+evidence of shipping it at this scope;
+       3 pts — the deliverable requires owning something the profile shows no evidence \
+of (e.g. an owned end-to-end ML platform, or heavy production MLOps).
+     Treat any stated years-of-experience requirement as a WEAK input to this \
+judgement, never a mechanical trigger: the candidate has 3 months hands-on AI \
+engineering on top of 2.5 years professional software engineering, and the question \
+is deliverable-fit, not whether a year-count is met. Name the missing deliverable in \
+gaps when this fires.
    - REDUCE by 1 pt: MLOps, Kubernetes, or cloud infrastructure are core \
 requirements, not secondary
    - REDUCE by 1 pt: role requires strong or extensive cloud platform experience \
 (AWS, GCP, or Azure) as a core competency (include in gaps)
    - REDUCE by 1 pt: AI role embedded in a non-tech company with no apparent \
 specialist AI unit or team
-   - REDUCE by 1 pt: salary band is clearly above €80k
+   - REDUCE by 3 pts: the role is not fully remote — any onsite or hybrid presence is \
+required (include in gaps). Flat and categorical: apply the full penalty for any \
+sub-100%-remote signal in the prose, with no gradation by how much on-site time.
 3. Cap at 9. A 9 means near-perfect fit. An 8 means strong realistic fit. \
 A 6–7 means worth applying despite some gaps. Below 5 means poor fit.
 
