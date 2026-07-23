@@ -1,8 +1,8 @@
 # JobScout
 
-JobScout is a personal AI job-matching pipeline for AI/ML roles in Germany.
+JobScout is a personal AI job-matching pipeline for freelance/contract AI/ML work in the German market.
 
-It pulls listings from multiple sources, removes obvious mismatches with deterministic filters, ranks the remaining jobs with semantic search, asks an LLM to evaluate only the strongest candidates, and delivers a daily digest by email plus a markdown archive. The goal is simple: fewer, better jobs to review by hand.
+It pulls listings from freelancermap, removes obvious mismatches with deterministic filters, ranks the remaining projects with multilingual semantic search, asks an LLM to evaluate only the strongest candidates, and delivers a daily digest by email plus a markdown archive. The goal is simple: fewer, better projects to review by hand. It finds and ranks — you decide what to apply to.
 
 This project is intentionally opinionated:
 - it never auto-applies
@@ -16,20 +16,19 @@ Pipeline:
 
 `Ingest -> Deduplicate -> Hard Filter -> Embed + Rank -> LLM Evaluate -> Deliver`
 
-Current sources:
-- Adzuna
-- JSearch
-- JobSpy for LinkedIn and Indeed
+Source:
+- freelancermap — the one viable DACH freelance source, and therefore the whole corpus. A new market is a new adapter file behind a shared interface; nothing else in the pipeline changes.
 
 Core behaviors:
-- normalizes raw listings into a single internal `JobListing` model
+- normalizes raw listings into a single internal contract `JobListing` (day/hourly rate, contract type, remote percentage, duration)
 - stores seen jobs and review feedback in SQLite
-- deduplicates within and across sources
-- uses local sentence-transformer embeddings for cheap first-pass ranking
+- deduplicates listings by content fingerprint, not fragile source IDs
+- ranks with local multilingual embeddings — the corpus is ~80% German, so an English profile query and a German project land in the same vector space
 - evaluates only the top slice with an LLM to control cost and latency
 - writes daily digests to `digests/YYYY-MM-DD.md`
 - emails only jobs above a configurable score threshold
-- supports review labels like `applied`, `rejected`, and `interested` to improve future ranking
+- supports review labels like `applied`, `rejected`, and `interested` to shape future ranking
+- fails loudly if the source's yield collapses, so an empty inbox is never mistaken for a quiet market
 
 ## Why It’s Interesting
 
@@ -38,18 +37,18 @@ This is not a demo wrapper around one API. It is a full decision pipeline with c
 Highlights:
 - async Python pipeline with source adapters behind a shared interface
 - deterministic hard filters before any model call
-- multilingual semantic ranking with `intfloat/multilingual-e5-small`
-- LLM-based scoring on the reduced candidate set only
+- multilingual semantic ranking with `intfloat/multilingual-e5-small` (asymmetric profile-query vs. job-document search via e5’s `query:` / `passage:` prefixes)
+- LLM scoring with Claude Haiku on the reduced candidate set only
 - fingerprint-based deduplication for unstable third-party job IDs
-- GitHub Actions daily scheduler with persisted SQLite state
-- nearly 300 pytest checks covering adapters, filters, ranking, storage, delivery, and edge cases
+- GitHub Actions daily scheduler with cache-persisted SQLite state (the database is never committed)
+- ~290 pytest checks covering the adapter, filters, ranking, storage, delivery, and edge cases
 
 ## Tech Stack
 
 - Python 3.11
 - `httpx`, `pydantic`, `sqlite3`, `PyYAML`
-- `sentence-transformers` + `numpy`
-- OpenAI API for structured job evaluation
+- `sentence-transformers` + `numpy` for local embeddings
+- Anthropic Claude Haiku for structured job evaluation
 - Resend for email delivery
 - GitHub Actions for scheduled runs
 
@@ -77,12 +76,12 @@ Useful commands:
 
 ```bash
 python -m jobscout.run --dry-run
-python -m jobscout.run --since 2026-04-01
+python -m jobscout.run --since 2026-07-01
 python -m jobscout.run --review today
 pytest
 ```
 
-Environment variables live in `.env`. See [.env.example](/C:/Users/Work/Documents/solo-projects/agentic-job-hunter/.env.example:1).
+Environment variables — `ANTHROPIC_API_KEY` and the optional Resend keys — live in `.env`. See [.env.example](.env.example); full setup and ops notes are in [docs/dev-notes.md](docs/dev-notes.md).
 
 ## What This Shows
 
@@ -93,4 +92,4 @@ For recruiters and hiring teams, this project demonstrates:
 - cost awareness: LLM calls happen after filtering and ranking, not across the full corpus
 - operational realism: idempotency, failure handling, digest history, and review workflows
 
-Build history and implementation detail live in [docs/build-log.md](/C:/Users/Work/Documents/solo-projects/agentic-job-hunter/docs/build-log.md:1).
+Architecture and the decisions behind the freelance pivot live in [CLAUDE.md](CLAUDE.md) and the ADRs under [docs/adr/](docs/adr/); build history and implementation detail in [docs/build-log.md](docs/build-log.md).
