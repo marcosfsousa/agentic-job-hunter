@@ -194,7 +194,7 @@ async def run_pipeline(
         client,
         config.llm_model,
         top_n=config.top_n,
-        reeval_below=config.reeval_below or config.profile.email_min_score,
+        reeval_below=config.reeval_below,
     )
 
     # ------------------------------------------------------------------
