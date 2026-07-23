@@ -87,6 +87,13 @@ _REQUEST_TIMEOUT = 30.0
 # broken source and must not degrade to an empty digest.
 _RECOVERABLE_STATUSES = frozenset({408, 429})
 
+# The anonymous view returns at most this many rows per query (see the module
+# docstring and `config.freelancermap_min_raw_ingest`, whose `gt=22` rests on the
+# same fact). Named here because the floor's diagnostics reason arithmetically about
+# it: a below-floor union that the answering queries alone should have cleared points
+# at a dropped-rows shape change, not at whichever queries merely rate-limited.
+_ROWS_PER_QUERY = 22
+
 # The payload is the props of the `ProjectSearch` component. Matched on the
 # component name rather than on position or class, because the page carries
 # several react-on-rails components and their order is not ours to rely on.
@@ -311,7 +318,7 @@ class FreelancermapAdapter(JobAdapter):
             # not something to chase.
             follow_redirects=False,
         ) as client:
-            for query in queries:
+            for index, query in enumerate(queries):
                 try:
                     results = await self._fetch_query(client, query)
                 except JobScoutAdapterError as exc:
@@ -329,6 +336,28 @@ class FreelancermapAdapter(JobAdapter):
                         "run health: %s",
                         query, exc,
                     )
+                    if exc.status == 429:
+                        # A 429 is the source *explicitly* asking us to slow down —
+                        # unlike a 5xx or a timeout, which say nothing about our
+                        # request rate. Firing the remaining queries anyway would
+                        # hammer a server that just throttled us, and freelancermap
+                        # access rests on staying a well-behaved anonymous client
+                        # (issue #11: a no-overload duty, and account termination as
+                        # the realistic downside). So stop issuing requests. The
+                        # skipped queries are marked degraded too, so the floor below
+                        # still arbitrates run health from the full picture — the
+                        # fail-loud guarantee is unchanged, we simply gather less.
+                        remaining = queries[index + 1:]
+                        if remaining:
+                            degraded.extend(remaining)
+                            logger.warning(
+                                "freelancermap: 429 — not issuing the remaining %s "
+                                "(%s); backing off rather than hammering a source that "
+                                "asked us to slow down.",
+                                _queries(len(remaining)),
+                                ", ".join(repr(q) for q in remaining),
+                            )
+                        break
                     continue
                 finally:
                     # Never carry state between requests, on every path including
@@ -355,15 +384,25 @@ class FreelancermapAdapter(JobAdapter):
         #   * Before `since`, so a genuinely quiet week cannot trip an alarm about a
         #     broken source. A healthy raw count that the hard filter then rejects
         #     down to nothing stays silent for the same reason.
-        yield_summary = f"{len(raw_by_id)} distinct project(s) across {_queries(len(queries))}"
-        logger.info("freelancermap raw yield: %s", yield_summary)
+        # Degraded queries contributed nothing to the union, so the denominator an
+        # operator greps first must be the number that actually *answered*, not the
+        # number configured. "3 distinct across 5 of 8 queries" is honest where
+        # "across 8 queries" reads as a near-total collapse of a healthy run.
+        answered = len(queries) - len(degraded)
+        degraded_list = ", ".join(repr(q) for q in degraded)
         if degraded:
+            yield_summary = (
+                f"{len(raw_by_id)} distinct project(s) across "
+                f"{answered} of {_queries(len(queries))}"
+            )
             logger.warning(
                 "freelancermap: %s degraded transiently this run (%s); the "
                 "distinct-id floor decides run health from the %d that answered.",
-                _queries(len(degraded)), ", ".join(repr(q) for q in degraded),
-                len(queries) - len(degraded),
+                _queries(len(degraded)), degraded_list, answered,
             )
+        else:
+            yield_summary = f"{len(raw_by_id)} distinct project(s) across {_queries(len(queries))}"
+        logger.info("freelancermap raw yield: %s", yield_summary)
 
         floor = self._config.freelancermap_min_raw_ingest
         if len(raw_by_id) < floor:
@@ -371,21 +410,42 @@ class FreelancermapAdapter(JobAdapter):
             # payload is a bug in us; a run where transient failures starved the
             # union is a bad-source day. Both must fail loud — the point of the fix
             # for #43 is that neither exits 0 with an empty digest — but the message
-            # should not send someone hunting a shape change that did not happen.
-            if degraded:
-                cause = (
-                    f"{_queries(len(degraded))} degraded transiently this run "
-                    f"({', '.join(repr(q) for q in degraded)}), so a rate-limited or "
-                    "flapping source — not necessarily a changed payload — may be the "
-                    "cause. Either way the run fails rather than delivering a silent "
-                    "empty digest."
-                )
-            else:
+            # must not misdirect, and it can misdirect in *either* direction: naming
+            # only a shape change when the source merely rate-limited, or — the
+            # subtler trap — naming only rate-limiting when a shape change silently
+            # dropped the answered rows. The arbiter is arithmetic: the queries that
+            # answered return up to `_ROWS_PER_QUERY` rows each, so if they alone
+            # should have cleared the floor, degradations cannot explain the
+            # shortfall and the shape-check hint has to stay.
+            shape_hint = (
+                "Check whether the search response shape or the query parameter changed."
+            )
+            if not degraded:
                 cause = (
                     "This is a broken source, not a quiet market — the anonymous view "
-                    "returns up to 22 rows per query, so a healthy union sits far above "
-                    "this. Check whether the search response shape or the query "
-                    "parameter changed."
+                    f"returns up to {_ROWS_PER_QUERY} rows per query, so a healthy union "
+                    f"sits far above this. {shape_hint}"
+                )
+            elif answered * _ROWS_PER_QUERY >= floor:
+                # The answering queries alone should have cleared the floor, so the
+                # transient degradations are not the whole story — something dropped
+                # their rows too, and that is a shape/parameter change. Naming only
+                # the degradation here is the misdirection this branch exists to avoid.
+                cause = (
+                    f"{_queries(len(degraded))} degraded transiently this run "
+                    f"({degraded_list}), but the {answered} that answered should have "
+                    f"cleared the floor on their own (up to {_ROWS_PER_QUERY} rows "
+                    f"each) — so a rate-limited source does not explain this. {shape_hint}"
+                )
+            else:
+                # Few enough queries answered that the degradations alone account for
+                # the thin union — a bad-source day, not a shape change. Don't send
+                # ops hunting a change that need not have happened.
+                cause = (
+                    f"{_queries(len(degraded))} degraded transiently this run "
+                    f"({degraded_list}), so a rate-limited or flapping source — not "
+                    "necessarily a changed payload — may be the cause. Either way the "
+                    "run fails rather than delivering a silent empty digest."
                 )
             raise JobScoutSourceIntegrityError(
                 f"freelancermap returned {yield_summary}, below the floor of {floor}. "
@@ -453,7 +513,8 @@ class FreelancermapAdapter(JobAdapter):
         if response.status_code in _RECOVERABLE_STATUSES or response.status_code >= 500:
             raise JobScoutAdapterError(
                 f"freelancermap returned {response.status_code} for query {query!r} "
-                "— treating as transient."
+                "— treating as transient.",
+                status=response.status_code,
             )
         if response.status_code != 200:
             raise JobScoutSourceIntegrityError(
