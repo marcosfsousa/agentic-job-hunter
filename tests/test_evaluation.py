@@ -344,7 +344,7 @@ class TestBuildPrompt:
             background="Application-layer builder.",
             ideal_role="Ship LLM applications end to end.",
             deprioritise=[
-                "Requires fluent German as a stated condition",
+                "Requires German at CEFR C1 or above as a deliberately stated condition (B2 or below, or German implied only by location/company, is not a penalty)",
                 "Primarily model research or academic role",
             ],
             target_roles=["ML Engineer"],
@@ -356,7 +356,7 @@ class TestBuildPrompt:
         )
         prompt = build_prompt(_make_scored_job("j1").listing, profile)
 
-        assert "Requires fluent German as a stated condition" in prompt
+        assert "Requires German at CEFR C1 or above" in prompt
         assert "Primarily model research or academic role" in prompt
         assert "5+ years" not in prompt
 
@@ -370,7 +370,14 @@ class TestBuildPrompt:
         """The year-count trigger is replaced by a graded deliverable-evidence judgement."""
         assert "RAMP-UP RISK" in SYSTEM_PROMPT
 
-    def test_system_prompt_keeps_german_penalty(self):
-        """Kept deliberately — a stated German requirement is a real disqualifier, not
-        a bad proxy like the year-count penalties were."""
-        assert "fluent German" in SYSTEM_PROMPT
+    def test_system_prompt_german_penalty_anchored_at_c1(self):
+        """Kept, but re-aimed (#44): the candidate is B2, so the penalty fires only on a
+        DELIBERATELY STATED requirement at C1 or above — not on implied German (location/
+        company/posting language), which was firing on 80% of a DACH corpus and compressing
+        the scale. B2-or-below and level-unstated German are explicitly NOT penalised."""
+        assert "CEFR C1 or above" in SYSTEM_PROMPT
+        # The carve-out that kills the over-firing: implied German must not trigger it.
+        assert "German job location" in SYSTEM_PROMPT
+        assert "B2 or below" in SYSTEM_PROMPT
+        # The old vague binary wording is gone.
+        assert "requires fluent German as a stated condition" not in SYSTEM_PROMPT.lower()

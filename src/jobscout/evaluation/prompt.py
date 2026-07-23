@@ -37,7 +37,14 @@ path stated (include in gaps)
 is explicitly accepted (include in gaps)
    - REDUCE by 2 pts: role is primarily model research, classical ML \
 (forecasting, RecSys, CV), or academic — not LLM application building
-   - REDUCE by 2 pts: role requires fluent German as a stated condition (include in gaps)
+   - REDUCE by 2 pts: the listing DELIBERATELY STATES a German-language requirement \
+at CEFR C1 or above — explicit "C1"/"C2", or phrases implying that band: \
+"verhandlungssicher", "fluent"/"business-fluent" German, "sehr gute Deutschkenntnisse", \
+or "native"/"Muttersprachler" (include in gaps). Do NOT fire on: a German job location, \
+a German company name, a posting written in German, German listed as "nice to \
+have"/"von Vorteil", or German stated at B2 or below (including "gute Deutschkenntnisse"). \
+If German is mentioned with no level stated, treat it as below the bar and do NOT \
+apply this penalty.
    - REDUCE by 0–3 pts for RAMP-UP RISK (graded — this is the seniority judgement, \
 made on deliverable evidence rather than a year-count). Ask: could the candidate \
 ship THIS project's core deliverable with no onboarding? Weigh what the profile \
