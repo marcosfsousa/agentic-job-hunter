@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from jobscout.models import UserProfile
 
@@ -14,6 +14,13 @@ logger = logging.getLogger(__name__)
 
 # Project root: src/jobscout/config.py → src/jobscout/ → src/ → project root
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Standalone default for the re-evaluation floor. Deliberately independent of
+# profile.email_min_score (the digest gate): the digest wants quality (~5 on the
+# current compressed distribution) while re-eval cost wants a lower floor (~4), so
+# raising one must not move the other. See issue #45 — this replaces the previous
+# fallback-to-email_min_score coupling.
+DEFAULT_REEVAL_BELOW = 4
 
 
 class AppConfig(BaseModel):
@@ -69,9 +76,10 @@ class AppConfig(BaseModel):
     freelancermap_min_raw_ingest: int = Field(default=30, gt=22)
 
     # Jobs scoring below this threshold on the first LLM pass are re-evaluated once;
-    # the higher of the two scores is kept. None resolves to profile.email_min_score
-    # via the model validator below; always an int after construction.
-    reeval_below: int | None = None
+    # the higher of the two scores is kept. Independent of profile.email_min_score
+    # (the digest gate) — re-eval cost and digest quality are tuned separately (#45).
+    # 0 disables re-evaluation (no score can be below 0); overridable via REEVAL_BELOW.
+    reeval_below: int = Field(default=DEFAULT_REEVAL_BELOW, ge=0)
 
     # Paths — default to project-root-relative locations
     db_path: Path = _PROJECT_ROOT / "data" / "jobscout.db"
@@ -82,12 +90,6 @@ class AppConfig(BaseModel):
     @property
     def feedback_path(self) -> Path:
         return self.db_path.parent / "feedback.yaml"
-
-    @model_validator(mode="after")
-    def _set_reeval_below(self) -> "AppConfig":
-        if self.reeval_below is None:
-            self.reeval_below = self.profile.email_min_score
-        return self
 
     @field_validator("anthropic_api_key")
     @classmethod
@@ -156,7 +158,7 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
     cfg = AppConfig(
         profile=profile,
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
-        reeval_below=int(os.environ.get("REEVAL_BELOW", str(profile.email_min_score))),
+        reeval_below=int(os.environ.get("REEVAL_BELOW", str(DEFAULT_REEVAL_BELOW))),
         resend_api_key=os.environ.get("RESEND_API_KEY") or None,
         email_to=os.environ.get("EMAIL_TO") or None,
         email_from=os.environ.get("EMAIL_FROM") or None,

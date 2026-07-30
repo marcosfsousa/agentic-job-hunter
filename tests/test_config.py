@@ -92,6 +92,41 @@ class TestPoolBoundConfig:
         assert not hasattr(config, "embedding_min_score")
 
 
+class TestReevalBelowIsDecoupled:
+    """`reeval_below` (re-eval cost floor) and `email_min_score` (digest gate) are two
+    knobs that used to share one value. Raising the gate must no longer move the
+    re-eval floor — the coupling this closes is issue #45."""
+
+    def test_defaults_to_standalone_constant_not_email_min_score(self):
+        # Shipped email_min_score is 4 today, so a passing assert would be ambiguous
+        # if the two were still coupled. Pin against the constant, and the next test
+        # breaks the tie by moving email_min_score away from it.
+        from jobscout.config import DEFAULT_REEVAL_BELOW
+
+        config = get_config(profile_path=SHIPPED_PROFILE)
+        assert config.reeval_below == DEFAULT_REEVAL_BELOW
+
+    def test_email_min_score_does_not_drag_reeval_below(self, tmp_path):
+        from jobscout.config import DEFAULT_REEVAL_BELOW
+
+        profile_path = _profile_with(tmp_path, lambda d: d.__setitem__("email_min_score", 9))
+        config = get_config(profile_path=profile_path)
+        assert config.profile.email_min_score == 9
+        assert config.reeval_below == DEFAULT_REEVAL_BELOW  # unmoved
+
+    def test_reeval_below_env_override_is_honoured(self, monkeypatch):
+        monkeypatch.setenv("REEVAL_BELOW", "6")
+        config = get_config(profile_path=SHIPPED_PROFILE)
+        assert config.reeval_below == 6
+
+    def test_reeval_below_zero_is_honoured_not_treated_as_unset(self, monkeypatch):
+        # The nit folded in from the PR #42 review: a deliberate REEVAL_BELOW=0 (disable
+        # re-evaluation) must survive, not be coerced back to a default by an `or`.
+        monkeypatch.setenv("REEVAL_BELOW", "0")
+        config = get_config(profile_path=SHIPPED_PROFILE)
+        assert config.reeval_below == 0
+
+
 # ---------------------------------------------------------------------------
 # Strict validation
 # ---------------------------------------------------------------------------
