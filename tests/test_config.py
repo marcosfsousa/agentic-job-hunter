@@ -72,6 +72,17 @@ class TestShippedProfileLoads:
         assert "Machine Learning" in queries
         assert "Maschinelles Lernen" in queries
 
+    def test_real_profile_german_entry_is_lockstep_with_the_prompt(self):
+        """#51: the profile's German entry and prompt.py's SYSTEM_PROMPT clause both reach
+        Haiku, so a carve-out present in one and absent from the other is a contradiction
+        in a single prompt. The entry had drifted to a strict subset (it omitted the
+        posting-language and von-Vorteil exemptions); this pins all four plus precedence."""
+        entries = get_config(profile_path=SHIPPED_PROFILE).profile.deprioritise
+        german = next(e for e in entries if "CEFR C1 or above" in e)
+        for carve_out in ("B2 or below", "no level stated", "posting language", "von Vorteil"):
+            assert carve_out in german, f"profile.yaml dropped the {carve_out!r} carve-out"
+        assert "non-optional" in german
+
     def test_real_profile_states_hourly_and_daily_independently(self):
         rate = get_config(profile_path=SHIPPED_PROFILE).profile.rate
         assert rate.minimum_hourly is not None

@@ -23,7 +23,9 @@ ideal_role: >
 # of the year-count penalty deleted from prompt.py, and on a senior-skewing freelance
 # corpus it fired on nearly every row.
 deprioritise:
-  - "Requires German at CEFR C1 or above as a deliberately stated condition (B2 or below, or German implied only by location/company, is not a penalty)"
+  # Kept lockstep with prompt.py's SYSTEM_PROMPT German clause — all four carve-outs
+  # and the precedence rule, not a subset of them (#51).
+  - "Requires German at CEFR C1 or above as a deliberately stated, non-optional condition (not a penalty: B2 or below, no level stated, German implied only by job location / company name / posting language, or German listed as nice-to-have / von Vorteil — an optional qualifier wins over the level)"
   - "Focused primarily on recommendation systems, forecasting, or classical ML pipelines"
   - "Heavy MLOps, Kubernetes, or cloud infrastructure as core job requirements"
   - "Primarily model research or academic role"

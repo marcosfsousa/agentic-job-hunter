@@ -344,7 +344,7 @@ class TestBuildPrompt:
             background="Application-layer builder.",
             ideal_role="Ship LLM applications end to end.",
             deprioritise=[
-                "Requires German at CEFR C1 or above as a deliberately stated condition (B2 or below, or German implied only by location/company, is not a penalty)",
+                "Requires German at CEFR C1 or above as a deliberately stated, non-optional condition",
                 "Primarily model research or academic role",
             ],
             target_roles=["ML Engineer"],
@@ -376,8 +376,20 @@ class TestBuildPrompt:
         company/posting language), which was firing on 80% of a DACH corpus and compressing
         the scale. B2-or-below and level-unstated German are explicitly NOT penalised."""
         assert "CEFR C1 or above" in SYSTEM_PROMPT
-        # The carve-out that kills the over-firing: implied German must not trigger it.
+        # All FOUR carve-outs, not just the two that used to be pinned (#51): the
+        # unpinned pair could be dropped from the prompt without failing a test, which
+        # is how profile.yaml's copy drifted into a subset in the first place.
         assert "German job location" in SYSTEM_PROMPT
+        assert "German company name" in SYSTEM_PROMPT
+        assert "posting written in German" in SYSTEM_PROMPT
+        assert "von Vorteil" in SYSTEM_PROMPT
         assert "B2 or below" in SYSTEM_PROMPT
         # The old vague binary wording is gone.
         assert "requires fluent German as a stated condition" not in SYSTEM_PROMPT.lower()
+
+    def test_system_prompt_ranks_optional_qualifier_over_c1_cue(self):
+        """#51: "verhandlungssicheres Deutsch von Vorteil" matches the fire list AND the
+        carve-out list at once. Without a stated precedence Haiku's call there is
+        undefined, so the prompt names a winner: an optional qualifier beats the level."""
+        assert "PRECEDENCE" in SYSTEM_PROMPT
+        assert "verhandlungssicheres Deutsch von Vorteil" in SYSTEM_PROMPT
