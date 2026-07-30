@@ -376,14 +376,10 @@ class TestBuildPrompt:
         company/posting language), which was firing on 80% of a DACH corpus and compressing
         the scale. B2-or-below and level-unstated German are explicitly NOT penalised."""
         assert "CEFR C1 or above" in SYSTEM_PROMPT
-        # All FOUR carve-outs, not just the two that used to be pinned (#51): the
-        # unpinned pair could be dropped from the prompt without failing a test, which
-        # is how profile.yaml's copy drifted into a subset in the first place.
-        assert "German job location" in SYSTEM_PROMPT
-        assert "German company name" in SYSTEM_PROMPT
-        assert "posting written in German" in SYSTEM_PROMPT
-        assert "von Vorteil" in SYSTEM_PROMPT
-        assert "B2 or below" in SYSTEM_PROMPT
+        # The individual carve-outs are pinned by TestGermanCarveOutParity in
+        # tests/test_config.py, which checks them against profile.yaml at the same time.
+        # Asserting them here too would mean a fifth carve-out has to be added in two
+        # places — the drift this whole guard exists to prevent (#55).
         # The old vague binary wording is gone.
         assert "requires fluent German as a stated condition" not in SYSTEM_PROMPT.lower()
 

@@ -84,7 +84,9 @@ def _run_review(review_date: date) -> None:
 def _sync_feedback(db: "JobDatabase", feedback_path: Path) -> None:
     """Load feedback.yaml and upsert entries into DB. No-op if file is absent."""
     try:
-        with feedback_path.open() as f:
+        # Written utf-8 above with allow_unicode=True, so it must be read utf-8 too.
+        # Umlauts in German job titles are undecodable under cp1252 (#55).
+        with feedback_path.open(encoding="utf-8") as f:
             raw = yaml.safe_load(f) or []
     except FileNotFoundError:
         logger.info("No feedback file found at %s — skipping", feedback_path)

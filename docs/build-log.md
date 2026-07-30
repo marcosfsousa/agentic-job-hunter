@@ -579,6 +579,7 @@ kept at −2, still visible-but-ranked-down rather than an exclusion.
 **Still open:** the `email_min_score` digest-gate value (raise to 5?) needs its own fresh
 ≥5-listing read now that this retune has moved the distribution again — sequencing per #45's
 writeup. Not decided here.
+
 ---
 
 ## Fix #51 — 2026-07-30 — close the three deferred German-carve-out findings
@@ -632,6 +633,8 @@ rather than papered over.
 ticket — decide whether the rubric or Haiku is wrong; (2) `email_min_score` (raise to 5?) still
 carries over from #44, untouched here.
 
+---
+
 ## Fix #56 — 2026-07-30 — pytest resolves `src/` from the tree it was started in
 
 **Problem:** the editable install (`__editable__.jobscout-0.1.0.pth`) is a plain path entry pointing
@@ -676,3 +679,59 @@ run it without `pip install -e .`.
 bare `python -m jobscout.run`, a REPL, pyright — still resolves `jobscout` to the main checkout. So
 "tests pass in the worktree" does not imply "running the pipeline in the worktree uses the worktree's
 code". Out of scope for #56; noted in `docs/dev-notes.md` so it is not rediscovered the hard way.
+
+---
+
+## Fix #55 — 2026-07-30 — the deferred findings from #53's review
+
+**Goal:** Close #55, the deferred-findings ledger from `/pr-cycle`'s review of #53 — the PR that
+closed #51. Two of the four items are one piece of work, and they are the same defect #51 existed
+to close, reintroduced one layer up.
+
+**The defect, precisely:** #51 added `assert "von Vorteil" in SYSTEM_PROMPT` to pin the Do-NOT-fire
+carve-out, and in the same commit added a PRECEDENCE example containing the words
+`"verhandlungssicheres Deutsch von Vorteil"`. The assert was satisfied by the example, not by the
+entry it named — so the carve-out could be deleted from the prompt with the suite still green
+(verified by mutation, below). Meanwhile `test_config.py`'s "lockstep" test never read
+SYSTEM_PROMPT at all; it asserted substrings on the profile side only. Neither direction of drift
+was actually guarded.
+
+**Changes:**
+- `tests/test_config.py` gains `GERMAN_CARVE_OUTS`, a seven-row table pairing each carve-out's
+  SYSTEM_PROMPT marker with its `profile.yaml` marker, asserted against **both** strings. The two
+  are worded differently on purpose (the prompt instructs, the profile states a preference), so a
+  literal comparison is impossible — the table is the seam. A fifth carve-out is one row here and
+  nowhere else. A second test asserts each prompt marker matches *exactly once*, which is the
+  self-satisfaction failure mode above, now unrepresentable.
+- `test_evaluation.py` sheds its four carve-out asserts; keeping them would mean a fifth carve-out
+  needs updating in two places, which is the drift being fixed.
+- **`config.py:_load_config` read `profile.yaml` with a bare `open()`.** Filed as a nit; it is not.
+  On Windows (cp1252) the German entry's em dash decoded to `â€"` and that mojibake shipped to
+  Haiku on every local run. It never raised and Linux CI defaults to utf-8, so nothing caught it.
+  `run.py:_sync_feedback` had the same bug against `feedback.yaml` — not in the ledger, found while
+  fixing this one. It is a symmetry fix: the file is written utf-8 with `allow_unicode=True`, so it
+  must be read utf-8 too. ⚠️ **Corrected during review:** this entry first called that instance
+  *worse* than the `profile.yaml` one, because "umlauts in German job titles are undecodable under
+  cp1252". False — `feedback.yaml` only ever holds `{id, source, status}` (`run.py:63`): IDs, source
+  slugs and a fixed status enum, all ASCII. The title carrying the em dash goes to the console
+  prompt, never to the file. The fix stands on symmetry and on making the schema safe to widen, not
+  on a decoding failure that can currently occur. Same failure mode as #51's overclaim, one layer
+  further out: a plausible severity story asserted without checking what the file actually holds.
+- `build-log.md` separator at the old line 581 had no blank line before `---`, so GitHub rendered
+  the preceding line as an H2 and swallowed the divider.
+
+**Validation:** 322 passing, up from 307; 323 after `main` merged in, which adds #56's tripwire. No Haiku run — no prompt text changed,
+so #51's ≥5-listing validation still holds. Three mutation checks instead, each reverted after:
+delete the `von Vorteil` carve-out from SYSTEM_PROMPT → 2 failures; drop `posting language` from
+`profile.yaml` → 1 failure; revert the `encoding="utf-8"` → the mojibake test fails. Guards that
+have never been seen red are not evidence.
+
+**On the worktree import trap:** this session hit it too — a bare `pytest` here reported a spurious
+failure against the main checkout's `src/` before it was spotted, and the workaround (`PYTHONPATH=src`)
+was briefly written into dev-notes by this PR. **#56 fixed it properly** in the meantime, via
+`pythonpath = ["src"]` in `pyproject.toml` plus a tripwire test, so that dev-notes section was removed
+when `main` merged in — it documented a defect that no longer exists. See the #56 entry above.
+
+**Still open:** both carry-overs from #51 are untouched — the `Projektsprache: Deutsch`
+fire-vs-carve-out contradiction, and `email_min_score`. The precedence clause remains
+reasoned-but-unobserved; no new corpus was read here.
