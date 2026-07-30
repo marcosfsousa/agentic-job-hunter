@@ -735,3 +735,93 @@ when `main` merged in — it documented a defect that no longer exists. See the 
 **Still open:** both carry-overs from #51 are untouched — the `Projektsprache: Deutsch`
 fire-vs-carve-out contradiction, and `email_min_score`. The precedence clause remains
 reasoned-but-unobserved; no new corpus was read here.
+
+---
+
+## Fix #54 — 2026-07-30 — grade the German penalty: −1 for a declared working language
+
+**Goal:** Close #54. Branch `fix/54-projektsprache-middle-band`. `Projektsprache: Deutsch` states a
+language but **no CEFR level**, so the clause's own closing sentence ("no level stated → do NOT
+apply this penalty") said carve-out while Haiku applied the full −2 — 2 of the 7 fires on #51's
+corpus. Inherited from #44, not a regression. Of the three options in the issue, **option 3** (a
+middle band) was chosen: it is the only one that keeps #44's premise — an unstated level never buys
+the full penalty — while conceding what Haiku got right, that a declared working language is a
+deliberate operational statement rather than incidental German.
+
+**Changes**
+- `prompt.py`: the German clause is now graded `REDUCE by 1–2 pts`, in the shape RAMP-UP RISK
+  already uses in the same rubric. **2 pts** — deliberately stated C1+ (cue list unchanged);
+  **1 pt** — German declared as the language the work is conducted in with no level
+  (`Projektsprache: Deutsch`, `Arbeitssprache Deutsch`); **0 pts** — everything else, all five
+  carve-outs intact. The catch-all now reads "no level stated **and no working language declared**",
+  which is the sentence that was contradicting observed behaviour.
+- Two doors the grading opens, closed in the same clause: **the bands are exclusive** (a C1+ listing
+  that also declares a project language scores 2, never 2+1 — otherwise this re-inflates the fire
+  rate through a third door), and **PRECEDENCE now covers either band**, so
+  `"Projektsprache Deutsch, Englisch ebenfalls möglich"` does not fire. That second one is not
+  hypothetical: BLUECHILLED's own #51 rationale keyed on the phrase *"with no fallback"*.
+- `profile.yaml` rewritten in lockstep — both bands, all five carve-outs, the precedence rule.
+- `test_config.py`: the band is a **fire** cue, not a carve-out, so it does not belong in
+  `GERMAN_CARVE_OUTS`. It gets its own two-row `GERMAN_FIRE_BANDS` table, unioned into the same
+  two parity tests — it drifts the same way and earns the same guard.
+- 328 passing, up from 323.
+
+**Guards seen red before being trusted** (the #58 entry's precedent — a guard never observed failing
+is not evidence). Delete `"Projektsprache: Deutsch"` from SYSTEM_PROMPT → 3 failures; change
+`profile.yaml`'s "declared working language" to "declared project language" → 1 failure. Both
+reverted.
+
+**Validation (CLAUDE.md's ≥5-listing check — required before merge)**
+
+An accidental first run produced a **same-corpus baseline on the old prompt** (see the import trap
+below), so this is a controlled before/after rather than a bare after: same 75-listing fetch, same
+21 survivors, ~90 seconds apart, only the rubric differs.
+
+- 75 raw → 21 hard-filtered → **21/21 evaluated, zero failures**, both runs.
+- **Score distribution unchanged in shape:** old `2×8, 2×7, 1×6, 6×5, 4×4, 3×3, 3×2`; new
+  `2×8, 2×7, 1×6, 6×5, 5×4, 3×3, 2×2`. Range 2–8 both; the post-#44 ceiling holds; no compression.
+- **The bug reproduced on the baseline and is gone on the new run — same listing, same corpus.**
+  `3027789` (KI-Services) old: *"the role explicitly states 'Projektsprache: Deutsch' as a
+  non-optional frame, and the candidate profile does not confirm C1+ German ability, triggering a
+  2-point penalty"*. New: *"German as project working language — candidate is B2, role declares"*,
+  at the 1-pt band. `3025659` (SThree, Intelligente Suche — one of #54's two exhibits) old:
+  *"'verhandlungssicheres Deutsch' implied by role setup"* — the fabricated level the issue called
+  out; new: *"a declared working language (Projektsprache: deutsch) creates modest friction"*.
+  **No row in the new run asserts a level the listing does not state.**
+- **Both bands exercised:** −2 on 5 rows (`muttersprachlichem Niveau`, `Sehr gute Deutschkenntnisse`
+  ×2, explicit C1, `verhandlungssicher`); −1 on 7 rows. So the *attribution* rate rose from #51's
+  7/24 (~29%) to ~12/21 (~57%) while the **full**-penalty rate fell to 5/21 (~24%). That is the
+  trade option 3 buys and it should be read as intended, not as regression: more rows touched, less
+  damage each. Option 1's "re-inflating the fire rate" risk landed on the −1 band, which is where it
+  was aimed.
+- **Carve-outs held against the new band** — the risk being that a −1 for "declared working language"
+  swallows the "posting written in German" carve-out. It did not: `3029863` (*"job posted in German
+  with no stated level"*) and `3029652` (*"working language of project not specified at a level"*)
+  both reasoned to no penalty. `3029231` again flagged German-language embeddings as a *skill* gap
+  with no proficiency penalty.
+- ⚠️ **Precedence still unobserved, now for both bands.** No listing paired a firing cue with an
+  actual optional qualifier. `3030001` states `Projektsprache: Deutsch und Englisch` and Haiku fired
+  the 1-pt band, reading a second declared language as not a fallback — defensible, but it is not
+  the `von Vorteil` shape the rule is written for. Same status as #51: shipped reasoned-but-unobserved,
+  bounded because it can only suppress a penalty, never add one.
+- ⚠️ **Individual score moves are NOT attributable to this change.** `evaluator.py` sets no
+  `temperature`, so sampling is at the API default of 1.0. 6 of 21 scores moved between the runs,
+  ±1 in both directions, **including `3022972` which has no German signal at all** — so the
+  run-to-run noise floor is at least ±1 and swamps a 1-point band on any single row. What is
+  attributable is the *stated rationale*, which moved in the intended direction on every German row.
+  Proving the arithmetic would need repeat runs at the same prompt, or the DB writes `--dry-run`
+  skips.
+
+**On the worktree import trap — a second live instance, and this one had teeth.** #56 fixed
+`pytest`; a bare `python -m jobscout.run` inside a worktree still resolves through the editable
+`.pth` to the **main checkout**, exactly as `dev-notes.md` warns. The first validation run therefore
+evaluated the *old* prompt while appearing to validate the change — a false green of the dangerous
+kind, caught only because the digest was written to the main checkout's path. It also **overwrote
+`digests/2026-07-30.md` in the main checkout**, clobbering the artifact from that morning's #51 run
+(gitignored and untracked, so nothing in git was touched; #51's findings survive in the entry
+above). Correct invocation from a worktree is `PYTHONPATH=src python -m jobscout.run`. The salvage
+is that the clobbering run *is* the old-prompt baseline this entry rests on.
+
+**Still open:** `email_min_score` (raise to 5?) carries over untouched from #44 and #51. The
+precedence clause wants a corpus containing a `von Vorteil`-shaped qualifier before it can be called
+proven.
