@@ -1,10 +1,15 @@
-"""Repository invariants — assertions about the git index, not about program behaviour.
+"""Repository invariants — assertions about the checkout, not about program behaviour.
 
 This module is deliberately unusual. `data/jobscout.db` carries the title, company and
 full description of every listing JobScout has ever ingested; publishing that from a
 public repository is not ours to do. That rule has no code seam — restore the `.gitignore`
 whitelist and every other test in the suite still passes — so it needs a mechanical
 tripwire instead. Its failure mode is legal, not functional.
+
+The import invariant below is here for a related reason: it is the only test that fails
+*reliably* when the suite imports the wrong tree's source. Other tests may or may not
+notice, depending entirely on how the two trees happen to differ at that moment — which
+is not a property you can depend on, and is precisely what makes the bug dangerous.
 """
 from __future__ import annotations
 
@@ -45,3 +50,38 @@ def test_feedback_file_is_still_tracked():
     above pass for the wrong reason.
     """
     assert _tracked("data/feedback.yaml") == "data/feedback.yaml"
+
+
+def test_suite_imports_src_from_this_tree():
+    """The suite must import the `src/` sitting next to it, not another checkout's.
+
+    The editable install (`__editable__.jobscout-0.1.0.pth`) is a plain path entry
+    pointing at the main checkout. A run started from `.claude/worktrees/<name>/`
+    therefore collects the worktree's `tests/` and — without the `pythonpath = ["src"]`
+    setting in pyproject.toml — imports the main checkout's `jobscout`. Two trees in
+    one run, with nothing in pytest's output naming either. That fails *open*: every
+    assertion still executes, just against source you are not editing, so the suite
+    goes green on a change it never saw.
+
+    Delete `pythonpath` and this is the only test guaranteed to notice. Others may —
+    with the main checkout on an older branch, `test_evaluation.py` fails too — but only
+    by luck of how the trees differ that day, and that is not something to rely on.
+
+    The `import jobscout` is function-local on purpose. At module level it would give the
+    `data/jobscout.db` guards above a dependency on the package being importable at all:
+    an import error would fail collection for the whole module and take the legal
+    tripwire down with it. Nothing else in this file imports project code, and that is
+    the property worth keeping.
+    """
+    import jobscout
+
+    imported = Path(jobscout.__file__).resolve()
+    expected_root = (_REPO_ROOT / "src").resolve()
+    assert imported.is_relative_to(expected_root), (
+        f"the suite imported jobscout from {imported}, but these tests live in "
+        f"{_REPO_ROOT}. Tests and source are coming from different checkouts, so "
+        "every result in this run is about the wrong tree. Fix: check that "
+        "`pythonpath = [\"src\"]` is still present under [tool.pytest.ini_options] "
+        "in pyproject.toml. Note that PYTHONPATH is *not* a suspect — pytest inserts "
+        "the ini entry at sys.path[0], ahead of it."
+    )

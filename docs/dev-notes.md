@@ -29,6 +29,14 @@ python -m jobscout.run --dry-run # Fetch + filter + rank, skip delivery
 python -m pytest tests/          # Run tests
 ```
 
+`pytest` sets `pythonpath = ["src"]` (pyproject.toml), resolved against the rootdir of
+whichever tree it was started from. Two consequences: the suite runs on a fresh clone with
+no `pip install -e .`, and a run started from a `.claude/worktrees/<name>/` checkout tests
+*that* worktree's source instead of silently importing the main checkout's via the editable
+`.pth`. `tests/test_repo_invariants.py::test_suite_imports_src_from_this_tree` fails loudly
+if that ever stops holding. Note this covers pytest only — a bare `python -m jobscout.run`
+or a REPL started inside a worktree still resolves to the main checkout.
+
 ## Environment
 - API keys in `.env` (loaded via python-dotenv, gitignored)
 - Conda environment: `jobscout` (Python 3.11)
@@ -80,17 +88,6 @@ sqlite3 data/jobscout.db "SELECT digest_date, COUNT(*) FROM digest_jobs GROUP BY
 # Latest run status and logs
 gh run list --limit 5 --workflow=daily_run.yml
 gh run view <RUN_ID> --log | awk -F'\t' '$2=="Run pipeline" {print $3}' | grep "jobscout\."
-```
-
-### Running tests inside a git worktree
-```bash
-PYTHONPATH=src python -m pytest tests/    # NOT a bare `pytest`
-```
-The editable install resolves `jobscout` to the **main checkout's** `src/`, not the worktree's, so a
-bare `pytest` in a worktree tests the wrong tree — silently, and it can report failures that have
-nothing to do with your branch. Confirm which tree you are testing with:
-```bash
-python -c "import jobscout.evaluation.prompt as p; print(p.__file__)"
 ```
 
 ### Check GH Actions queue delay trend
