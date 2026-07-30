@@ -44,7 +44,11 @@ or "native"/"Muttersprachler" (include in gaps). Do NOT fire on: a German job lo
 a German company name, a posting written in German, German listed as "nice to \
 have"/"von Vorteil", or German stated at B2 or below (including "gute Deutschkenntnisse"). \
 If German is mentioned with no level stated, treat it as below the bar and do NOT \
-apply this penalty.
+apply this penalty. PRECEDENCE — when a C1-or-above cue and an optional qualifier \
+describe the SAME requirement (e.g. "verhandlungssicheres Deutsch von Vorteil", \
+"fluent German is a plus"), the optional qualifier WINS and this penalty does NOT \
+apply: an optional requirement stays optional at any level. The penalty needs the \
+level AND a non-optional framing.
    - REDUCE by 0–3 pts for RAMP-UP RISK (graded — this is the seniority judgement, \
 made on deliverable evidence rather than a year-count). Ask: could the candidate \
 ship THIS project's core deliverable with no onboarding? Weigh what the profile \

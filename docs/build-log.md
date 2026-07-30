@@ -579,3 +579,55 @@ kept at −2, still visible-but-ranked-down rather than an exclusion.
 **Still open:** the `email_min_score` digest-gate value (raise to 5?) needs its own fresh
 ≥5-listing read now that this retune has moved the distribution again — sequencing per #45's
 writeup. Not decided here.
+---
+
+## Fix #51 — 2026-07-30 — close the three deferred German-carve-out findings
+
+**Goal:** Close #51, the deferred-findings ledger from `/pr-cycle`'s review of #49. Branch
+`fix/51-german-carveout-followups`. Three items, none blocking on their own, but they compound:
+`profile.yaml`'s German entry had drifted to a strict subset of `prompt.py`'s SYSTEM_PROMPT clause
+(it named location/company and B2-or-below, omitting posting-language and von Vorteil); the rubric
+stated no precedence when a C1+ cue and an optional qualifier describe the same requirement; and
+the test pinned only 2 of the 4 carve-outs — precisely the two `profile.yaml` still had, which is
+why the drift went unnoticed. Both strings reach Haiku in one request, so the subset was a
+self-contradiction in a single prompt, not a docs nit.
+
+**Changes:** all four carve-outs + precedence in `profile.yaml`; a PRECEDENCE sentence in
+SYSTEM_PROMPT (optional qualifier beats the level — the penalty needs the level AND a non-optional
+framing); `test_evaluation.py` pins all four carve-outs plus the new rule; `test_config.py` gains a
+lockstep check on the shipped profile so the two copies cannot silently diverge again. 307 passing.
+
+**Validation (CLAUDE.md's ≥5-listing check — required before merge)**
+- `python -m jobscout.run --dry-run` against **live freelancermap**: 74 raw → 24 hard-filtered →
+  **24/24 evaluated, zero failures**. Full completion, unlike #44's credit-truncated 14/24.
+- **Score distribution: 8×1, 7×2, 6×2, 5×6, 4×5, 3×5, 2×3** (range 2–8). The post-#44 ceiling holds;
+  no regression from the added prompt text.
+- **German penalty explicitly attributed in 7/24 (~29%)** — down from #44's 6/14 (~43%) and spec 4's
+  20/25 (80%), though the corpora differ and the drop is not attributable to this change.
+- **Carve-out held on the distinct-in-kind case again:** two rows flagged German-language NLP /
+  embeddings as a *skill* gap without a proficiency penalty (nemensis, WorkGenius).
+- ⚠️ **The precedence rule was NOT exercised.** No listing in this corpus paired a C1+ cue with an
+  optional qualifier — "von Vorteil" appears nowhere in the 24 evaluations. The clause is therefore
+  shipped as reasoned-but-unobserved; it is a narrowing (it can only suppress a penalty, never add
+  one), so the risk of shipping it unvalidated is bounded, but it wants a corpus that contains the
+  pattern before it can be called proven.
+- ⚠️ **Pre-existing, not introduced here: "Projektsprache: Deutsch" fires the penalty with no CEFR
+  level stated** (BLUECHILLED, SThree Intelligente Suche — 2 of the 7). The rubric's own closing
+  sentence says level-unstated German is below the bar and must not fire, so these two contradict
+  it. #44's validation counted the same pattern as legitimate C1+ cues, so this is inherited, not a
+  regression. Arguably the rubric is wrong rather than Haiku: a stated project language is a
+  deliberate operational requirement, not merely implied German. **New-ticket candidate.**
+- Four further rows list German in `gaps` without the summary attributing a penalty (Tenth
+  Revolution, AI Strategist, COMCAVE, Mobile KMP). Two of those are textbook carve-out cases —
+  AI Strategist is location-implied and self-describes as "not explicitly stated"; COMCAVE says
+  "no level stated". Whether −2 actually applied is **not determinable from the digest**, since
+  `gaps` also carries ordinary skill gaps and `--dry-run` skips the DB writes that would let the
+  arithmetic be reconstructed. Flagged as a measurement limit, not a verdict.
+
+**Decision:** the three #51 findings are closed as implemented; the ≥5-listing gate passes on scale
+(24) and on the unchanged-ceiling check. The precedence clause ships unobserved — stated plainly
+rather than papered over.
+
+**Still open:** (1) the `Projektsprache: Deutsch` fire-vs-carve-out contradiction above needs its own
+ticket — decide whether the rubric or Haiku is wrong; (2) `email_min_score` (raise to 5?) still
+carries over from #44, untouched here.
