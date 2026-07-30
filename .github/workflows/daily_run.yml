@@ -94,7 +94,7 @@ jobs:
           to = os.environ.get('EMAIL_TO', '')
           frm = os.environ.get('EMAIL_FROM', '')
           if not all([api_key, to, frm]):
-              print('Email not configured — skipping failure notification')
+              print('Email not configured - skipping failure notification')
               exit(0)
           resend.api_key = api_key
           resend.Emails.send({
