@@ -291,7 +291,17 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Entry point for both `python -m jobscout.run` and the installed `jobscout` command.
+
+    This body used to live inline under `if __name__ == "__main__"`, which left
+    `[project.scripts] jobscout = "jobscout.run:main"` in pyproject pointing at a name
+    that did not exist — an installed run failed at import, and would have skipped the
+    UTF-8 pin even if it had not. Both halves of that are why the pin belongs *here*
+    rather than in the `__main__` block: an installed run never executes that block, so
+    a pin placed there ships disabled for exactly the users who installed the package
+    the declared way (#64).
+    """
     _force_utf8_streams()
     args = _parse_args()
 
@@ -309,3 +319,7 @@ if __name__ == "__main__":
         _run_review(review_date)
     else:
         asyncio.run(run_pipeline(dry_run=args.dry_run, max_results=args.max_results, since=args.since))
+
+
+if __name__ == "__main__":
+    main()

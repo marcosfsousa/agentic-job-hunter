@@ -41,8 +41,10 @@ analysis, and the honest cost/benefit says pin the stream instead.
 from __future__ import annotations
 
 import ast
+import importlib
 import io
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -53,11 +55,27 @@ _SRC_ROOT = Path(__file__).resolve().parent.parent / "src"
 
 # Functions whose string arguments end up on stdout/stderr.
 _BUILTIN_SINKS = {"print", "input"}
+# `warn` covers both `warnings.warn` and logging's deprecated `logger.warn` alias — any
+# `.warn()` is a warning sink, so matching on the bare attribute is the useful reading.
 _LOGGING_SINKS = {
-    "debug", "info", "warning", "error", "exception", "critical", "log", "basicConfig",
+    "debug", "info", "warning", "warn", "error", "exception", "critical", "log",
+    "basicConfig",
 }
 # argparse renders these on `--help` and on usage errors.
 _ARGPARSE_SINKS = {"ArgumentParser", "add_argument", "add_parser", "add_argument_group"}
+# Matched on the *whole* dotted name, not the trailing attribute: `write` alone would
+# flag `f.write(...)` and `path.write_text(...)`, which go to files with an explicit
+# encoding and are outside this rule (see `test_the_scan_leaves_non_stream_text_alone`).
+# `sys.exit("msg")` belongs here because the message is printed to stderr on the way out.
+#
+# `traceback.print_exc` was raised alongside these in #64 and is deliberately absent: it
+# takes no author-written message, so there is no literal at that call for a scan to see.
+_QUALIFIED_SINKS = {
+    "sys.stdout.write", "sys.stderr.write",
+    "sys.stdout.writelines", "sys.stderr.writelines",
+    "sys.exit",
+    "warnings.warn",
+}
 
 # `-` for an em dash, `->` for an arrow. Both are what #61 landed.
 _ADVICE = (
@@ -69,9 +87,23 @@ _ADVICE = (
 )
 
 
+def _dotted_name(node: ast.AST) -> str | None:
+    """`"sys.stdout.write"` for that attribute chain; None if it is not a plain name."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
 def _is_sink(node: ast.Call) -> bool:
     """True if this call writes its string arguments to stdout or stderr."""
     func = node.func
+    if _dotted_name(func) in _QUALIFIED_SINKS:
+        return True
     if isinstance(func, ast.Name):
         return func.id in _BUILTIN_SINKS or func.id in _ARGPARSE_SINKS
     if isinstance(func, ast.Attribute):
@@ -100,13 +132,18 @@ def _offenders(source: str, label: str) -> list[str]:
     hits: dict[tuple[int, str], None] = {}
 
     for node in ast.walk(tree):
-        # A raise reaches stderr through the traceback, so its message counts.
+        # A raise reaches stderr through the traceback and a failed assert through its
+        # message, so both count even though neither is a call to a sink.
         if isinstance(node, ast.Raise) and node.exc is not None:
-            for line, value in _non_ascii_strings(node.exc):
-                hits[(line, value)] = None
+            subtree: ast.AST | None = node.exc
+        elif isinstance(node, ast.Assert) and node.msg is not None:
+            subtree = node.msg
         elif isinstance(node, ast.Call) and _is_sink(node):
-            for line, value in _non_ascii_strings(node):
-                hits[(line, value)] = None
+            subtree = node
+        else:
+            continue
+        for line, value in _non_ascii_strings(subtree):
+            hits[(line, value)] = None
 
     return [
         f"{label}:{line}: {sorted({hex(ord(c)) for c in value if ord(c) > 127})} in {value!r}"
@@ -115,8 +152,23 @@ def _offenders(source: str, label: str) -> list[str]:
 
 
 def test_runtime_output_literals_are_ascii():
+    paths = sorted(_SRC_ROOT.rglob("*.py"))
+
+    # Guards the guard, first half: a `_SRC_ROOT` that resolves to a missing or empty
+    # directory makes the assertion below pass by scanning nothing, which is
+    # indistinguishable from a clean tree — the same fail-open shape #59 shipped. The
+    # sentinel is `run.py` because that is where both the sinks and the stream pin
+    # live: if the scan cannot see that file, it is not looking at the package.
+    # `test_repo_invariants.py` guards `git ls-files` the same way (#64).
+    scanned = {p.relative_to(_SRC_ROOT).as_posix() for p in paths}
+    assert "jobscout/run.py" in scanned, (
+        f"the scan found {len(paths)} file(s) under {_SRC_ROOT}, and jobscout/run.py "
+        "was not among them — so this test is passing without having read the package. "
+        "Check that _SRC_ROOT still resolves to this tree's src/ directory."
+    )
+
     offenders: list[str] = []
-    for path in sorted(_SRC_ROOT.rglob("*.py")):
+    for path in paths:
         offenders.extend(
             _offenders(
                 path.read_text(encoding="utf-8"),
@@ -135,17 +187,21 @@ def test_the_scan_actually_bites():
     grepped for the wrong character reported success on four sites it never looked at.
     """
     sample = (
-        'import logging\n'
+        'import logging, sys, warnings\n'
         'logger = logging.getLogger(__name__)\n'
         'def f(parser, n, total):\n'
         '    print("done — ok")\n'
         '    logger.info("filter: %d → %d", n, total)\n'
         '    logging.basicConfig(format="%(name)s — %(message)s")\n'
         '    parser.add_argument("--x", help="fetch — but skip writes")\n'
+        '    sys.stdout.write("wrote — 3 rows")\n'
+        '    warnings.warn("deprecated — use g()")\n'
+        '    sys.exit("fatal — no config")\n'
+        '    assert n, "n must be nonzero — got 0"\n'
         '    raise ValueError(f"broken — {n} rows")\n'
     )
     lines = sorted(int(o.split(":")[1]) for o in _offenders(sample, "sample.py"))
-    assert lines == [4, 5, 6, 7, 8]
+    assert lines == [4, 5, 6, 7, 8, 9, 10, 11, 12]
 
 
 def test_the_scan_leaves_non_stream_text_alone():
@@ -158,13 +214,20 @@ def test_the_scan_leaves_non_stream_text_alone():
 
     If this ever fails, the scan has widened past what `_ADVICE` tells the reader, and
     the next person hits a failure they cannot act on from the message.
+
+    The two file writes are the negative control for `_QUALIFIED_SINKS` (#64). Matching
+    a bare `write` attribute would catch `sys.stdout.write` and drag both of these in
+    with it — a file opened with an explicit encoding is not a console stream, and
+    that is exactly the digest-markdown case the paragraph above protects.
     """
     sample = (
         '"""Module docstring — prose."""\n'
-        'def f():\n'
+        'def f(fh, path):\n'
         '    """Does a thing: fetch → filter."""\n'
         '    # A comment — also prose.\n'
         '    subject = "JobScout Digest — 2026-07-30"\n'
+        '    fh.write("digest — written to a file handle")\n'
+        '    path.write_text("digest — written to a path", encoding="utf-8")\n'
         '    return subject\n'
     )
     assert _offenders(sample, "sample.py") == []
@@ -210,16 +273,56 @@ def test_force_utf8_streams_repins_a_legacy_codepage(monkeypatch, encoding, unen
     sys.stdout.flush()
 
 
-def test_force_utf8_streams_tolerates_a_stream_without_reconfigure():
+def test_force_utf8_streams_tolerates_a_stream_without_reconfigure(monkeypatch):
     """pytest's own capture replaces sys.stdout with an object that has no
     `reconfigure`. Blowing up there would make the entry point fail under any
-    harness that wraps the streams — a worse bug than the one being fixed."""
+    harness that wraps the streams — a worse bug than the one being fixed.
+
+    `monkeypatch` rather than a try/finally: both restore the streams on a normal
+    failure, but only the fixture restores them when the run is interrupted between
+    the swap and the finally. Leaving a `_Plain` on sys.stdout would take pytest's
+    own reporting down with it (#64).
+    """
     class _Plain:
         encoding = "cp1252"
 
-    original_stdout, original_stderr = sys.stdout, sys.stderr
-    sys.stdout, sys.stderr = _Plain(), _Plain()
-    try:
-        _force_utf8_streams()  # must not raise
-    finally:
-        sys.stdout, sys.stderr = original_stdout, original_stderr
+    monkeypatch.setattr(sys, "stdout", _Plain())
+    monkeypatch.setattr(sys, "stderr", _Plain())
+    _force_utf8_streams()  # must not raise
+
+
+def test_console_script_entry_point_exists():
+    """`[project.scripts] jobscout = "jobscout.run:main"` must resolve to a callable.
+
+    It did not until #64: the body lived inline under `if __name__ == "__main__"`, so
+    an installed `jobscout` failed at import — and, had it not, would have skipped the
+    UTF-8 pin entirely, because that block does not run for an installed entry point.
+    Mechanism 1 shipping disabled is the failure this test exists to catch.
+    """
+    entry_point = tomllib.loads(
+        (_SRC_ROOT.parent / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]["scripts"]["jobscout"]
+    module_name, _, attribute = entry_point.partition(":")
+
+    module = importlib.import_module(module_name)
+    assert callable(getattr(module, attribute, None)), (
+        f"pyproject declares the console script as {entry_point!r}, but "
+        f"{module_name} has no callable {attribute!r}. An installed `jobscout` "
+        "would fail at import."
+    )
+
+    # The pin has to be inside that callable, not beside it in the `__main__` block.
+    tree = ast.parse((_SRC_ROOT / "jobscout" / "run.py").read_text(encoding="utf-8"))
+    entry_fn = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == attribute
+    )
+    pinned = {
+        node.func.id for node in ast.walk(entry_fn)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "_force_utf8_streams" in pinned, (
+        f"{attribute}() does not call _force_utf8_streams(). An installed run never "
+        "executes the `if __name__ == \"__main__\"` block, so a pin placed only there "
+        "is disabled for exactly the users who installed the package the declared way."
+    )
