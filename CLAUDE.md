@@ -69,9 +69,14 @@ established the scheme. **Do not re-create or move it**; run `git tag -l` before
 otherwise. (This paragraph previously read "the repo has no tags today", which was true when
 written and has since misled at least one session into reporting the tag as missing.)
 
-Still to do: tag `v2.0.0` on `main` once the integration branch has merged **and** spec 4's
-≥5-listing validation has passed — the pivot is complete when it is validated, not when it
-compiles.
+✅ **`v2.0.0` already exists** — annotated, pushed, at `526c007` on `main` (the PR #42 merge that
+landed the integration branch), tagged 2026-07-23. It marks the pivot complete: the integration
+branch had merged and spec 4's ≥5-listing validation had passed at the point it was cut.
+**Do not re-create or move it**; run `git tag -l` before concluding otherwise. Fixes landed on
+`main` after this tag (e.g. #44, #45) are unreleased under any tag — that's expected, not a defect;
+cut a new tag (`v2.0.1`/`v2.1.0`) only when there's a reason to mark a release point. (This
+paragraph previously read "still to do: tag v2.0.0 ...", which was true when written and has since
+gone stale — same failure mode the `v1.0.0` paragraph above already warns about.)
 
 **Automatic PR review is disarmed** (2026-07-23) — the `review:` job in `.github/workflows/claude.yml`
 is gated `if: false` after repeated unexplained failures. `@claude <request>` on a PR still reviews on
