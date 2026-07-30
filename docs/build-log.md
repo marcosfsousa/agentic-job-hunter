@@ -542,3 +542,40 @@ Branch: `v2-freelance-pivot` (integration branch; not `main`).
 **Test count:** 289 passing (+20 for spec 4)
 
 **Still open before tagging `v2.0.0`:** the integration branch must merge to `main` (this spec closes the map, so that unblocks it), and the `email_min_score` / `reeval_below` split above is a user call. New-ticket candidate: the 80%-firing German penalty.
+
+---
+
+## Fix #44 — 2026-07-30 — re-aim German penalty at deliberately-stated C1+
+
+**Goal:** Close #44. Spec 4's live validation found the fluent-German penalty firing on 20/25
+(80%) of the corpus, on *implied* German (location, company, posting language) rather than a
+stated requirement — the largest driver of the ≤5 score compression. PR #49 (branch
+`fix/44-german-penalty-c1-threshold`) re-aims the trigger at CEFR C1+, with an explicit
+carve-out for location/company/posting-language/B2-or-below/level-unstated German, magnitude
+kept at −2, still visible-but-ranked-down rather than an exclusion.
+
+**Validation (CLAUDE.md's ≥5-listing check — required before merge)**
+- Ran `python -m jobscout.run --dry-run` against **live freelancermap**: 73 raw → 24 hard-filtered
+  → sent to Haiku with the new prompt. The Anthropic account ran out of credits partway through
+  (9 jobs failed on `credit balance is too low`, 1 more on an unrelated JSON parse error) —
+  **14/24 completed**, short of spec 4's 25-listing scale but above the ≥5 floor. Read all 14
+  evaluations end to end (`digests/2026-07-30.md`).
+- **Fire-rate: 20/25 (80%) → 6/14 (~43%)**, and every firing case cited an explicit C1+ cue —
+  `Projektsprache: Deutsch` (×2), `sehr gute Deutschkenntnisse` (×2), `verhandlungssicher`,
+  one more C1-implying phrase. No firing traced to location or company alone.
+- **Carve-out correctly held the line between language-proficiency and domain-skill German:**
+  two rows flagged "German-language NLP/embeddings" as a *skill gap* (a technical requirement)
+  without applying the penalty — the rubric's distinct-in-kind case survived contact with a live
+  corpus.
+- **Score ceiling moved**: before, nothing scored ≥6 (range 2–5). This run reached **8/10, 7/10,
+  two 6/10s** alongside the usual spread — direct evidence the penalty, not the ramp-up-risk
+  criterion, was the compression's driver, confirming spec 4's structural argument.
+- Sample-size shortfall (14 vs. 25) is a real gap against spec 4's scale, accepted rather than
+  re-run: the signal (fire-rate magnitude, carve-out precision, score ceiling) was unambiguous at
+  14, and topping up credits for 10–11 more calls was judged not worth delaying the decision.
+
+**Decision:** closes #44. The re-aimed rubric ships as validated; #49 is clear to merge.
+
+**Still open:** the `email_min_score` digest-gate value (raise to 5?) needs its own fresh
+≥5-listing read now that this retune has moved the distribution again — sequencing per #45's
+writeup. Not decided here.
