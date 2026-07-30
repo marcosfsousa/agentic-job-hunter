@@ -647,8 +647,16 @@ rootdir and prepended to `sys.path`, so each run picks up the `src/` of whicheve
 invoked from; the `.pth` entry stays as a fallback. Added
 `test_repo_invariants.py::test_suite_imports_src_from_this_tree`, asserting the imported
 `jobscout.__file__` sits under the tests' own `src/`. That module already exists for invariants with
-no code seam, and this is the same shape: delete the `pythonpath` line and no other test in the suite
-can notice.
+no code seam, and this is the same shape.
+
+⚠️ **Corrected during review:** the first draft of this entry claimed "no other test in the suite can
+notice". That is false. Re-running the full suite with `-o pythonpath=` fails **two** tests, the
+second being `test_evaluation.py::test_system_prompt_ranks_optional_qualifier_over_c1_cue` — issue
+#56's original reproduction, failing because the main checkout currently sits on a branch without
+#53's PRECEDENCE clause. The accurate claim is narrower and is the one that actually motivates the
+tripwire: it is the only test that fails *reliably*. Which other tests notice depends entirely on how
+the two trees happen to differ that day — today two, after the next merge possibly zero. That
+contingency is the whole danger, so a guard that does not depend on it is what was needed.
 
 **Verification**
 - Full suite from the worktree, `PYTHONPATH` unset: **308 passing** (307 + the new tripwire).

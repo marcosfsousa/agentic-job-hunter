@@ -6,16 +6,16 @@ public repository is not ours to do. That rule has no code seam — restore the 
 whitelist and every other test in the suite still passes — so it needs a mechanical
 tripwire instead. Its failure mode is legal, not functional.
 
-The import invariant below is here for the same reason: it guards a property that no
-other test can fail on, because every other test passes just as happily against the
-wrong copy of the source.
+The import invariant below is here for a related reason: it is the only test that fails
+*reliably* when the suite imports the wrong tree's source. Other tests may or may not
+notice, depending entirely on how the two trees happen to differ at that moment — which
+is not a property you can depend on, and is precisely what makes the bug dangerous.
 """
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
 
-import jobscout
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -63,14 +63,25 @@ def test_suite_imports_src_from_this_tree():
     assertion still executes, just against source you are not editing, so the suite
     goes green on a change it never saw.
 
-    Delete `pythonpath` and this is the only test that notices.
+    Delete `pythonpath` and this is the only test guaranteed to notice. Others may —
+    with the main checkout on an older branch, `test_evaluation.py` fails too — but only
+    by luck of how the trees differ that day, and that is not something to rely on.
+
+    The `import jobscout` is function-local on purpose. At module level it would give the
+    `data/jobscout.db` guards above a dependency on the package being importable at all:
+    an import error would fail collection for the whole module and take the legal
+    tripwire down with it. Nothing else in this file imports project code, and that is
+    the property worth keeping.
     """
+    import jobscout
+
     imported = Path(jobscout.__file__).resolve()
     expected_root = (_REPO_ROOT / "src").resolve()
     assert imported.is_relative_to(expected_root), (
         f"the suite imported jobscout from {imported}, but these tests live in "
         f"{_REPO_ROOT}. Tests and source are coming from different checkouts, so "
-        "every result in this run is about the wrong tree. Check that "
+        "every result in this run is about the wrong tree. Fix: check that "
         "`pythonpath = [\"src\"]` is still present under [tool.pytest.ini_options] "
-        "in pyproject.toml, and that PYTHONPATH is not pointing elsewhere."
+        "in pyproject.toml. Note that PYTHONPATH is *not* a suspect — pytest inserts "
+        "the ini entry at sys.path[0], ahead of it."
     )
