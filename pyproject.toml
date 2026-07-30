@@ -35,6 +35,11 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Resolved relative to rootdir and prepended to sys.path, so a run started from a
+# git worktree imports *that* tree's src/ rather than whatever the editable-install
+# .pth entry points at (which is always the main checkout). See #56 and the
+# import tripwire in tests/test_repo_invariants.py.
+pythonpath = ["src"]
 
 [tool.pyright]
 pythonVersion = "3.11"
