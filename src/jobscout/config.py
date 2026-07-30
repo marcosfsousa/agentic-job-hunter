@@ -150,7 +150,10 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
             "Create one based on profile.yaml in the project root."
         )
 
-    with resolved_profile_path.open() as f:
+    # Explicit utf-8: profile.yaml holds em dashes and German text, and a bare open()
+    # picks up the platform default (cp1252 on Windows), which decodes them to mojibake
+    # silently and ships that to Haiku. Linux CI never sees it (#55).
+    with resolved_profile_path.open(encoding="utf-8") as f:
         yaml_data = yaml.safe_load(f)
 
     profile = UserProfile.model_validate(yaml_data)

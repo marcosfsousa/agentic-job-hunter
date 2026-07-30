@@ -82,6 +82,17 @@ gh run list --limit 5 --workflow=daily_run.yml
 gh run view <RUN_ID> --log | awk -F'\t' '$2=="Run pipeline" {print $3}' | grep "jobscout\."
 ```
 
+### Running tests inside a git worktree
+```bash
+PYTHONPATH=src python -m pytest tests/    # NOT a bare `pytest`
+```
+The editable install resolves `jobscout` to the **main checkout's** `src/`, not the worktree's, so a
+bare `pytest` in a worktree tests the wrong tree — silently, and it can report failures that have
+nothing to do with your branch. Confirm which tree you are testing with:
+```bash
+python -c "import jobscout.evaluation.prompt as p; print(p.__file__)"
+```
+
 ### Check GH Actions queue delay trend
 ```bash
 gh run list --limit 10 --workflow=daily_run.yml --json startedAt,createdAt | python scripts/check_run_delays.py

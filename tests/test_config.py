@@ -19,6 +19,7 @@ import yaml
 from pydantic import ValidationError
 
 from jobscout.config import get_config, reset_config
+from jobscout.evaluation.prompt import SYSTEM_PROMPT
 
 # Located the same way tests/test_repo_invariants.py locates repo files, rather than
 # by importing config.py's private root — the point here is to load the file that
@@ -33,6 +34,12 @@ def _isolated_config(monkeypatch):
     reset_config()
     yield
     reset_config()
+
+
+def _shipped_german_entry() -> str:
+    """The one `deprioritise` entry that states the German-language condition."""
+    entries = get_config(profile_path=SHIPPED_PROFILE).profile.deprioritise
+    return next(e for e in entries if "CEFR C1 or above" in e)
 
 
 def _profile_with(tmp_path: Path, mutate: Callable[[dict], None]) -> Path:
@@ -72,22 +79,83 @@ class TestShippedProfileLoads:
         assert "Machine Learning" in queries
         assert "Maschinelles Lernen" in queries
 
-    def test_real_profile_german_entry_is_lockstep_with_the_prompt(self):
-        """#51: the profile's German entry and prompt.py's SYSTEM_PROMPT clause both reach
-        Haiku, so a carve-out present in one and absent from the other is a contradiction
-        in a single prompt. The entry had drifted to a strict subset (it omitted the
-        posting-language and von-Vorteil exemptions); this pins all four plus precedence."""
-        entries = get_config(profile_path=SHIPPED_PROFILE).profile.deprioritise
-        german = next(e for e in entries if "CEFR C1 or above" in e)
-        for carve_out in ("B2 or below", "no level stated", "posting language", "von Vorteil"):
-            assert carve_out in german, f"profile.yaml dropped the {carve_out!r} carve-out"
-        assert "non-optional" in german
+    def test_real_profile_german_entry_states_the_rule(self):
+        """The entry has to carry the condition itself; the carve-outs it shares with
+        SYSTEM_PROMPT are pinned by TestGermanCarveOutParity below."""
+        assert "non-optional" in _shipped_german_entry()
+
+    def test_real_profile_loads_as_utf8_regardless_of_platform_default(self):
+        """#55: `_load_config` used a bare open(), so on Windows (cp1252) the German
+        entry's em dash decoded to 'â€"' and that mojibake went to Haiku. It never
+        raised, and Linux CI defaults to utf-8, so nothing caught it. Asserting the
+        mojibake is absent — not just that the dash is present — is what makes this
+        fail on the platform that actually breaks."""
+        german = _shipped_german_entry()
+        assert "—" in german
+        assert "â€" not in german
 
     def test_real_profile_states_hourly_and_daily_independently(self):
         rate = get_config(profile_path=SHIPPED_PROFILE).profile.rate
         assert rate.minimum_hourly is not None
         assert rate.minimum_daily is not None
         assert rate.currency == "EUR"
+
+
+# ---------------------------------------------------------------------------
+# profile.yaml ←→ SYSTEM_PROMPT parity
+# ---------------------------------------------------------------------------
+
+# Both strings reach Haiku inside a single prompt, so a carve-out present in one and
+# absent from the other is a self-contradicting prompt, not a style mismatch. #51 found
+# the profile entry had drifted to a strict subset; #55 found the test that was supposed
+# to have caught that never read SYSTEM_PROMPT at all — it asserted substrings on the
+# profile side only, so a carve-out dropped from the prompt alone still passed.
+#
+# The two are worded differently and deliberately (the prompt instructs, the profile
+# states a preference), so they cannot be compared literally. This table is the seam: one
+# row per carve-out, naming the substring that must survive on each side. A fifth carve-out
+# is one row here and nowhere else.
+#
+# Markers must be unique to the carve-out they pin. "von Vorteil" alone is not — the
+# PRECEDENCE example uses the same words — which is exactly how the previous guard came to
+# be satisfied by the wrong sentence.
+GERMAN_CARVE_OUTS = [
+    # (SYSTEM_PROMPT marker,            profile.yaml marker)
+    ("a German job location",           "job location"),
+    ("a German company name",           "company name"),
+    ("a posting written in German",     "posting language"),
+    ('"nice to have"/"von Vorteil"',    "von Vorteil"),
+    ("German stated at B2 or below",    "B2 or below"),
+    ("no level stated",                 "no level stated"),
+    ("PRECEDENCE",                      "optional qualifier wins"),
+]
+
+
+class TestGermanCarveOutParity:
+    """Neither side may drop a carve-out the other still names."""
+
+    @pytest.mark.parametrize("prompt_marker, profile_marker", GERMAN_CARVE_OUTS)
+    def test_carve_out_is_present_on_both_sides(self, prompt_marker, profile_marker):
+        assert prompt_marker in SYSTEM_PROMPT, (
+            f"SYSTEM_PROMPT dropped the {prompt_marker!r} carve-out that profile.yaml "
+            f"still states as {profile_marker!r}"
+        )
+        assert profile_marker in _shipped_german_entry(), (
+            f"profile.yaml dropped the {profile_marker!r} carve-out that SYSTEM_PROMPT "
+            f"still states as {prompt_marker!r}"
+        )
+
+    @pytest.mark.parametrize("prompt_marker, _profile_marker", GERMAN_CARVE_OUTS)
+    def test_prompt_marker_pins_exactly_one_sentence(self, prompt_marker, _profile_marker):
+        """A marker that matches twice cannot pin the entry it claims to — the guard stays
+        green while the sentence it was written for is deleted. 'PRECEDENCE' is exempt: it
+        is a section label, and uppercase makes it unambiguous."""
+        if prompt_marker == "PRECEDENCE":
+            return
+        assert SYSTEM_PROMPT.count(prompt_marker) == 1, (
+            f"{prompt_marker!r} appears {SYSTEM_PROMPT.count(prompt_marker)} times in "
+            f"SYSTEM_PROMPT — pick a marker unique to the carve-out"
+        )
 
 
 class TestPoolBoundConfig:
