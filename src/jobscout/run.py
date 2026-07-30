@@ -85,7 +85,10 @@ def _sync_feedback(db: "JobDatabase", feedback_path: Path) -> None:
     """Load feedback.yaml and upsert entries into DB. No-op if file is absent."""
     try:
         # Written utf-8 above with allow_unicode=True, so it must be read utf-8 too.
-        # Umlauts in German job titles are undecodable under cp1252 (#55).
+        # Today's payload is {id, source, status} — all ASCII, so nothing here would
+        # actually mis-decode under cp1252. Pinning the encoding is what keeps that
+        # true by construction rather than by luck, and what makes the schema safe to
+        # widen to a non-ASCII field later (#55, #59).
         with feedback_path.open(encoding="utf-8") as f:
             raw = yaml.safe_load(f) or []
     except FileNotFoundError:

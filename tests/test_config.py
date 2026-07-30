@@ -145,16 +145,20 @@ class TestGermanCarveOutParity:
             f"still states as {prompt_marker!r}"
         )
 
-    @pytest.mark.parametrize("prompt_marker, _profile_marker", GERMAN_CARVE_OUTS)
-    def test_prompt_marker_pins_exactly_one_sentence(self, prompt_marker, _profile_marker):
+    @pytest.mark.parametrize("prompt_marker, profile_marker", GERMAN_CARVE_OUTS)
+    def test_marker_pins_exactly_one_sentence_on_each_side(self, prompt_marker, profile_marker):
         """A marker that matches twice cannot pin the entry it claims to — the guard stays
-        green while the sentence it was written for is deleted. 'PRECEDENCE' is exempt: it
-        is a section label, and uppercase makes it unambiguous."""
-        if prompt_marker == "PRECEDENCE":
-            return
+        green while the sentence it was written for is deleted. Counted on both sides: the
+        profile markers are the more generic of the two sets ('job location', 'company
+        name'), so the half left uncounted is the half likelier to go ambiguous first."""
         assert SYSTEM_PROMPT.count(prompt_marker) == 1, (
             f"{prompt_marker!r} appears {SYSTEM_PROMPT.count(prompt_marker)} times in "
             f"SYSTEM_PROMPT — pick a marker unique to the carve-out"
+        )
+        german = _shipped_german_entry()
+        assert german.count(profile_marker) == 1, (
+            f"{profile_marker!r} appears {german.count(profile_marker)} times in the "
+            f"profile.yaml German entry — pick a marker unique to the carve-out"
         )
 
 
