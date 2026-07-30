@@ -37,7 +37,7 @@ path stated (include in gaps)
 is explicitly accepted (include in gaps)
    - REDUCE by 2 pts: role is primarily model research, classical ML \
 (forecasting, RecSys, CV), or academic — not LLM application building
-   - REDUCE by 1–2 pts for a GERMAN-LANGUAGE REQUIREMENT (graded — the candidate is \
+   - REDUCE by 0–2 pts for a GERMAN-LANGUAGE REQUIREMENT (graded — the candidate is \
 B2, so the size of the penalty follows how firmly the listing states the requirement; \
 name it in gaps whenever it fires):
        2 pts — the listing DELIBERATELY STATES a German-language requirement at CEFR \
@@ -56,9 +56,11 @@ bar and do NOT apply this penalty.
      The bands are exclusive — a listing that states C1+ scores 2, never 2 plus 1. \
 PRECEDENCE — when a firing cue from EITHER band and an optional qualifier describe the \
 SAME requirement (e.g. "verhandlungssicheres Deutsch von Vorteil", "fluent German is a \
-plus", "Projektsprache Deutsch, Englisch ebenfalls möglich"), the optional qualifier \
-WINS and this penalty does NOT apply: an optional requirement stays optional at any \
-level. The penalty needs a cue AND a non-optional framing.
+plus", "Deutsch als Projektsprache von Vorteil"), the optional qualifier WINS and this \
+penalty does NOT apply: an optional requirement stays optional at any level. The penalty \
+needs a cue AND a non-optional framing. A SECOND declared language is not an optional \
+qualifier: "Projektsprache: Deutsch und Englisch" still declares German as a language the \
+work is conducted in, so the 1-pt band applies.
    - REDUCE by 0–3 pts for RAMP-UP RISK (graded — this is the seniority judgement, \
 made on deliverable evidence rather than a year-count). Ask: could the candidate \
 ship THIS project's core deliverable with no onboarding? Weigh what the profile \
