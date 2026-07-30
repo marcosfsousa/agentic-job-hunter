@@ -130,22 +130,35 @@ GERMAN_CARVE_OUTS = [
     ("PRECEDENCE",                      "optional qualifier wins"),
 ]
 
+# #54 graded the penalty, so the clause now carries two magnitudes. These are *fire*
+# cues, not carve-outs — a row here means "both sides must still name this band" — but
+# they reach Haiku through the same two strings and drift the same way, so they get the
+# same guard. Dropping the 1-pt band from one side alone is what would silently restore
+# the pre-#54 behaviour the issue was filed about.
+GERMAN_FIRE_BANDS = [
+    # (SYSTEM_PROMPT marker,            profile.yaml marker)
+    ("CEFR C1 or above",                "C1 or above"),
+    ('"Projektsprache: Deutsch"',       "declared working language"),
+]
+
+GERMAN_CLAUSE_ROWS = GERMAN_CARVE_OUTS + GERMAN_FIRE_BANDS
+
 
 class TestGermanCarveOutParity:
-    """Neither side may drop a carve-out the other still names."""
+    """Neither side may drop a carve-out — or a fire band — the other still names."""
 
-    @pytest.mark.parametrize("prompt_marker, profile_marker", GERMAN_CARVE_OUTS)
+    @pytest.mark.parametrize("prompt_marker, profile_marker", GERMAN_CLAUSE_ROWS)
     def test_carve_out_is_present_on_both_sides(self, prompt_marker, profile_marker):
         assert prompt_marker in SYSTEM_PROMPT, (
-            f"SYSTEM_PROMPT dropped the {prompt_marker!r} carve-out that profile.yaml "
+            f"SYSTEM_PROMPT dropped the {prompt_marker!r} rule that profile.yaml "
             f"still states as {profile_marker!r}"
         )
         assert profile_marker in _shipped_german_entry(), (
-            f"profile.yaml dropped the {profile_marker!r} carve-out that SYSTEM_PROMPT "
+            f"profile.yaml dropped the {profile_marker!r} rule that SYSTEM_PROMPT "
             f"still states as {prompt_marker!r}"
         )
 
-    @pytest.mark.parametrize("prompt_marker, profile_marker", GERMAN_CARVE_OUTS)
+    @pytest.mark.parametrize("prompt_marker, profile_marker", GERMAN_CLAUSE_ROWS)
     def test_marker_pins_exactly_one_sentence_on_each_side(self, prompt_marker, profile_marker):
         """A marker that matches twice cannot pin the entry it claims to — the guard stays
         green while the sentence it was written for is deleted. Counted on both sides: the

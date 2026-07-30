@@ -371,10 +371,12 @@ class TestBuildPrompt:
         assert "RAMP-UP RISK" in SYSTEM_PROMPT
 
     def test_system_prompt_german_penalty_anchored_at_c1(self):
-        """Kept, but re-aimed (#44): the candidate is B2, so the penalty fires only on a
-        DELIBERATELY STATED requirement at C1 or above — not on implied German (location/
+        """Kept, but re-aimed (#44): the candidate is B2, so the FULL penalty fires only on
+        a DELIBERATELY STATED requirement at C1 or above — not on implied German (location/
         company/posting language), which was firing on 80% of a DACH corpus and compressing
-        the scale. B2-or-below and level-unstated German are explicitly NOT penalised."""
+        the scale. B2-or-below German is explicitly not penalised; level-unstated German
+        costs 1 rather than 0 only when the listing declares German as the working language
+        (#54 — the band itself is pinned by the test below)."""
         assert "CEFR C1 or above" in SYSTEM_PROMPT
         # The individual carve-outs are pinned by TestGermanCarveOutParity in
         # tests/test_config.py, which checks them against profile.yaml at the same time.
@@ -389,3 +391,19 @@ class TestBuildPrompt:
         undefined, so the prompt names a winner: an optional qualifier beats the level."""
         assert "PRECEDENCE" in SYSTEM_PROMPT
         assert "verhandlungssicheres Deutsch von Vorteil" in SYSTEM_PROMPT
+        # #54 made the clause graded, so precedence has to cover the 1-pt band too —
+        # otherwise "Projektsprache Deutsch, Englisch ebenfalls möglich" fires despite
+        # naming its own fallback, which is the shape BLUECHILLED's rationale keyed on.
+        assert "EITHER band" in SYSTEM_PROMPT
+
+    def test_system_prompt_grades_declared_working_language_below_c1(self):
+        """#54: `Projektsprache: Deutsch` states a language but no level, so it hit the
+        clause's "no level stated" carve-out on paper while Haiku penalised it 2 anyway
+        (2 of 7 fires on the 2026-07-30 corpus). The rubric was the wrong half: a declared
+        working language IS a deliberate operational statement. It now costs 1 — enough to
+        keep #44's premise that an unstated level never buys the full 2."""
+        assert "REDUCE by 1–2 pts for a GERMAN-LANGUAGE REQUIREMENT" in SYSTEM_PROMPT
+        assert '"Projektsprache: Deutsch"' in SYSTEM_PROMPT
+        # The bands must be exclusive: without this a C1+ listing that also declares a
+        # working language reads as 2+1, restoring over-firing through a third door.
+        assert "The bands are exclusive" in SYSTEM_PROMPT

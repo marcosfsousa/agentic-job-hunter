@@ -37,18 +37,28 @@ path stated (include in gaps)
 is explicitly accepted (include in gaps)
    - REDUCE by 2 pts: role is primarily model research, classical ML \
 (forecasting, RecSys, CV), or academic — not LLM application building
-   - REDUCE by 2 pts: the listing DELIBERATELY STATES a German-language requirement \
-at CEFR C1 or above — explicit "C1"/"C2", or phrases implying that band: \
-"verhandlungssicher", "fluent"/"business-fluent" German, "sehr gute Deutschkenntnisse", \
-or "native"/"Muttersprachler" (include in gaps). Do NOT fire on: a German job location, \
-a German company name, a posting written in German, German listed as "nice to \
-have"/"von Vorteil", or German stated at B2 or below (including "gute Deutschkenntnisse"). \
-If German is mentioned with no level stated, treat it as below the bar and do NOT \
-apply this penalty. PRECEDENCE — when a C1-or-above cue and an optional qualifier \
-describe the SAME requirement (e.g. "verhandlungssicheres Deutsch von Vorteil", \
-"fluent German is a plus"), the optional qualifier WINS and this penalty does NOT \
-apply: an optional requirement stays optional at any level. The penalty needs the \
-level AND a non-optional framing.
+   - REDUCE by 1–2 pts for a GERMAN-LANGUAGE REQUIREMENT (graded — the candidate is \
+B2, so the size of the penalty follows how firmly the listing states the requirement; \
+name it in gaps whenever it fires):
+       2 pts — the listing DELIBERATELY STATES a German-language requirement at CEFR \
+C1 or above: explicit "C1"/"C2", or phrases implying that band: "verhandlungssicher", \
+"fluent"/"business-fluent" German, "sehr gute Deutschkenntnisse", or \
+"native"/"Muttersprachler";
+       1 pt — the listing DECLARES German as the language the work is conducted in but \
+states no level: "Projektsprache: Deutsch", "Arbeitssprache Deutsch", "the project runs \
+in German". A declared working language is a deliberate operational statement, so it is \
+not free — but it names no level, so it does not earn the full penalty;
+       0 pts — everything else. Do NOT fire on: a German job location, a German company \
+name, a posting written in German, German listed as "nice to have"/"von Vorteil", or \
+German stated at B2 or below (including "gute Deutschkenntnisse"). If German is \
+mentioned with no level stated and no working language declared, treat it as below the \
+bar and do NOT apply this penalty.
+     The bands are exclusive — a listing that states C1+ scores 2, never 2 plus 1. \
+PRECEDENCE — when a firing cue from EITHER band and an optional qualifier describe the \
+SAME requirement (e.g. "verhandlungssicheres Deutsch von Vorteil", "fluent German is a \
+plus", "Projektsprache Deutsch, Englisch ebenfalls möglich"), the optional qualifier \
+WINS and this penalty does NOT apply: an optional requirement stays optional at any \
+level. The penalty needs a cue AND a non-optional framing.
    - REDUCE by 0–3 pts for RAMP-UP RISK (graded — this is the seniority judgement, \
 made on deliverable evidence rather than a year-count). Ask: could the candidate \
 ship THIS project's core deliverable with no onboarding? Weigh what the profile \
