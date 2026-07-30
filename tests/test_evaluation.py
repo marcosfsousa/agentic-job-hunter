@@ -391,10 +391,16 @@ class TestBuildPrompt:
         undefined, so the prompt names a winner: an optional qualifier beats the level."""
         assert "PRECEDENCE" in SYSTEM_PROMPT
         assert "verhandlungssicheres Deutsch von Vorteil" in SYSTEM_PROMPT
-        # #54 made the clause graded, so precedence has to cover the 1-pt band too —
-        # otherwise "Projektsprache Deutsch, Englisch ebenfalls möglich" fires despite
-        # naming its own fallback, which is the shape BLUECHILLED's rationale keyed on.
+        # #54 made the clause graded, so precedence has to cover the 1-pt band too.
         assert "EITHER band" in SYSTEM_PROMPT
+        # #65: every example under a rule must be an INSTANCE of it. The 1-pt band's
+        # example was "Projektsprache Deutsch, Englisch ebenfalls möglich" — a second
+        # declared language, which is not an optional qualifier on the same requirement.
+        # Listing 3030001 fired the band on exactly that shape, so the example claimed a
+        # suppression the rubric never had. Replaced with a real instance, and the
+        # two-languages case is now stated as firing rather than left to be inferred.
+        assert "Deutsch als Projektsprache von Vorteil" in SYSTEM_PROMPT
+        assert "A SECOND declared language is not an optional qualifier" in SYSTEM_PROMPT
 
     def test_system_prompt_grades_declared_working_language_below_c1(self):
         """#54: `Projektsprache: Deutsch` states a language but no level, so it hit the
@@ -402,7 +408,12 @@ class TestBuildPrompt:
         (2 of 7 fires on the 2026-07-30 corpus). The rubric was the wrong half: a declared
         working language IS a deliberate operational statement. It now costs 1 — enough to
         keep #44's premise that an unstated level never buys the full 2."""
-        assert "REDUCE by 1–2 pts for a GERMAN-LANGUAGE REQUIREMENT" in SYSTEM_PROMPT
+        # #65: the header range has to include the no-fire band the body defines, the
+        # way the sibling RAMP-UP RISK clause writes "0–3". Stating "1–2" over a body
+        # whose lowest band is 0 invites reading 1 as a floor — i.e. penalising any
+        # German signal at all, which is the over-firing #44 and #54 both removed.
+        assert "REDUCE by 0–2 pts for a GERMAN-LANGUAGE REQUIREMENT" in SYSTEM_PROMPT
+        assert "0 pts — everything else" in SYSTEM_PROMPT
         assert '"Projektsprache: Deutsch"' in SYSTEM_PROMPT
         # The bands must be exclusive: without this a C1+ listing that also declares a
         # working language reads as 2+1, restoring over-firing through a third door.

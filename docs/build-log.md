@@ -760,6 +760,12 @@ deliberate operational statement rather than incidental German.
   rate through a third door), and **PRECEDENCE now covers either band**, so
   `"Projektsprache Deutsch, Englisch ebenfalls möglich"` does not fire. That second one is not
   hypothetical: BLUECHILLED's own #51 rationale keyed on the phrase *"with no fallback"*.
+  ⚠️ **Corrected by #65 (entry below):** the example in that last sentence is wrong and was wrong
+  when written. A second declared language is not an optional qualifier on the same requirement, so
+  it never was an instance of the PRECEDENCE rule — and `3030001` states `Projektsprache: Deutsch
+  und Englisch` and **did** fire the 1-pt band in this very run, which is recorded four bullets
+  down. The claim and its own counter-evidence sat in the same entry; the review round caught it,
+  this session did not.
 - `profile.yaml` rewritten in lockstep — both bands, all five carve-outs, the precedence rule.
 - `test_config.py`: the band is a **fire** cue, not a carve-out, so it does not belong in
   `GERMAN_CARVE_OUTS`. It gets its own two-row `GERMAN_FIRE_BANDS` table, unioned into the same
@@ -825,3 +831,56 @@ is that the clobbering run *is* the old-prompt baseline this entry rests on.
 **Still open:** `email_min_score` (raise to 5?) carries over untouched from #44 and #51. The
 precedence clause wants a corpus containing a `von Vorteil`-shaped qualifier before it can be called
 proven.
+
+---
+
+## Fix #65 — 2026-07-30 — the German clause's header range and its precedence example
+
+**Goal:** Close the two non-blocking findings from `/pr-cycle`'s round-1 review of #63, folded into
+one PR because they sit in the same clause and therefore share one validation run. Branch
+`fix/65-german-clause-header-and-precedence-example`, cut from #63's head.
+
+**Changes**
+- **Header range.** The clause read `REDUCE by 1–2 pts` over a body whose lowest band is
+  `0 pts — everything else`. The sibling RAMP-UP RISK clause writes `0–3` for exactly this reason:
+  stating a floor of 1 invites reading *any* German signal as worth at least a point, which is the
+  over-firing #44 and #54 both removed. Now `0–2`.
+- **Precedence example.** `"Projektsprache Deutsch, Englisch ebenfalls möglich"` was offered as an
+  instance of "an optional qualifier beats the level cue". It is not one — a second declared
+  language is not a qualifier on the same requirement, it is a second requirement. The example is
+  now `"Deutsch als Projektsprache von Vorteil"`, which is a real instance, and the two-language
+  case is stated explicitly as **firing** the 1-pt band rather than left to be inferred.
+- Tests pin both: the header string with its `0–2`, the presence of the `0 pts` band, the new
+  example, and the two-languages sentence. 328 passing (unchanged — assertions were rewritten, not
+  added).
+
+**Validation (fresh ≥5-listing run, baseline = #63's run on the same day's corpus)**
+- 75 raw → 21 filtered → **20 evaluated** (`3029231`/nemensis left the source between runs; 20 of
+  #63's 21 survive, none new).
+- Distribution: `1×8, 2×7, 3×6, 2×5, 6×4, 3×3, 2×2` vs #63's same-20 `1×8, 2×7, 1×6, 6×5, 5×4,
+  3×3, 2×2`. Range 2–8 unchanged. 4 of 20 scores moved, ±1 — inside the noise floor established in
+  the #63 entry, so not attributable either way.
+- **The new two-languages sentence was exercised.** `3030001` (`Projektsprache: Deutsch und
+  Englisch`) fired the 1-pt band and its rationale now reads *"project runs in German and English
+  (declared working language); candidate is B2, role does not state a C1+ req"* — the behaviour the
+  sentence codifies, previously only inferred.
+- **A band was cited by number for the first time.** `3025659`: *"the declared working language
+  (Projektsprache: Deutsch) applies a 1-pt penalty (no level stated, but a deliberate operational
+  declaration)"*. That is the graded clause being read as written, not reconstructed by us from a
+  score.
+- **The 0 band held on an implicit working language.** `3029221` — *"no CEFR level stated but
+  working language is implicit"* — took no German penalty this run, where #63's run had penalised
+  it. Implicit ≠ declared is exactly the line the clause draws, but note this row moved *because*
+  Haiku re-read it, not provably because of the header change.
+- ⚠️ Same measurement limit as every run since #44: `--dry-run` skips the DB writes, so the
+  arithmetic behind any single score cannot be reconstructed from the digest. Rationale text is the
+  evidence; the numbers are not.
+
+**Process note.** Both findings came from `/pr-cycle` round 1 on #63 — an independent subagent
+reading the same clause this session had just written and validated. Neither was a bug in behaviour;
+both were the prompt saying something other than what the run showed. The precedence overclaim had
+its own counter-evidence sitting four bullets below it in the same build-log entry, which is the
+kind of thing an author does not see.
+
+**Still open:** `email_min_score` — now more load-bearing than before, since a −1 band puts more
+rows on the 4/3 boundary that the digest gate sits on (#65's nit, tracked in the roll-up issue).
