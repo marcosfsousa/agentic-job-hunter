@@ -331,7 +331,7 @@ class FreelancermapAdapter(JobAdapter):
                     # endpoint) is deliberately NOT caught: it must still fail loud.
                     degraded.append(query)
                     logger.warning(
-                        "freelancermap query %r degraded transiently — continuing "
+                        "freelancermap query %r degraded transiently - continuing "
                         "with the remaining queries; the distinct-id floor decides "
                         "run health: %s",
                         query, exc,
@@ -351,7 +351,7 @@ class FreelancermapAdapter(JobAdapter):
                         if remaining:
                             degraded.extend(remaining)
                             logger.warning(
-                                "freelancermap: 429 — not issuing the remaining %s "
+                                "freelancermap: 429 - not issuing the remaining %s "
                                 "(%s); backing off rather than hammering a source that "
                                 "asked us to slow down.",
                                 _queries(len(remaining)),
@@ -422,7 +422,7 @@ class FreelancermapAdapter(JobAdapter):
             )
             if not degraded:
                 cause = (
-                    "This is a broken source, not a quiet market — the anonymous view "
+                    "This is a broken source, not a quiet market - the anonymous view "
                     f"returns up to {_ROWS_PER_QUERY} rows per query, so a healthy union "
                     f"sits far above this. {shape_hint}"
                 )
@@ -435,7 +435,7 @@ class FreelancermapAdapter(JobAdapter):
                     f"{_queries(len(degraded))} degraded transiently this run "
                     f"({degraded_list}), but the {answered} that answered should have "
                     f"cleared the floor on their own (up to {_ROWS_PER_QUERY} rows "
-                    f"each) — so a rate-limited source does not explain this. {shape_hint}"
+                    f"each) - so a rate-limited source does not explain this. {shape_hint}"
                 )
             else:
                 # Few enough queries answered that the degradations alone account for
@@ -443,8 +443,8 @@ class FreelancermapAdapter(JobAdapter):
                 # ops hunting a change that need not have happened.
                 cause = (
                     f"{_queries(len(degraded))} degraded transiently this run "
-                    f"({degraded_list}), so a rate-limited or flapping source — not "
-                    "necessarily a changed payload — may be the cause. Either way the "
+                    f"({degraded_list}), so a rate-limited or flapping source - not "
+                    "necessarily a changed payload - may be the cause. Either way the "
                     "run fails rather than delivering a silent empty digest."
                 )
             raise JobScoutSourceIntegrityError(
@@ -463,7 +463,7 @@ class FreelancermapAdapter(JobAdapter):
             # opposite of what the query list is for. Five seeded queries can union
             # past `run.py`'s default of 100.
             logger.warning(
-                "freelancermap: %d listings truncated to max_results=%d — the %d dropped "
+                "freelancermap: %d listings truncated to max_results=%d - the %d dropped "
                 "row(s) are from the queries that ran last. Raise max_results rather than "
                 "shortening freelancermap_queries.",
                 len(listings), max_results, len(listings) - max_results,
@@ -484,7 +484,7 @@ class FreelancermapAdapter(JobAdapter):
 
         dropped = queries[cap:]
         logger.warning(
-            "freelancermap request cap (%d) is below the %d configured queries — "
+            "freelancermap request cap (%d) is below the %d configured queries - "
             "dropping %s. Coverage is reduced: raise freelancermap_max_requests or "
             "shorten freelancermap_queries.",
             cap, len(queries), ", ".join(repr(q) for q in dropped),
@@ -513,13 +513,13 @@ class FreelancermapAdapter(JobAdapter):
         if response.status_code in _RECOVERABLE_STATUSES or response.status_code >= 500:
             raise JobScoutAdapterError(
                 f"freelancermap returned {response.status_code} for query {query!r} "
-                "— treating as transient.",
+                "- treating as transient.",
                 status=response.status_code,
             )
         if response.status_code != 200:
             raise JobScoutSourceIntegrityError(
                 f"freelancermap returned {response.status_code} for query {query!r}. "
-                "A block, a moved endpoint or an unexpected redirect — the ingest "
+                "A block, a moved endpoint or an unexpected redirect - the ingest "
                 "route no longer works, which is not something to deliver as an "
                 "empty digest."
             )

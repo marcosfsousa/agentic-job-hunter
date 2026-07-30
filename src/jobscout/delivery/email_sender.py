@@ -29,7 +29,7 @@ async def send_digest(content: str, config: AppConfig, run_date: date | None = N
     run_date = run_date or date.today()
 
     if not _is_configured(config):
-        logger.info("Email delivery not configured — skipping")
+        logger.info("Email delivery not configured - skipping")
         return False
 
     resend.api_key = config.resend_api_key

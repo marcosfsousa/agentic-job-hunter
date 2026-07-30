@@ -51,7 +51,7 @@ def deduplicate_listings(jobs: list[JobListing]) -> list[JobListing]:
         kept_src = best.source
         dropped_srcs = [j.source for j in group if j is not best]
         logger.debug(
-            "Duplicate group: %r — kept %s (%d chars), dropped %s",
+            "Duplicate group: %r - kept %s (%d chars), dropped %s",
             key,
             kept_src,
             len(best.description),
@@ -61,7 +61,7 @@ def deduplicate_listings(jobs: list[JobListing]) -> list[JobListing]:
 
     if dup_groups:
         logger.info(
-            "Deduplication: %d duplicate group(s) found — %d listing(s) dropped",
+            "Deduplication: %d duplicate group(s) found - %d listing(s) dropped",
             dup_groups,
             dropped_total,
         )

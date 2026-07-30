@@ -12,7 +12,7 @@ def apply_hard_filter(jobs: list[JobListing], profile: UserProfile) -> list[JobL
     """Drop jobs that fail any hard rule. Returns surviving jobs."""
     before = len(jobs)
     result = [j for j in jobs if _passes_all(j, profile)]
-    logger.info("Hard filter: %d → %d jobs passed", before, len(result))
+    logger.info("Hard filter: %d -> %d jobs passed", before, len(result))
     return result
 
 
