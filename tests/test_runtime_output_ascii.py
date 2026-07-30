@@ -64,8 +64,11 @@ _LOGGING_SINKS = {
 # argparse renders these on `--help` and on usage errors.
 _ARGPARSE_SINKS = {"ArgumentParser", "add_argument", "add_parser", "add_argument_group"}
 # Matched on the *whole* dotted name, not the trailing attribute: `write` alone would
-# flag `f.write(...)` and `path.write_text(...)`, which go to files with an explicit
-# encoding and are outside this rule (see `test_the_scan_leaves_non_stream_text_alone`).
+# flag every `f.write(...)` in the tree, and those go to files with an explicit encoding
+# and are outside this rule (see `test_the_scan_leaves_non_stream_text_alone`).
+# `path.write_text(...)` is a different attribute string and so was never at risk from
+# that particular mistake — it stays in the negative control as the guard against the
+# *next* one, a prefix or substring match on `write`.
 # `sys.exit("msg")` belongs here because the message is printed to stderr on the way out.
 #
 # `traceback.print_exc` was raised alongside these in #64 and is deliberately absent: it
@@ -269,7 +272,17 @@ def test_force_utf8_streams_repins_a_legacy_codepage(monkeypatch, encoding, unen
 
     assert sys.stdout.encoding == "utf-8"
     assert sys.stderr.encoding == "utf-8"
+
+    # `errors` is pinned as well as `encoding`, and it is load-bearing: UTF-8 alone
+    # still raises on a lone surrogate, which is what a mojibake title from a badly
+    # decoded upstream feed looks like by the time it reaches a log line. Under
+    # errors="strict" that is once again a mid-write crash rather than a mangled
+    # character, so a change here must fail this test rather than pass quietly.
+    assert sys.stdout.errors == "replace"
+    assert sys.stderr.errors == "replace"
+
     sys.stdout.write(unencodable + " Softwareentwickler für ML")
+    sys.stdout.write("mojibake title: \udce4\udcf6\udcfc")
     sys.stdout.flush()
 
 
@@ -314,8 +327,25 @@ def test_console_script_entry_point_exists():
     # The pin has to be inside that callable, not beside it in the `__main__` block.
     tree = ast.parse((_SRC_ROOT / "jobscout" / "run.py").read_text(encoding="utf-8"))
     entry_fn = next(
-        node for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == attribute
+        (
+            node for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == attribute
+        ),
+        None,
+    )
+    # `next(..., None)` rather than letting StopIteration escape: an `async def main`
+    # or `main = _something` would otherwise abort this test with a bare traceback,
+    # throwing away the diagnostic messages below at exactly the moment they are
+    # needed most.
+    assert entry_fn is not None, (
+        f"run.py defines no `def {attribute}` at all, so the console script "
+        f"{entry_point!r} cannot resolve to a function in this source tree."
+    )
+    assert isinstance(entry_fn, ast.FunctionDef), (
+        f"{attribute}() is a coroutine function. The console-script shim calls it "
+        "synchronously, so it would build a coroutine, never await it, and exit 0 "
+        "having run nothing — wrap the async work in asyncio.run() instead."
     )
     pinned = {
         node.func.id for node in ast.walk(entry_fn)
@@ -325,4 +355,38 @@ def test_console_script_entry_point_exists():
         f"{attribute}() does not call _force_utf8_streams(). An installed run never "
         "executes the `if __name__ == \"__main__\"` block, so a pin placed only there "
         "is disabled for exactly the users who installed the package the declared way."
+    )
+
+
+def test_module_invocation_still_reaches_main():
+    """`python -m jobscout.run` must still run the pipeline — the daily cron uses it.
+
+    The sibling test above covers the *installed* path and deliberately says nothing
+    about the `__main__` block, which leaves a hole worth closing explicitly: delete
+    `if __name__ == "__main__": main()` and this suite stays green while
+    `.github/workflows/daily_run.yml` (`run: python -m jobscout.run --verbose`) becomes
+    a silent exit-0 no-op. Nothing fails, so the workflow's `if: failure()` notification
+    never fires — the digest just stops arriving and nobody is told.
+
+    That is the same fail-open shape as the vacuous scan above, one layer out, which is
+    why it gets its own assertion rather than a line in the other test's docstring.
+    """
+    tree = ast.parse((_SRC_ROOT / "jobscout" / "run.py").read_text(encoding="utf-8"))
+    guards = [
+        node for node in tree.body
+        if isinstance(node, ast.If)
+        and any(
+            isinstance(cmp, ast.Constant) and cmp.value == "__main__"
+            for cmp in ast.walk(node.test)
+        )
+    ]
+    called = {
+        node.func.id
+        for guard in guards for node in ast.walk(guard)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "main" in called, (
+        "run.py has no `if __name__ == \"__main__\"` block calling main(). "
+        "`python -m jobscout.run` would import the module and exit 0 without running "
+        "anything, and the daily workflow would report success while doing nothing."
     )
