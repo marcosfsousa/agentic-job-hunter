@@ -132,7 +132,7 @@ class JobDatabase:
         id_unseen = [j for j in jobs if (j.id, j.source) not in seen_by_id]
 
         if not id_unseen:
-            logger.debug("filter_unseen: %d → 0 unseen jobs", len(jobs))
+            logger.debug("filter_unseen: %d -> 0 unseen jobs", len(jobs))
             return []
 
         # Step 2: fingerprint check — catches the same job re-entering with a new ID
@@ -146,7 +146,7 @@ class JobDatabase:
         seen_by_fp = {row[0] for row in fp_rows}
         unseen = [j for j, fp in zip(id_unseen, fps) if fp not in seen_by_fp]
 
-        logger.debug("filter_unseen: %d → %d unseen jobs", len(jobs), len(unseen))
+        logger.debug("filter_unseen: %d -> %d unseen jobs", len(jobs), len(unseen))
         return unseen
 
     def upsert_feedback(self, entries: list[FeedbackEntry]) -> None:
@@ -176,7 +176,7 @@ class JobDatabase:
         ).fetchall()
         excluded = set(rows)
         result = [j for j in jobs if (j.id, j.source) not in excluded]
-        logger.debug("filter_feedback: %d → %d actionable jobs", len(jobs), len(result))
+        logger.debug("filter_feedback: %d -> %d actionable jobs", len(jobs), len(result))
         return result
 
     def get_interested_descriptions(self) -> list[str]:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import sys
 from datetime import date
 from pathlib import Path
 import anthropic
@@ -49,7 +50,7 @@ def _run_review(review_date: date) -> None:
         all_entries: list[FeedbackEntry] = []
 
         for idx, (job_id, source, title, company) in enumerate(jobs, start=1):
-            label_str = f"{title} — {company}" if company else title
+            label_str = f"{title} - {company}" if company else title
             while True:
                 raw = input(f"{idx}. {label_str}\n   [a/r/i/s]: ").strip().lower()
                 if raw in ("a", "r", "i", "s"):
@@ -78,7 +79,7 @@ def _run_review(review_date: date) -> None:
 
     labeled = sum(1 for e in all_entries if e.status != "skipped")
     skipped = len(all_entries) - labeled
-    print(f"\nDone — {labeled} labeled, {skipped} skipped.")
+    print(f"\nDone: {labeled} labeled, {skipped} skipped.")
 
 
 def _sync_feedback(db: "JobDatabase", feedback_path: Path) -> None:
@@ -92,7 +93,7 @@ def _sync_feedback(db: "JobDatabase", feedback_path: Path) -> None:
         with feedback_path.open(encoding="utf-8") as f:
             raw = yaml.safe_load(f) or []
     except FileNotFoundError:
-        logger.info("No feedback file found at %s — skipping", feedback_path)
+        logger.info("No feedback file found at %s - skipping", feedback_path)
         return
     entries: list[FeedbackEntry] = []
     for item in raw:
@@ -143,13 +144,13 @@ async def run_pipeline(
     # broken and so is the run. Revisit if a second adapter ever lands.
     # ------------------------------------------------------------------
     if since is not None:
-        logger.info("Running with --since %s — filtering to jobs posted on or after that date", since)
+        logger.info("Running with --since %s - filtering to jobs posted on or after that date", since)
 
     async def _fetch(adapter_cls) -> list[JobListing]:
         try:
             return await adapter_cls(config).fetch(max_results=max_results, since=since)
         except JobScoutAdapterError as exc:
-            logger.warning("%s failed — skipping: %s", adapter_cls.__name__, exc)
+            logger.warning("%s failed - skipping: %s", adapter_cls.__name__, exc)
             return []
 
     results = await asyncio.gather(*(_fetch(cls) for cls in _ADAPTER_REGISTRY.values()))
@@ -217,9 +218,9 @@ async def run_pipeline(
             email_digest = format_digest(email_jobs, run_date)
             await send_digest(email_digest, config, run_date)
         else:
-            logger.info("Email skipped — no jobs scored >= %d/10", min_score)
+            logger.info("Email skipped - no jobs scored >= %d/10", min_score)
 
-    logger.info("Pipeline complete — %d jobs evaluated", len(evaluated))
+    logger.info("Pipeline complete - %d jobs evaluated", len(evaluated))
     return evaluated
 
 
@@ -227,12 +228,34 @@ async def run_pipeline(
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _force_utf8_streams() -> None:
+    """Make stdout/stderr encode UTF-8, whatever the ambient console codepage is.
+
+    A legacy 8-bit codepage on these streams raises `UnicodeEncodeError` mid-write on
+    any character it cannot map: `→` under cp1252 (redirected stdout on Western
+    Windows), `—` and `–` as well under cp850/cp437, everything non-ASCII under a
+    POSIX locale. Keeping our own literals ASCII (#61) is not enough on its own: the
+    review prompt interpolates job titles and the logs interpolate query names, and
+    freelancermap is a German board, so `Softwareentwickler für ...` reaches the same
+    stream from data we do not control. Pinning the encoding is what makes that safe
+    by construction rather than by luck.
+
+    Call before `_parse_args()` — argparse writes `--help` and usage errors itself.
+
+    `reconfigure` exists on `TextIOWrapper` only; under pytest's capture (or any
+    harness that swaps the stream) it may be absent, hence the guard.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="JobScout pipeline")
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Fetch, deduplicate, and filter — but skip all DB writes.",
+        help="Fetch, deduplicate, and filter, but skip all DB writes.",
     )
     parser.add_argument(
         "--verbose",
@@ -269,11 +292,12 @@ def _parse_args() -> argparse.Namespace:
 
 
 if __name__ == "__main__":
+    _force_utf8_streams()
     args = _parse_args()
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
     )
 
     if args.apply_feedback:

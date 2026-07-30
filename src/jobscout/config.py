@@ -170,7 +170,7 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
     )
 
     logger.debug(
-        "Config loaded — profile: %s, db: %s, digests: %s",
+        "Config loaded - profile: %s, db: %s, digests: %s",
         cfg.profile.name,
         cfg.db_path,
         cfg.digests_dir,

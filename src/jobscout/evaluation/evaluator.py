@@ -59,7 +59,7 @@ async def evaluate_jobs(
             second = await _evaluate_one(job, profile, client, model)
             if second.evaluation and second.evaluation.match_score > evaluated.evaluation.match_score:
                 logger.debug(
-                    "Re-eval improved score: %d → %d",
+                    "Re-eval improved score: %d -> %d",
                     evaluated.evaluation.match_score,
                     second.evaluation.match_score,
                 )
