@@ -631,3 +631,40 @@ rather than papered over.
 **Still open:** (1) the `Projektsprache: Deutsch` fire-vs-carve-out contradiction above needs its own
 ticket — decide whether the rubric or Haiku is wrong; (2) `email_min_score` (raise to 5?) still
 carries over from #44, untouched here.
+
+## Fix #56 — 2026-07-30 — pytest resolves `src/` from the tree it was started in
+
+**Problem:** the editable install (`__editable__.jobscout-0.1.0.pth`) is a plain path entry pointing
+at the main checkout. A `pytest` run started from `.claude/worktrees/<name>/` therefore collected the
+worktree's `tests/` and imported the **main checkout's** `src/jobscout` — two trees in one run, with
+nothing in pytest's output naming either. Hit twice during the #51 session: once as a false red that
+cost a debugging detour (a correct new assertion failing against stale source), and latently as a
+false green, which is the dangerous direction — every assertion still executes, just against code you
+are not editing.
+
+**Changes:** `pythonpath = ["src"]` under `[tool.pytest.ini_options]`. It is resolved relative to
+rootdir and prepended to `sys.path`, so each run picks up the `src/` of whichever tree pytest was
+invoked from; the `.pth` entry stays as a fallback. Added
+`test_repo_invariants.py::test_suite_imports_src_from_this_tree`, asserting the imported
+`jobscout.__file__` sits under the tests' own `src/`. That module already exists for invariants with
+no code seam, and this is the same shape: delete the `pythonpath` line and no other test in the suite
+can notice.
+
+**Verification**
+- Full suite from the worktree, `PYTHONPATH` unset: **308 passing** (307 + the new tripwire).
+- Tripwire proven to fire, not merely pass: re-run with `-o pythonpath=` (simulating the setting's
+  removal) fails with both paths named in the message.
+- Duplicate `sys.path` entry is harmless where rootdir `src/` and the install target coincide —
+  `importlib.metadata.version` and the `jobscout` console-script entry point both still resolve from
+  dist-info, and nothing in `tests/` or `src/` reads installed metadata.
+- CI: `tests.yml` and `daily_run.yml` both `pip install -e ".[dev]"` from the checkout root, so
+  rootdir `src/` *is* the install target — the setting is a no-op there. This is also the same
+  condition as the issue's "full suite from the main checkout" check, so CI covers both.
+
+**Side benefit:** the suite no longer depends on an editable install existing, so a fresh clone can
+run it without `pip install -e .`.
+
+**Still open:** the fix covers pytest only. Any other entry point started from inside a worktree — a
+bare `python -m jobscout.run`, a REPL, pyright — still resolves `jobscout` to the main checkout. So
+"tests pass in the worktree" does not imply "running the pipeline in the worktree uses the worktree's
+code". Out of scope for #56; noted in `docs/dev-notes.md` so it is not rediscovered the hard way.

@@ -29,6 +29,14 @@ python -m jobscout.run --dry-run # Fetch + filter + rank, skip delivery
 python -m pytest tests/          # Run tests
 ```
 
+`pytest` sets `pythonpath = ["src"]` (pyproject.toml), resolved against the rootdir of
+whichever tree it was started from. Two consequences: the suite runs on a fresh clone with
+no `pip install -e .`, and a run started from a `.claude/worktrees/<name>/` checkout tests
+*that* worktree's source instead of silently importing the main checkout's via the editable
+`.pth`. `tests/test_repo_invariants.py::test_suite_imports_src_from_this_tree` fails loudly
+if that ever stops holding. Note this covers pytest only — a bare `python -m jobscout.run`
+or a REPL started inside a worktree still resolves to the main checkout.
+
 ## Environment
 - API keys in `.env` (loaded via python-dotenv, gitignored)
 - Conda environment: `jobscout` (Python 3.11)
