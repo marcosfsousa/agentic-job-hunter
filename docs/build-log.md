@@ -1229,3 +1229,47 @@ of the pool and stops being a rank cut in any meaningful sense. Filed separately
 backend-titled rows only reach the query if they also mention ML/AI/LLM. This measurement bounds
 what the titles do to *ranking*; it says nothing about what they do to *reach*, which is a
 hard-filter question and a different instrument.
+
+## Fix — 2026-07-31 — re-copy the guard at upstream `9e9a4eef`
+
+The second re-copy of the day. `gh-repo-baseline` #16 and #17 merged, moving the template
+`ae78c6b3` → `9e9a4eef` and 1290 → 1499 lines. Same procedure as the last one (#81 § C),
+which is now written down precisely because it is easy to get subtly wrong.
+
+**Why now rather than later.** The previous entry said to wait for gh-repo-baseline#13 so
+two re-copies would fold into one. That advice is void: **#13 was closed unmerged.** Not on
+merit — it had gone `DIRTY` against the `_trigger_branches` rewrites in #14/#17, and redoing
+it fresh buys a review round against the parser it will actually land on. With #11/#12/#13
+closed and #14/#16/#17 merged, nothing was left pending, so there was nothing to wait for.
+
+**What it resolves — verified against the copied file, not the PR titles.** One item, and
+only one:
+
+- `_job_contexts:matrix-refusal-one-indent` — **resolved.** All three things the item asked
+  for. The refusal went from `re.match(r"^      matrix\s*:", line)` — one hardcoded indent —
+  to `if indent == strategy and name == "matrix"`, a comparison against the indent the job's
+  own keys sit at. Quoted `'matrix':` and the inline flow mapping `strategy: {matrix: ...}`
+  are both handled, the latter by an explicit refusal rather than a parse.
+- `_COMMENTED_EVENT:trailing-note-and-indent` (indent half) — **unchanged.** `_EVENT_KEY` and
+  `_COMMENTED_EVENT` are byte-identical before and after; both still hardcode `^  `.
+- `_trigger_branches:filter-name-any-depth` — **unchanged.** `^\s{3,}` byte-identical.
+
+Those last two are **one upstream change, not two**, and it does not exist yet. Both are
+gated on reading the event indent off the first key under `on:` and matching it *exactly*:
+a loose pattern moves `current` onto `types:` under `pull_request:`, and the `branches:`
+below then filters `types` instead — leaving the real event unfiltered, which passes. #13's
+closing comment records the design, including that the filter-key pattern must derive its
+minimum indent from that same level (`\s{event_indent+1,}`). Tracked upstream in
+gh-repo-baseline#10 as `_EVENT_KEY:event-indent-is-still-exactly-two`, open and unticked.
+
+**Six net-new tests**, all from the template, all about placing a job's keys by shape rather
+than by column: `test_a_job_written_at_two_indents_is_refused`,
+`test_a_matrix_is_refused_wherever_the_job_puts_it`, `test_a_name_is_read_wherever_the_job_puts_it`,
+`test_a_step_key_called_matrix_is_not_a_matrix_job`, `test_a_strategy_written_inline_is_refused`,
+`test_the_jobs_block_is_found_by_shape`. Like the last batch these are `tmp_path` unit tests
+over synthetic workflows — they do not read this repo's `tests.yml`, and saying otherwise was
+a deferred nit on #82 (#83).
+
+Suite: 389 → 395. (Authored as 387 → 393 against the pre-#85 base; this branch was rebased
+onto `main` after #85 and #88 landed, and #88's two `test_config.py` additions moved the
+floor. The +6 is unchanged — it is the six tests listed above.)
