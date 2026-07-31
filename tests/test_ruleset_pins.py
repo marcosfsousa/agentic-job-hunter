@@ -46,8 +46,14 @@ cannot prove the ruleset is applied with this content — the API is the authori
 and it needs admin credentials a test suite should not have. What it does prove
 is that a change to the committed record is a change someone had to make here
 too, which is the half that shows up in review.
+
+One thing here is not about the ruleset at all: ``TestTheCopiedGuardWasNotEdited``
+pins the integrity of the guard file next door. It lives here for the same reason
+everything else does — it is a fact about *this* repo's copy, so it cannot live in
+the copy itself without being overwritten by the thing it describes.
 """
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -226,4 +232,120 @@ class TestThesePinsAreNotVacuous:
             "Absent, it means nobody may bypass — a tightening, and a real edit, "
             "but not the ruleset this repo recorded. Either restore the admin "
             "bypass or update this file to say the grant is gone."
+        )
+
+
+_GUARD = Path(__file__).resolve().parent / "test_required_checks.py"
+
+# The upstream commit the guard was copied from, as its own header records it.
+# Pinned here as well as there so the two cannot drift apart: a re-copy has to
+# touch the header, this constant, and the hash below, in one commit.
+_GUARD_UPSTREAM_SHA = "130a56a5"
+
+# sha256 of the guard below its header, newlines normalised to \n. Recorded at
+# the re-copy in #75. Read TestTheCopiedGuardWasNotEdited before changing it —
+# in particular, what it does and does not prove.
+_GUARD_BODY_SHA256 = "25b4d86250da7eedd42a7e0bc09a4be0c551732a916fac145d23d9163186e6ff"
+
+
+def _guard_body() -> str:
+    """
+    The guard from its module docstring down — the part the header promises is
+    the template verbatim.
+
+    Split on the first line that is exactly ``\"\"\"``, which is the same seam
+    upstream's own ``TestTheLiveGuardMatchesTheTemplate`` uses. Newlines are
+    normalised because a hash is being taken over the result: this repo has
+    files with mixed line endings, and a checkout or an editor that rewrote the
+    guard's endings without touching a character of it would otherwise report as
+    an edit.
+    """
+    lines = _GUARD.read_text(encoding="utf-8").splitlines(keepends=True)
+    start = next(i for i, line in enumerate(lines) if line.rstrip("\r\n") == '"""')
+    return "".join(lines[start:]).replace("\r\n", "\n")
+
+
+class TestTheCopiedGuardWasNotEdited:
+    """
+    ``tests/test_required_checks.py`` is a copy of a template maintained in
+    github.com/marcosfsousa/gh-repo-baseline, and its header says fixes belong
+    upstream "or they are lost on the next copy". Until now nothing checked that.
+
+    **What this proves: the copy has not been edited since the hash was
+    recorded.** That is the failure that actually happens here — a session finds
+    a bug in the guard, fixes it in the file it found it in, and the fix is
+    reverted by the next re-copy while every repo copying the template keeps the
+    bug. #76 has three such upstream-owned bugs open against this very file, so
+    the temptation is live and named.
+
+    **What it does not prove: that the copy matches upstream.** The hash is
+    recorded by the same person doing the copy, so it attests local
+    non-modification, not identity. Proving identity needs the template at
+    ``_GUARD_UPSTREAM_SHA``, which means a network fetch — upstream's
+    ``TestTheLiveGuardMatchesTheTemplate`` gets away with a plain file diff only
+    because it holds both copies in one repo. That check belongs in a CI step,
+    not in pytest, and is deliberately not attempted here. Do not read a green
+    tick on this class as "we match the baseline".
+
+    The hash covers this repo's two documented per-repo edits — ``_WORKFLOW``
+    naming ``tests.yml`` rather than the template's ``ci.yml``, and
+    ``test_step_names_are_not_collected`` asserting ``"Tests"`` rather than
+    ``"CI"`` — because it hashes the local file as it stands. A third such edit
+    would be indistinguishable from the drift this is here to catch, which is the
+    point: it should cost a deliberate update of the constant.
+
+    A re-copy is *meant* to break this. Diff against the upstream sha first, then
+    update the header, the sha and the hash together.
+    """
+
+    def test_the_guard_body_is_unchanged(self):
+        actual = hashlib.sha256(_guard_body().encode("utf-8")).hexdigest()
+        assert actual == _GUARD_BODY_SHA256, (
+            f"{_GUARD.name} hashes to {actual}, not the recorded "
+            f"{_GUARD_BODY_SHA256}.\n\n"
+            "That file is a copy and is not this repo's to edit. If you were "
+            "fixing a bug in it: the fix belongs in gh-repo-baseline's "
+            "templates/tests/, and comes back here as a re-copy — done locally "
+            "it is lost the next time anyone copies the template, and every "
+            "other repo keeps the bug.\n\n"
+            "If this IS a re-copy, update the header, _GUARD_UPSTREAM_SHA and "
+            "_GUARD_BODY_SHA256 in the same commit.\n\n"
+            "This assertion attests that the local copy is unmodified. It does "
+            "not verify it against upstream — nothing here can, without a "
+            "network fetch."
+        )
+
+    def test_the_header_still_names_the_sha_the_hash_is_anchored_to(self):
+        # The hash alone would go green on a re-copy whose header was updated and
+        # whose constant was not, leaving the recorded provenance pointing at a
+        # commit the bytes no longer came from. Cheap, and it makes the two
+        # records fail together rather than one covering for the other.
+        header = _GUARD.read_text(encoding="utf-8").split('"""')[0]
+        assert _GUARD_UPSTREAM_SHA in header, (
+            f"{_GUARD.name}'s header does not name {_GUARD_UPSTREAM_SHA}, which "
+            "is the commit this file's hash is recorded against.\n"
+            "Either the guard was re-copied without updating _GUARD_UPSTREAM_SHA "
+            "and _GUARD_BODY_SHA256 here, or the header lost the sha that gives "
+            "the next copy something to diff against."
+        )
+
+    def test_the_hash_is_taken_over_a_body_and_not_the_whole_file(self):
+        # Guards the guard, as upstream's `test_only_the_header_differs` does for
+        # the same seam: if the `\"\"\"` marker ever moved or vanished, the split
+        # could return the entire file and this class would go on passing while
+        # silently hashing the header too — pinning the very provenance comment a
+        # re-copy is supposed to rewrite.
+        whole = _GUARD.read_text(encoding="utf-8").replace("\r\n", "\n")
+        body = _guard_body()
+        assert body.startswith('"""'), (
+            "the guard's body does not start at its module docstring — the seam "
+            "`_guard_body` splits on has moved"
+        )
+        assert len(body) < len(whole), (
+            "the guard's header is empty, so the hash covers the whole file "
+            "including the provenance comment a re-copy rewrites"
+        )
+        assert "gh-repo-baseline" in whole[: len(whole) - len(body)], (
+            "the guard's header no longer says where the file is copied from, "
+            "which is the claim this whole class exists to hold someone to"
         )
