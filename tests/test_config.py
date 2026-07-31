@@ -18,8 +18,10 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
+from jobscout.adapters.freelancermap import _ROWS_PER_QUERY
 from jobscout.config import get_config, reset_config
 from jobscout.evaluation.prompt import SYSTEM_PROMPT
+from jobscout.run import DEFAULT_MAX_RESULTS
 
 # Located the same way tests/test_repo_invariants.py locates repo files, rather than
 # by importing config.py's private root — the point here is to load the file that
@@ -190,6 +192,38 @@ class TestPoolBoundConfig:
     def test_embedding_min_score_no_longer_exists(self):
         config = get_config(profile_path=SHIPPED_PROFILE)
         assert not hasattr(config, "embedding_min_score")
+
+
+class TestFetchCeilingClearsTheSourceCeiling:
+    """`DEFAULT_MAX_RESULTS` must exceed the most freelancermap can return in one run.
+
+    Below that product the adapter truncates, and it drops whichever queries ran
+    *last* — so appending a query costs coverage instead of adding it, which is the
+    inverse of what adding one is for. The default was 100 while nine configured
+    queries unioned to 132, and the four newest were exactly the ones being dropped.
+
+    Derived from the real constants rather than restated: pinning the literal 250
+    would keep passing if the request cap were raised, which is the one edit that
+    can invalidate it.
+    """
+
+    def test_default_max_results_exceeds_requests_times_rows_per_query(self):
+        config = get_config(profile_path=SHIPPED_PROFILE)
+        ceiling = config.freelancermap_max_requests * _ROWS_PER_QUERY
+        assert DEFAULT_MAX_RESULTS >= ceiling, (
+            f"DEFAULT_MAX_RESULTS={DEFAULT_MAX_RESULTS} is below the {ceiling} rows "
+            f"{config.freelancermap_max_requests} queries x {_ROWS_PER_QUERY} can yield; "
+            "the adapter would truncate the last queries' rows."
+        )
+
+    def test_shipped_queries_fit_under_the_request_cap(self):
+        """The spare-slot claim, asserted rather than left as prose."""
+        config = get_config(profile_path=SHIPPED_PROFILE)
+        n = len(config.profile.freelancermap_queries)
+        assert n <= config.freelancermap_max_requests, (
+            f"{n} configured queries exceed freelancermap_max_requests="
+            f"{config.freelancermap_max_requests}; the surplus is dropped with a warning."
+        )
 
 
 class TestReevalBelowIsDecoupled:
