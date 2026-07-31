@@ -117,9 +117,19 @@ _ADAPTER_REGISTRY: dict[str, type[JobAdapter]] = {
 }
 
 
+# Ceiling on listings kept per adapter. Must stay above the most the source can
+# return in one run, or the adapter truncates and the dropped rows are whichever
+# queries ran LAST — so appending a query silently costs coverage instead of
+# adding it. freelancermap's ceiling is `freelancermap_max_requests` (10) x the 22
+# rows the anonymous view returns per query = 220; 250 clears that with headroom.
+# Tie any change to that product, not to the union a particular day happens to
+# yield: at 100 the nine configured queries already overran it by 32 rows.
+DEFAULT_MAX_RESULTS = 250
+
+
 async def run_pipeline(
     dry_run: bool = False,
-    max_results: int = 100,
+    max_results: int = DEFAULT_MAX_RESULTS,
     since: date | None = None,
 ) -> list[ScoredJob]:
     """Run the full pipeline: fetch → deduplicate → filter.
@@ -265,9 +275,9 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-results",
         type=int,
-        default=100,
+        default=DEFAULT_MAX_RESULTS,
         metavar="N",
-        help="Maximum listings to fetch per adapter (default: 100).",
+        help=f"Maximum listings to fetch per adapter (default: {DEFAULT_MAX_RESULTS}).",
     )
     parser.add_argument(
         "--apply-feedback",
