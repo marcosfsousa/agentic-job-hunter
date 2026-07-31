@@ -194,9 +194,13 @@ class TestReevalBelowIsDecoupled:
     re-eval floor — the coupling this closes is issue #45."""
 
     def test_defaults_to_standalone_constant_not_email_min_score(self):
-        # Shipped email_min_score is 4 today, so a passing assert would be ambiguous
-        # if the two were still coupled. Pin against the constant, and the next test
-        # breaks the tie by moving email_min_score away from it.
+        # Shipped email_min_score is 5 and DEFAULT_REEVAL_BELOW is 4, so this assert
+        # now distinguishes the two on the shipped profile alone. It did not always:
+        # while the gate also sat at 4 the values coincided, and a still-coupled
+        # config would have passed this. That is why the tie is broken independently
+        # by the next test, which moves email_min_score in a tmp profile rather than
+        # relying on the shipped one — it holds whatever the shipped gate is set to,
+        # including if this one is ever lowered back onto the constant.
         from jobscout.config import DEFAULT_REEVAL_BELOW
 
         config = get_config(profile_path=SHIPPED_PROFILE)

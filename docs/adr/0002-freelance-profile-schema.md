@@ -316,6 +316,15 @@ Handed down by D and surfaced here so they aren't lost; all are `profile.yaml` *
   digest gate (`run.py:199`) and, via `config.py:63`, the default re-evaluation floor
   (`reeval_below`) — so retuning the digest silently retunes re-evaluation volume. Raised by P
   ([#22](https://github.com/marcosfsousa/agentic-job-hunter/issues/22)).
+  — ✅ **Settled 2026-07-31: `email_min_score: 5`.** Both halves of the flag above have since
+  expired, in opposite ways. The **coupling is gone** — [#45](https://github.com/marcosfsousa/agentic-job-hunter/issues/45)
+  gave `reeval_below` a standalone `DEFAULT_REEVAL_BELOW` in `config.py`, so the digest gate no
+  longer has two consumers and retuning it no longer moves re-evaluation volume; the sentence above
+  describing that coupling is history, not current behaviour. And the distribution is **no longer
+  unknown**: the runs recorded in `docs/build-log.md` for #63 and #65 measure it directly, with the
+  4-band carrying the bulk both times, so 5 is now a read off the data rather than the guess this
+  entry refused to make. It is also the value the FTE era used before it was lowered as a temporary
+  measure. Deciding it, not the number itself, is what was deferred here.
 
 ## Boundaries (recorded, not decided here)
 
@@ -392,5 +401,7 @@ Handed down by D and surfaced here so they aren't lost; all are `profile.yaml` *
   relocated experience bias was closed by F decision 4 plus P's deletion of the `deprioritise`
   entry that kept it alive through config.
 - **Two items ride F/N's "≥5 real listings" validation** rather than being decided here:
-  `email_min_score` recalibration (with its `reeval_below` coupling), and the description-prose rate
-  measurement that would reopen F decision 5 and give `rate:` a consumer.
+  ~~`email_min_score` recalibration (with its `reeval_below` coupling)~~ — **settled 2026-07-31 at 5**,
+  see the annotation on the flag above; the `reeval_below` half of it was dissolved separately by
+  [#45](https://github.com/marcosfsousa/agentic-job-hunter/issues/45) — and the description-prose rate
+  measurement that would reopen F decision 5 and give `rate:` a consumer, which **remains open**.

@@ -882,5 +882,51 @@ both were the prompt saying something other than what the run showed. The preced
 its own counter-evidence sitting four bullets below it in the same build-log entry, which is the
 kind of thing an author does not see.
 
-**Still open:** `email_min_score` — now more load-bearing than before, since a −1 band puts more
-rows on the 4/3 boundary that the digest gate sits on (#65's nit, tracked in the roll-up issue).
+**Still open:** #65 left **two** unticked items, not one — this line named only the second and is
+corrected here (the omission was itself a deferred finding, #67's first). They are: (1) the
+`tests/test_config.py` naming nit, where `GERMAN_FIRE_BANDS` is unioned into a class, test name and
+failure message that all say "carve-out", so a dropped fire band reports as a dropped carve-out —
+**still open**; and (2) `email_min_score`, then more load-bearing than before since a −1 band puts
+more rows on the 4/3 boundary the digest gate sits on — **now settled at 5**, see the 2026-07-31
+entry below.
+
+---
+
+## Fix — 2026-07-31 — raise the digest gate to `email_min_score: 5`
+
+**Goal:** Settle the `email_min_score` value, carried unresolved through #44 → #51 → #65 and flagged
+in ADR 0002 as "deliberately not given a number". User decision: raise 4 → 5.
+
+**Changes**
+- `profile.yaml`: `email_min_score: 4` → `5`, with the rationale and the measured numbers written at
+  the value rather than left in a build-log entry nobody diffs against.
+- `tests/test_config.py`: `test_defaults_to_standalone_constant_not_email_min_score` carried a
+  comment asserting "shipped email_min_score is 4 today". This change makes that false, so it is
+  rewritten. Worth noting *why* the test survives unchanged: while the gate sat at 4 it coincided
+  with `DEFAULT_REEVAL_BELOW`, so a still-coupled config would have passed that assert. At 5 the two
+  differ and the assert now discriminates on the shipped profile alone — the change strengthens the
+  test it invalidated the comment on.
+- `docs/adr/0002-freelance-profile-schema.md`: annotated in place, per the convention that entry
+  already uses. Both halves of its ⚠️ flag had expired — the `reeval_below` coupling it warns about
+  was dissolved by #45, and the distribution it called unknowable has since been measured twice.
+
+**Evidence — from the recorded runs, not a fresh one**
+- #65's run (2026-07-30, 20 evaluated): `1×8, 2×7, 3×6, 2×5, 6×4, 3×3, 2×2`. A gate at 4 emails 14
+  rows; at 5 it emails 8.
+- #63's run on the same corpus: `1×8, 2×7, 1×6, 6×5, 5×4, 3×3, 2×2`. Gate at 4 emails 15; at 5
+  emails 10.
+- So the raise cuts the emailed set by roughly a third to two-fifths, and in both runs it removes the
+  single largest band. That is the intended direction — the tool exists to return fewer, better
+  matches — and nothing is lost: everything under the gate is still written to the daily digest file.
+- ⚠️ **The recorded #65 distribution sums to 19, not the 20 evaluated.** One row is unaccounted for
+  in the transcription. It cannot change the conclusion (a single row moves either count by one) but
+  the figures above are approximate for that reason, and the gap is noted rather than smoothed over.
+
+**No fresh validation run.** CLAUDE.md's ≥5-listing gate is scoped to changes to the *LLM prompt*;
+this is a delivery threshold read after evaluation, and it cannot move any score. The two runs above
+already measure the distribution it cuts against. A fresh run was also not available here — the
+pipeline needs an API key and the DB survives only in the Actions cache, not locally.
+
+**Deliberately not touched:** `docs/session-state.md` lines 42/50 still record the gate at 4 with a
+2026-04-07 review checkbox. That file is **closed** (2026-07-22) and kept as a historical record of
+the FTE era; CLAUDE.md says not to update it, so it keeps saying what was true when it was written.
