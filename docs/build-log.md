@@ -1169,3 +1169,63 @@ they fail, and they fail for the right reason. A first draft asserted the bare s
 `"Projektsprache: Deutsch und Englisch"`, which **also appears in the precedence paragraph** and
 so would have passed against the pre-#67 prompt while guarding nothing — replaced with the
 band's own sentence. Recording it because it is the vacuity failure #81/#86 keep finding.
+
+## Measurement #89 — 2026-07-31 — do the Python-backend `target_roles` dilute the ranking query?
+
+#89's third deferred item could not be settled by reading the code — the review said so
+explicitly: it needs "a ranking-quality measurement, not an edit". So it was measured. The
+same instrument answers the `top_n` question #88 left open, which is why they were run together.
+
+**Method.** One live freelancermap fetch at production defaults (`max_results=250`, 9 queries),
+cached to disk so both arms score a byte-identical corpus: `132 fetched -> 128 dedup -> 58
+filtered`, reproducing #88's funnel exactly. Job vectors do not depend on the profile, so they
+are encoded once and dotted against both profile query vectors — which is what `rank_jobs` does
+with `feedback_docs=None`, the production state today (`jobscout.db` is empty, so there is no
+feedback centroid to blend). DB-free throughout: the run must not mark today's listings seen and
+starve the scheduled run.
+
+- **A** — `target_roles` as shipped by #88 (10 titles)
+- **B** — the three Python-backend titles removed (7 titles, the pre-#88 ML-only list)
+
+**Result — the titles move the query, barely, and the swap they cause is inside the noise.**
+
+```
+cosine(query_A, query_B)      0.9931
+top-25 membership             22/25 identical
+rank shift A->B               mean 2.14, max 7, 13/58 unmoved
+plateau at the cut  A         rank25 0.86890 / rank26 0.86833   gap +0.00057
+                    B         rank25 0.86842 / rank26 0.86789   gap +0.00052
+```
+
+The 3 listings the backend titles pull INTO the top 25 (`Senior Python Engineer | CAD, 3D
+Geometry`, `Data Engineer - Machine Learning`, `Freelance Instructor GenAI`) displace 3 that are
+better fits on their face (`AI Engineer (m/w/d) - Intelligente Suche`, `KI Entwickler`, `Senior
+AI Platform Engineer`). So the finding is **real, and the direction is against intent** — the CAD
+listing is exactly the classical-ML shape `deprioritise` then penalises.
+
+But all six sit between cosine 0.866 and 0.874, in a plateau where adjacent ranks differ by
+~0.0005. Which three survive the cut there is not a judgement the ranking is making.
+
+**Disposition: `target_roles` unchanged, and the rank cut is the actual lever.** At `top_n: 30`
+all six swapped listings are evaluated and the trade disappears entirely — without giving up the
+backend-titled contract postings the titles were added to reach. Removing the titles would fix
+the symptom by discarding the coverage.
+
+**The `top_n` evidence, from the same run.** #88 observed the cut lands mid-plateau; this locates
+where it should land instead. Largest gaps in the ranks 10–45 window:
+
+```
+after rank 43   +0.00519        after rank 30   +0.00382
+after rank 10   +0.00471        after rank 40   +0.00298
+after rank 13   +0.00412        after rank 25   +0.00057  <- where the cut is now
+```
+
+Rank 30 is a real break — **6.7x the gap the cut currently sits on** — and costs 5 more Haiku
+calls. Rank 43 is the largest break in the window but evaluates 43 of 58 survivors, which is most
+of the pool and stops being a rank cut in any meaningful sense. Filed separately: it is a
+`config.py` change with no prompt-validation gate, and it should not ride a prompt PR.
+
+**Caveat worth keeping.** `require_any_keyword` still gates the pool before ranking ever runs, so
+backend-titled rows only reach the query if they also mention ML/AI/LLM. This measurement bounds
+what the titles do to *ranking*; it says nothing about what they do to *reach*, which is a
+hard-filter question and a different instrument.

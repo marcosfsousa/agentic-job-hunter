@@ -49,6 +49,21 @@ deprioritise:
     to write code), while the Aufgaben themselves contain no model, prompt, retrieval,
     evaluation or agent work"
 
+# Feeds BOTH the ranking query (_build_profile_text) and the eval prompt (build_prompt),
+# so a title added for reach also moves the query vector. #89 asked whether the three
+# Python-backend titles below dilute it. MEASURED (2026-07-31, 58-listing live pool,
+# production defaults) rather than argued, because the finding could not be settled by
+# reading: with the three titles removed the query vector moves only 0.9931 cosine, and
+# 22 of the top 25 are the same listings. The 3 that swap all sit inside the 0.866–0.874
+# plateau, where adjacent ranks differ by ~0.0005 — so WHICH 25 you get there is noise,
+# not a preference the ranking is expressing.
+#
+# Kept, deliberately. The swap is not free — the titles pull in a CAD/3D "Senior Python
+# Engineer" and a "Data Engineer - ML" while pushing out an "AI Engineer (Intelligente
+# Suche)" and a "KI Entwickler" — but the fix for that is the rank cut, not the titles:
+# at top_n 30 all six of the swapped listings are evaluated and the trade disappears.
+# Removing the titles would also cost the backend-titled contract postings they exist to
+# reach, which is the coverage #88 added them for. See the top_n issue.
 target_roles:
   - "ML Engineer"
   - "AI Engineer"
