@@ -4,6 +4,11 @@
 # is where this file is maintained. Below the constants block it is that file
 # verbatim — fixes belong there first, or they are lost on the next copy.
 #
+# Copied at upstream 130a56a5 (2026-07-31). Diff this file against that
+# commit's template before re-copying: the two per-repo edits below are the only
+# divergences, and the sha is here so the next copy has a base to diff from
+# rather than eyeballing 1,100 lines.
+#
 # The `main` ruleset this reads was applied to this repo on 2026-07-30.
 
 """
@@ -58,7 +63,7 @@ whatever manifest CI installs — and if CI installs the deploy manifest unchang
 (it should), that means a dependency in the serving image for the benefit of one
 test. The job header is a fixed, shallow shape.
 
-Two details the shape depends on:
+Three details the shape depends on:
 
 **A job's check context is its ``name:``, or its job id when it has none.** The
 parser falls back the same way GitHub does, so a job that loses its ``name:``
@@ -66,6 +71,15 @@ fails here as a rename rather than vanishing from the comparison.
 
 **``#`` opens a comment only at line start or after whitespace**, per YAML, so a
 value is truncated on that pattern and not on every ``#``.
+
+**A context GitHub composes is refused, not guessed.** A matrix job reports one
+suffixed check per combination and a reusable-workflow job reports
+``caller / called``; neither is derivable from this file, and both would produce
+a required context nothing reports. ``_job_contexts`` stops on them, which turns
+the pending-forever failure into a red suite — the same trade ``_scalar`` makes
+for a block scalar. The cost is that a repo whose gate is a matrix cannot use
+this guard unmodified, which is the right way round: it fails at the point the
+assumption breaks rather than the day someone opens a pull request.
 
 The same parser exists in ``scripts/bootstrap-repo.py`` in the baseline repo,
 which uses it for ``--checks-from``. The duplication is deliberate: this file
@@ -196,6 +210,31 @@ def _job_contexts(workflow: Path) -> dict[str, str]:
     Job ids sit at two spaces under ``jobs:`` and a job-level ``name:`` at four.
     Step names are ``- name:`` at six and are therefore excluded structurally,
     not by pattern — see ``test_step_names_are_not_collected``.
+
+    **A job key is recognised by its shape before its id is read**, so a key this
+    cannot vouch for stops the parse instead of being skipped. Skipping was two
+    silent wrongs from one comment: ``pytest:  # the gate`` failed the
+    end-of-line anchor, so the job vanished from the equality *and* the ``name:``
+    beneath it was recorded against the job above — reporting a rename on a job
+    nobody touched.
+
+    **A job whose context GitHub composes is refused**, for the same reason
+    ``_scalar`` refuses a block scalar: it cannot be derived from this file, and
+    deriving the wrong one is precisely the silent failure this guard exists to
+    prevent. Two shapes compose:
+
+    ``strategy.matrix``
+        One check per combination, suffixed — ``pytest (3.11)``, not ``pytest``.
+        The values may come from ``fromJSON`` and need not appear in the file at
+        all, so there is no shape to read even in principle.
+
+    ``uses:`` (a reusable workflow)
+        The context is ``caller / called``, and the called job's name lives in
+        the other file.
+
+    Both are refused rather than guessed at because both fail the same way when
+    guessed wrong: a required context nothing reports, and a pull request that
+    sits pending rather than red.
     """
     contexts: dict[str, str] = {}
     lines = workflow.read_text(encoding="utf-8").splitlines()
@@ -205,18 +244,71 @@ def _job_contexts(workflow: Path) -> dict[str, str]:
     except StopIteration:  # pragma: no cover - asserted directly below
         return contexts
 
+    def _refuse(job: str, what: str, fix: str) -> None:
+        raise ValueError(
+            f"{workflow}, job {job!r}: {what}, so the check it reports is not "
+            f"the job id or its `name:`.\nThis parser will not guess at a "
+            f"composed context. {fix}"
+        )
+
     current: str | None = None
+    strategy_of: str | None = None  # the job whose `strategy:` we are inside
     for line in lines[start + 1:]:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         # A non-indented key ends the jobs block.
         if not line.startswith(" "):
             break
-        job = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
-        if job:
-            current = job.group(1)
+        # Matched on the key *shape* — two spaces, then anything up to a colon —
+        # rather than on the id charset, so an id this cannot read is refused
+        # below instead of falling through to the `name:` branch with `current`
+        # still naming the previous job.
+        key = re.match(r"^  (\S[^:]*):(.*)$", line)
+        if key:
+            job_id, trailing = key.group(1), _strip_comment(key.group(2))
+            if trailing:
+                # A job id maps to a block, so anything left after the comment is
+                # stripped is not a job at all.
+                raise ValueError(
+                    f"{workflow}: `{job_id}:` sits where a job id belongs but "
+                    f"carries the value {trailing!r}.\nA job maps to a block. "
+                    "This parser stops rather than attributing the keys below it "
+                    "to the job above."
+                )
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", job_id):
+                raise ValueError(
+                    f"{workflow}: {job_id!r} is not a job id this parser can "
+                    "read.\nGitHub allows letters, digits, `-` and `_`. Anything "
+                    "else stops the parse rather than leaving the keys below it "
+                    "attributed to the job above."
+                )
+            current = job_id
+            strategy_of = None
             contexts[current] = current  # the id is the context until a name says otherwise
             continue
+        if current is None:
+            continue
+        # `uses:` at four spaces is a reusable-workflow call; a step's is `- uses:`
+        # at six and does not match.
+        if re.match(r"^    uses\s*:", line):
+            _refuse(
+                current,
+                "calls a reusable workflow, so GitHub reports it as "
+                "`caller / called`",
+                "Require that context explicitly, or inline the job.",
+            )
+        if re.match(r"^    strategy\s*:", line):
+            strategy_of = current
+            continue
+        if re.match(r"^    \S", line):
+            strategy_of = None  # a sibling key ended the strategy block
+        if strategy_of == current and re.match(r"^      matrix\s*:", line):
+            _refuse(
+                current,
+                "is a matrix job, so GitHub reports one suffixed check per "
+                f"combination (`{current} (3.11)`) and none named `{current}`",
+                "Require each combination explicitly, or drop the matrix.",
+            )
         name = re.match(r"^    name:\s*(.+)$", line)
         if name and current:
             # A refusal propagates and fails the suite, naming the job. That is
@@ -233,11 +325,69 @@ def _job_contexts(workflow: Path) -> dict[str, str]:
     return contexts
 
 
+# The event-level keys that decide whether a workflow reports on a given push or
+# pull request.
+#
+# `tags`/`tags-ignore` are absent deliberately: a tag filter does not change
+# whether a *branch* is covered, which is the only question here.
+#
+# Longest-first is a habit here, not a requirement, and it was worth checking
+# rather than asserting: the alternation is first-match-wins, so `branches` tried
+# against `branches-ignore:` does match — and then the `:` that follows the group
+# fails against the `-`, the engine backtracks into the alternation, and
+# `branches-ignore` wins on the retry. Both orders classify all four keys
+# identically. The order would begin to matter if the group were ever matched
+# without that anchor after it, which is the only reason to leave it this way.
+_FILTER_KEYS = ("branches-ignore", "branches", "paths-ignore", "paths")
+
+# The top-level `on:` key. The key itself may be quoted: YAML 1.1 reads a bare
+# `on` as the boolean true, and a repo bitten by that writes `"on":` instead.
+_ON_KEY = re.compile(r"^[\"']?on[\"']?\s*:\s*(.*)$")
+
+# An event under a block `on:`. What follows the colon is captured rather than
+# required to be empty — an event written inline is still an event, and saying
+# so is the difference between "unreadable" and "absent".
+_EVENT_KEY = re.compile(r"^  [\"']?([A-Za-z_]+)[\"']?\s*:\s*(.*)$")
+
+# A commented-out event key: at the event indent, and a bare key with nothing
+# after the colon. Deliberately not every comment — see `_trigger_branches`.
+_COMMENTED_EVENT = re.compile(r"^  #+\s*[\"']?[A-Za-z_]+[\"']?\s*:\s*$")
+
+
+def _on_shorthand(value: str) -> dict[str, list[str] | None]:
+    """
+    ``{event: None}`` for the two shorthand forms of ``on:``.
+
+    ``on: [push, pull_request]`` and ``on: push`` name their events and carry no
+    filter — and here that is *provable* rather than lenient, which is why they
+    resolve to ``None`` and pass rather than to ``[]`` and fail. Neither
+    shorthand has anywhere to put a branch filter; the syntax that would express
+    one is the block form.
+
+    Anything else is refused. The shape that matters is the flow mapping,
+    ``on: {pull_request: {branches: [main]}}``, which *can* carry a filter: it
+    would have to be read out of nested braces by a parser that stops at
+    indentation, and a filter this failed to see would read as absent and pass.
+    """
+    if re.fullmatch(r"\[(.*)\]", value):
+        names = [item.strip().strip("'\"") for item in value[1:-1].split(",") if item.strip()]
+    else:
+        names = [value.strip("'\"")]
+
+    if not names or any(not re.fullmatch(r"[A-Za-z_]+", name) for name in names):
+        raise ValueError(
+            f"`on:` is written as {value!r}, which this parser does not read.\n"
+            "The shorthands `on: push` and `on: [push, pull_request]` are read, "
+            "because neither can carry a branch filter. A flow mapping can, so "
+            "it is refused rather than guessed at — write `on:` as a block."
+        )
+    return {name: None for name in names}
+
+
 def _trigger_branches(workflow: Path) -> dict[str, list[str] | None]:
     """
     ``{event: branch filter}`` from the workflow's ``on:`` block, where ``None``
-    means the event declares no ``branches:`` filter and therefore fires on every
-    branch.
+    means the event declares no filter at all and therefore always reports.
 
     **``None`` and ``[]`` are different answers**, and collapsing them was a bug.
     An event with no filter covers the protected branch by covering everything;
@@ -248,50 +398,128 @@ def _trigger_branches(workflow: Path) -> dict[str, list[str] | None]:
     correctly configured repo. That direction is not the safe one it looks like:
     a guard that cries wolf on a good config is a guard someone deletes.
 
-    Only the inline form (``branches: [main]``) is read. A block list still
-    parses as ``[]`` and fails the assertion rather than passing it — the wrong
-    direction to be lenient in, given what the check is for.
+    Only the inline form (``branches: [main]``) is read. A block list parses as
+    ``[]`` and fails the assertion rather than passing it — the wrong direction
+    to be lenient in, given what the check is for. So does ``branches-ignore``,
+    and so does any ``paths``/``paths-ignore``: a path-filtered workflow does not
+    run on a pull request that touches nothing it lists, so its checks never
+    report, which is the same pending-forever failure reached from one key over.
 
-    ``branches-ignore`` is recorded as ``[]`` for that same reason. It is a
-    filter this does not evaluate, so it cannot show the protected branch
-    survives it, and it must not reach the unfiltered pass above by being
-    mistaken for "no filter at all".
+    **The recogniser below is the safety-critical part**, and deliberately
+    tolerant about where the key sits and how it is written. It is what decides
+    between "no filter" and "a filter I cannot read" — so a filter it fails to
+    *see* reads as absent, and absent passes. Matching one exact indent was not
+    enough: ``branches: [develop]`` at three or six spaces, under a quoted key,
+    or with a space before the colon, all parsed as unfiltered and passed this
+    assertion on a workflow that never reports on the protected branch at all.
+    Those shapes are ordinary YAML, and before ``None`` existed they all failed
+    closed, so narrow recognition turned five safe cases into silent ones.
+
+    The residual risk is stated rather than papered over: a filter written in a
+    shape this still cannot see — YAML's explicit-key form, say — reads as
+    absent and passes. That is the cost of ``None`` existing at all. It is
+    bounded by the filter names being a closed, stable set, and it is why they
+    are matched by *name* at any indent rather than by position.
+
+    **The shapes ``on:`` itself takes are read, not skipped.** ``on: push`` and
+    ``on: [push, pull_request]`` resolve to their events with no filter;
+    ``on: {…}`` is refused; ``"on":`` is the same key as ``on:``. All of them
+    used to fall through a search for a bare ``on:`` line, leaving it empty and
+    the guard reporting that the workflow "declares no ``on.pull_request``
+    trigger at all" — a true-sounding message that sends the reader to add a
+    trigger the file already has. An event written inline
+    (``pull_request: {branches: [main]}``) is registered and marked unproven for
+    the same reason: absent and unreadable are different answers, and the message
+    a person reads has to say which one this is.
+
+    **A commented-out event key ends the event it commented out.** Anything left
+    indented under it is orphaned, and reading those keys as the *previous*
+    event's filter is how a workflow filtered to ``develop`` reported ``main``
+    and passed — the misattribution is silent when the commented event is not one
+    of the two asserted below. Only a comment at the event indent whose content
+    is a bare key counts, so a note above a filter is left alone. The residual is
+    a comment of exactly that shape — ``  # TODO:`` — sitting between an event
+    and its filter, which hides the filter and reads as unfiltered.
     """
-    branches: dict[str, list[str] | None] = {}
+    filters: dict[str, list[str] | None] = {}
+    unproven: set[str] = set()
     lines = workflow.read_text(encoding="utf-8").splitlines()
 
-    try:
-        start = next(i for i, line in enumerate(lines) if line.rstrip() == "on:")
-    except StopIteration:  # pragma: no cover - asserted directly below
-        return branches
+    header = start = None
+    for index, line in enumerate(lines):
+        if not line.startswith((" ", "\t")):
+            header = _ON_KEY.match(line)
+            if header:
+                start = index
+                break
+    if header is None:  # pragma: no cover - asserted directly below
+        return filters
+
+    shorthand = _strip_comment(header.group(1))
+    if shorthand:
+        # A refusal propagates and fails the suite, as it does for a `name:`
+        # this cannot read: an `on:` block this cannot read is a filter it cannot
+        # check, and passing would mean vouching for one it never saw.
+        try:
+            return _on_shorthand(shorthand)
+        except ValueError as exc:
+            raise ValueError(f"{workflow}: {exc}") from None
+
+    key_pattern = re.compile(
+        r"^\s{3,}[\"']?(" + "|".join(_FILTER_KEYS) + r")[\"']?\s*:\s*(.*)$"
+    )
 
     current: str | None = None
     for line in lines[start + 1:]:
-        if not line.strip() or line.lstrip().startswith("#"):
+        if not line.strip():
+            continue
+        if line.lstrip().startswith("#"):
+            # Forgetting the current event is the whole of the fix: the keys
+            # below a commented-out one belong to nothing, and attributing them
+            # to the event above is worse than dropping them, because the event
+            # above is real and its filter is then reported as something it is
+            # not.
+            if _COMMENTED_EVENT.match(line):
+                current = None
             continue
         if not line.startswith(" "):
             break
-        event = re.match(r"^  ([A-Za-z_]+):\s*$", line)
+        event = _EVENT_KEY.match(line)
         if event:
             current = event.group(1)
-            branches.setdefault(current, None)  # no filter seen yet
+            filters.setdefault(current, None)  # no filter seen yet
+            # `pull_request:` and `pull_request: null` are the same event with
+            # no filters — the null tokens as `_scalar` reads them. Anything
+            # else after the colon is a value this does not parse, most likely a
+            # flow mapping, and an event whose filter cannot be read is unproven
+            # rather than unfiltered.
+            inline_value = _strip_comment(event.group(2))
+            if inline_value and inline_value not in ("~", "null", "Null", "NULL"):
+                unproven.add(current)
             continue
-        if not current:
+        if current is None:
             continue
-        listed = re.match(r"^    branches:\s*\[(.*)\]\s*$", line)
-        if listed:
-            branches[current] = [
+        key = key_pattern.match(line)
+        if not key:
+            continue
+        name, value = key.group(1), _strip_comment(key.group(2))
+        inline = re.fullmatch(r"\[(.*)\]", value)
+        if name == "branches" and inline:
+            filters[current] = [
                 item.strip().strip("'\"")
-                for item in listed.group(1).split(",")
+                for item in inline.group(1).split(",")
                 if item.strip()
             ]
             continue
-        # A `branches:` this cannot read, or a `branches-ignore:` it will not
-        # evaluate. Either way a filter is present and unproven, which is not the
-        # same as absent — so it must not stay `None`.
-        if re.match(r"^    branches(?:-ignore)?:", line):
-            branches[current] = []
-    return branches
+        # `branches-ignore`, a path filter, or a `branches:` whose value is on
+        # the lines below. None of them can be shown to leave the protected
+        # branch covered, so the event is unproven rather than unfiltered.
+        unproven.add(current)
+
+    # `[]` wins over any list read for the same event, whatever the line order.
+    # An event carrying both `branches: [main]` and `paths-ignore:` is filtered
+    # by both, and the half this can read must not vouch for the half it cannot.
+    return {event: ([] if event in unproven else v) for event, v in filters.items()}
 
 
 # ── Reading the ruleset ───────────────────────────────────────────────────────
@@ -324,9 +552,16 @@ class TestEveryRequiredCheckExists:
             + f"\n\nJobs currently report: {sorted(contexts)}\n\n"
             "A required check that never arrives leaves the pull request "
             "pending, not red — the rule reads as protection while applying to "
-            "nothing. If a job was renamed, rename the context in the ruleset "
-            "to match and re-apply it; the committed file is not what GitHub "
-            "enforces until it is written through the API."
+            "nothing.\n\n"
+            f"This reads {_WORKFLOW.name} and nothing else, so there are two "
+            "ways to get here. If the context names a job that used to be in "
+            "that file, it was renamed: rename the context in the ruleset to "
+            "match and re-apply it — the committed file is not what GitHub "
+            "enforces until it is written through the API. If it names a job in "
+            "another workflow, nothing is renamed and the ruleset may be right; "
+            f"point _WORKFLOW at that file, or require only checks {_WORKFLOW.name} "
+            "reports. Requiring a check from a workflow this does not read means "
+            "no test can tell you when that one is renamed."
         )
 
 
@@ -586,6 +821,94 @@ class TestGuardIsNotVacuous:
             "unnamed": "unnamed",
         }
 
+    def test_a_job_key_with_a_trailing_comment_is_still_a_job(self, tmp_path):
+        # The end-of-line anchor this used to carry dropped the job from the
+        # equality and left `current` naming the job above, so the `name:` below
+        # was recorded against *that* job — a rename reported on a job nobody
+        # touched, from one comment on one line.
+        workflow = tmp_path / "w.yml"
+        workflow.write_text(
+            "jobs:\n"
+            "  first:\n"
+            "    name: The first job\n"
+            "  gate:  # the one that blocks a merge\n"
+            "    name: The gate\n",
+            encoding="utf-8",
+        )
+        assert _job_contexts(workflow) == {
+            "first": "The first job",
+            "gate": "The gate",
+        }
+
+    def test_a_job_key_this_parser_cannot_read_stops_it(self, tmp_path):
+        # Fails closed rather than skipping. A skipped key leaves `current`
+        # pointed at the previous job, so the next `name:` silently overwrites a
+        # context that was correct — worse than not parsing at all.
+        for key in ('  "quoted id":', "  has spaces:", "  value: here"):
+            workflow = tmp_path / "w.yml"
+            workflow.write_text(
+                f"jobs:\n  first:\n    name: The first job\n{key}\n"
+                "    name: Not the first job\n",
+                encoding="utf-8",
+            )
+            with pytest.raises(ValueError):
+                _job_contexts(workflow)
+
+    def test_a_matrix_job_is_refused(self, tmp_path):
+        # GitHub reports `pytest (3.11)`, never `pytest`. Deriving `pytest` gives
+        # a required context nothing reports, which leaves the pull request
+        # pending rather than red — silent, and the reason this stops instead.
+        workflow = tmp_path / "w.yml"
+        workflow.write_text(
+            "jobs:\n"
+            "  pytest:\n"
+            "    strategy:\n"
+            "      matrix:\n"
+            "        python-version: ['3.11', '3.12']\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="matrix job"):
+            _job_contexts(workflow)
+
+    def test_a_strategy_without_a_matrix_is_not_refused(self, tmp_path):
+        # `fail-fast` on its own does not compose the context, so refusing here
+        # would fail a correct workflow — the direction that gets a guard deleted.
+        workflow = tmp_path / "w.yml"
+        workflow.write_text(
+            "jobs:\n"
+            "  pytest:\n"
+            "    strategy:\n"
+            "      fail-fast: false\n"
+            "    name: The gate\n",
+            encoding="utf-8",
+        )
+        assert _job_contexts(workflow) == {"pytest": "The gate"}
+
+    def test_a_reusable_workflow_job_is_refused(self, tmp_path):
+        # The context is `caller / called` and the called name is in the other
+        # file, so there is nothing here to read even in principle.
+        workflow = tmp_path / "w.yml"
+        workflow.write_text(
+            "jobs:\n  build:\n    uses: ./.github/workflows/shared.yml\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="reusable workflow"):
+            _job_contexts(workflow)
+
+    def test_a_step_that_uses_an_action_is_not_a_reusable_workflow(self, tmp_path):
+        # `- uses:` at six spaces is a step. Matching it would refuse nearly every
+        # real workflow, so the distinction is structural and asserted directly.
+        workflow = tmp_path / "w.yml"
+        workflow.write_text(
+            "jobs:\n"
+            "  build:\n"
+            "    name: The gate\n"
+            "    steps:\n"
+            "      - uses: actions/checkout@v4\n",
+            encoding="utf-8",
+        )
+        assert _job_contexts(workflow) == {"build": "The gate"}
+
     def test_a_hash_inside_quotes_is_not_a_comment(self):
         # `#` opens a comment only outside quotes. Truncating here would derive
         # `Build` for a job reporting `Build #1`, and a required check nothing
@@ -643,9 +966,11 @@ class TestGuardIsNotVacuous:
 
     def test_filters_this_parser_cannot_read_fail_closed(self, tmp_path):
         # The other half, and the reason the case above is not simply lenient. A
-        # block list and a `branches-ignore` both leave the protected branch
-        # unproven, so they must read as `[]` and fail — never as `None`, which
-        # now passes.
+        # block list, a `branches-ignore` and a path filter all leave the
+        # protected branch unproven, so they must read as `[]` and fail — never
+        # as `None`, which now passes. The path filter belongs here because a
+        # workflow that skips a pull request reports no check on it, and a
+        # required check that never reports is the failure this file is for.
         workflow = tmp_path / "w.yml"
         workflow.write_text(
             "on:\n"
@@ -654,10 +979,124 @@ class TestGuardIsNotVacuous:
             "      - main\n"
             "  push:\n"
             "    branches-ignore: [main]\n"
+            "  workflow_run:\n"
+            "    paths-ignore: ['**/*.md']\n"
             "jobs:\n",
             encoding="utf-8",
         )
-        assert _trigger_branches(workflow) == {"pull_request": [], "push": []}
+        assert _trigger_branches(workflow) == {
+            "pull_request": [], "push": [], "workflow_run": [],
+        }
+
+    def test_a_filter_written_oddly_is_still_seen(self, tmp_path):
+        # Regression test, and the reason the recogniser matches by name at any
+        # indent. Every shape here is ordinary YAML naming `develop`, and every
+        # one of them parsed as `None` — unfiltered, therefore covered — when the
+        # key was matched at one exact indent. The guard passed while CI never
+        # reported on the protected branch, which is precisely the silent failure
+        # it exists to prevent, introduced by the fix for the noisy one.
+        shapes = {
+            "six spaces":      "      branches: [develop]",
+            "three spaces":    "   branches: [develop]",
+            "quoted key":      '    "branches": [develop]',
+            "space before :":  "    branches : [develop]",
+            "trailing comment": "    branches: [develop]  # only the pivot",
+        }
+        for label, filter_line in shapes.items():
+            workflow = tmp_path / f"{label.replace(' ', '-')}.yml"
+            workflow.write_text(
+                f"on:\n  pull_request:\n{filter_line}\njobs:\n", encoding="utf-8"
+            )
+            assert _trigger_branches(workflow) == {"pull_request": ["develop"]}, label
+
+    def test_the_shorthand_forms_of_on_are_read(self, tmp_path):
+        # Neither shorthand can carry a branch filter, so `None` here is proved
+        # rather than assumed. Skipping them instead reported "declares no
+        # `on.pull_request` trigger at all" on a workflow that declares one —
+        # the reader is then sent to add a trigger that is already there, and
+        # the guard is the thing that is wrong.
+        shapes = {
+            "on: [push, pull_request]\njobs:\n": {"push": None, "pull_request": None},
+            "on: pull_request\njobs:\n": {"pull_request": None},
+            '"on": [pull_request]\njobs:\n': {"pull_request": None},
+            "on: [push]  # everything\njobs:\n": {"push": None},
+        }
+        for text, expected in shapes.items():
+            workflow = tmp_path / "w.yml"
+            workflow.write_text(text, encoding="utf-8")
+            assert _trigger_branches(workflow) == expected, text
+
+    def test_an_on_block_this_parser_cannot_read_is_refused(self, tmp_path):
+        # A flow mapping is the one shorthand that *can* carry a filter, so it
+        # is the one that must not be guessed at. Loud, like a block-scalar
+        # `name:`: silently reading no filter out of a workflow that has one is
+        # exactly the fail-open direction `None` opened up.
+        workflow = tmp_path / "w.yml"
+        workflow.write_text(
+            "on: {pull_request: {branches: [develop]}}\njobs:\n", encoding="utf-8"
+        )
+        with pytest.raises(ValueError):
+            _trigger_branches(workflow)
+
+    def test_an_event_written_inline_is_unproven_rather_than_absent(self, tmp_path):
+        # One level down from the case above and the same distinction: the event
+        # is declared, so reporting it missing is false. It is its filter that
+        # cannot be read, which is `[]` — the answer that fails.
+        workflow = tmp_path / "w.yml"
+        workflow.write_text(
+            "on:\n"
+            "  pull_request: {branches: [main]}\n"
+            "  push:  # nothing after the colon is still no filter\n"
+            "  schedule: null\n"
+            "jobs:\n",
+            encoding="utf-8",
+        )
+        assert _trigger_branches(workflow) == {
+            "pull_request": [], "push": None, "schedule": None,
+        }
+
+    def test_a_commented_out_event_does_not_lend_its_filter_to_the_one_above(self, tmp_path):
+        # The keys under a commented-out event are orphaned. Attributing them to
+        # the event above reported `pull_request` as filtered to `main` when its
+        # own filter says `develop` — and passed. The commented event is absent
+        # either way; what this fixes is the answer given for the live one.
+        workflow = tmp_path / "w.yml"
+        workflow.write_text(
+            "on:\n"
+            "  pull_request:\n"
+            "    branches: [develop]\n"
+            "  # workflow_run:\n"
+            "    branches: [main]\n"
+            "jobs:\n",
+            encoding="utf-8",
+        )
+        assert _trigger_branches(workflow) == {"pull_request": ["develop"]}
+
+    def test_an_ordinary_comment_does_not_end_the_event(self, tmp_path):
+        # The other half: only a bare key at the event indent counts. A note
+        # above a filter, or one carrying a sentence, must leave the filter
+        # attached — dropping it would read as unfiltered, which passes.
+        for note in ("    # only the pivot", "  # TODO: restore the other one"):
+            workflow = tmp_path / "w.yml"
+            workflow.write_text(
+                f"on:\n  pull_request:\n{note}\n    branches: [main]\njobs:\n",
+                encoding="utf-8",
+            )
+            assert _trigger_branches(workflow) == {"pull_request": ["main"]}, note
+
+    def test_an_unreadable_filter_beats_a_readable_one_on_the_same_event(self, tmp_path):
+        # Order-independence, asserted in both directions. An event filtered by
+        # branch *and* by path is gated by both, so the half this can read must
+        # not vouch for the half it cannot — whichever line comes first.
+        for first, second in (
+            ("    branches: [main]", "    paths-ignore: ['docs/**']"),
+            ("    paths-ignore: ['docs/**']", "    branches: [main]"),
+        ):
+            workflow = tmp_path / "w.yml"
+            workflow.write_text(
+                f"on:\n  pull_request:\n{first}\n{second}\njobs:\n", encoding="utf-8"
+            )
+            assert _trigger_branches(workflow) == {"pull_request": []}, first
 
     def test_keys_after_the_jobs_block_are_not_jobs(self, tmp_path):
         # Asserted separately because a parser that walked to EOF would still
