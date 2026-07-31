@@ -973,3 +973,54 @@ deleted header trips the vacuity check. `tests/test_required_checks.py` is not e
 it is not this repo's to edit.
 
 Suite: 379 → 382 passing.
+
+## Fix — 2026-07-31 — re-copy the guard at upstream `ae78c6b3`
+
+`gh-repo-baseline` PR #14 merged the same day, moving the template from `130a56a5` to
+`ae78c6b3` and growing it 1099 → 1290 lines. This is the re-copy, plus the pin update that
+has to travel with it.
+
+**First live exercise of `TestTheCopiedGuardWasNotEdited`**, added in #79 about an hour
+earlier. It went red on the re-copy exactly as designed — the hash it pins is a hash of the
+old body — and its failure message is what specified the commit's contents: header sha,
+`_GUARD_UPSTREAM_SHA`, `_GUARD_BODY_SHA256`, together, in one commit. The mechanism worked
+on the first occasion it could have failed to.
+
+**Procedure** (from #81 § C, which exists because this is easy to get subtly wrong):
+
+1. Verified the pre-copy file differed from the template at `130a56a5` by exactly the two
+   documented per-repo edits — so the header's claim was still true at the moment it was
+   relied on, rather than assumed.
+2. Re-copied from `ae78c6b3`, reapplying `_WORKFLOW` → `tests.yml` and the `"Tests"`
+   assertion in `test_step_names_are_not_collected`.
+3. Verified the result differs from `ae78c6b3` by exactly those two edits, same shape.
+
+**A bug worth recording, because the second attempt only exists because of it.** The first
+attempt lifted each per-repo edit by walking back over the contiguous comment lines above
+its anchor in the live file. That over-captures: one of those comment lines was
+*template-owned*, present in the new template too, so the copy ended up with it twice. The
+fix is to compute the per-repo delta against the **old** template — our comments minus the
+ones the template already carried above the same anchor — and to assert afterwards that
+every line of the result is either in the new template or is per-repo, and that no per-repo
+comment appears twice. Lifting the edits programmatically rather than retyping them is what
+made the duplicate visible in a diff instead of shipping.
+
+**What the re-copy actually resolved,** checked against the new file rather than inferred
+from upstream PR titles (#81 § C step 4 asks for exactly this, and the answer differs from
+what the titles suggest):
+
+- `_COMMENTED_EVENT:trailing-note-and-indent` — **half.** The trailing-note half is fixed:
+  the regex lost its `\s*$` so `# workflow_run:  # off for now` is now recognised. The
+  indent half is not — `_COMMENTED_EVENT` and `_EVENT_KEY` still hardcode `^  ` (two
+  spaces). That is upstream #13's job and it is still open.
+- `_job_contexts:matrix-refusal-one-indent` — **not resolved.** Still
+  `re.match(r"^      matrix\s*:", line)`: one hardcoded indent, no quoted keys, no inline
+  flow mappings.
+- `_trigger_branches:filter-name-any-depth` — **resolved, but not the way the item asked.**
+  The item wanted the filter name bound to the event's own indent level; upstream did the
+  opposite, matching filter names at any indent ≥ 3 (`^\s{3,}`), bounded by the filter names
+  being a closed, stable set, with the residual stated in the docstring. The underlying
+  defect — a filter at an unexpected indent parsing as *unfiltered* and passing — is gone.
+
+Suite: 382 → 387. The five net-new tests are the template's own and pass against this
+repo's `tests.yml` unchanged.
