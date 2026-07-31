@@ -240,12 +240,12 @@ _GUARD = Path(__file__).resolve().parent / "test_required_checks.py"
 # The upstream commit the guard was copied from, as its own header records it.
 # Pinned here as well as there so the two cannot drift apart: a re-copy has to
 # touch the header, this constant, and the hash below, in one commit.
-_GUARD_UPSTREAM_SHA = "130a56a5"
+_GUARD_UPSTREAM_SHA = "ae78c6b3"
 
-# sha256 of the guard below its header, newlines normalised to \n. Recorded at
-# the re-copy in #75. Read TestTheCopiedGuardWasNotEdited before changing it —
-# in particular, what it does and does not prove.
-_GUARD_BODY_SHA256 = "25b4d86250da7eedd42a7e0bc09a4be0c551732a916fac145d23d9163186e6ff"
+# sha256 of the guard below its header, newlines normalised to \n. Read
+# TestTheCopiedGuardWasNotEdited before changing it — in particular, what it
+# does and does not prove.
+_GUARD_BODY_SHA256 = "fcf394ca5d7cf1a220e97123cdb2be2be5472462049984473c7966853782c4e3"
 
 
 def _guard_body() -> str:
