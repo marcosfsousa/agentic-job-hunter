@@ -1036,3 +1036,65 @@ Suite: 382 → 387. The five net-new tests are the template's own and pass uncha
 **not** exercise this repo's `tests.yml`: all five are `tmp_path` unit tests of
 `_trigger_branches` over synthetic workflows. An earlier revision of this line said they
 "pass against this repo's `tests.yml`", which claimed a kind of coverage they do not provide.
+
+## Ops — 2026-07-31 — the daily run is live again, and the first post-pivot digest landed
+
+No code changed. This entry exists because the pipeline had been **silently not running for
+19 days** and nothing in the repo said so.
+
+**The cause was not in the repo.** `daily_run.yml`'s `schedule:` has been armed in the file
+since spec 3 registered the freelancermap adapter (`391aab4`), but the workflow *object* was
+`disabled_manually` at the GitHub level — turned off during spec 1's dark period and never
+clicked back on. The YAML reads as healthy, `git log` shows the re-arm, and CI is green; the
+only place the truth was visible is `gh workflow list --all`. Last scheduled run before today
+was **2026-07-12**, and every run in the history predates the pivot, so the contract-era
+pipeline had never once executed on a schedule.
+
+Two records had gone stale in the way this repo keeps getting caught by:
+
+- Spec 3's closure note in the Wayfinder (#3) said the cron was *"armed but dormant —
+  scheduled workflows fire only from the default branch ... at which point it needs a working
+  API balance for Haiku evaluation"*. Both conditions were discharged (the pivot reached
+  `main` at `v2.0.0`; the balance is funded) but the note still read as an open blocker.
+- Ticket I (#13)'s execution constraint said the cron was *"disabled only at GitHub level →
+  re-arms on fork/click"*. Accurate when written, and precisely the thing nobody clicked.
+
+**Verified end to end** by a `workflow_dispatch` run
+([30656471332](https://github.com/marcosfsousa/agentic-job-hunter/actions/runs/30656471332),
+4m59s, green). Dispatch rather than waiting for the cron was deliberate: `Run tests` is gated
+`if: github.event_name != 'schedule'`, so a dispatch run exercises `pytest` *and* the pipeline,
+whereas the scheduled run tomorrow would have been the first execution of post-pivot code with
+no test gate in front of it.
+
+| Stage | Count |
+|---|---|
+| Ingested (freelancermap) | 75 |
+| After dedup | 74 |
+| After hard filter | 22 |
+| Emailed (`match_score >= 5`) | **8** |
+
+`Digest emailed to *** (id=ded027c1-ad3a-4b6d-af92-cf93c939db1a)` — delivery confirmed in the
+inbox, not merely accepted by Resend. Three things that were assumed are now measured:
+
+- **The Anthropic balance covers Haiku evaluation.** Spec 3 flagged this as an open risk after
+  the credit balance emptied mid-review, noting the OAuth switch covers CI review only and not
+  the pipeline. Evaluation completed, including the re-evaluation pass on 6 listings scoring
+  below `reeval_below: 4`.
+- **`email_min_score: 5` does not starve the digest.** Raised 4 → 5 earlier the same day; 8
+  listings cleared it on the first run at the new gate. The concern recorded in #78 is about
+  the gate's *second* consumer (the `--review` feedback loop), which this does not address.
+- **The apply links work.** Spec 3 found `url` null on 22/22 because the real path is
+  `links.project`, so every FTE-era digest entry linked to the freelancermap homepage. Top
+  match opened the listing directly, no login wall. First confirmation of that fix against a
+  delivered email rather than a fixture.
+
+⚠️ **Expect tomorrow's digest to be much smaller, and do not read that as a break.** Today
+logged `filter_unseen: 75 -> 75` — a cold DB cache, so every listing was new. This run saved
+`jobscout-db-30656471332`, so dedup starts working from tomorrow and only genuinely new
+postings survive. Zero on a quiet day is correct behaviour. The failure mode actually worth
+alarming on is several consecutive green runs logging `Email skipped - no jobs scored >= 5/10`
+while freelancermap is still posting — which is the silent-success shape Q (#23) exists to
+eliminate, and which the raw-ingest floor only catches at the *ingest* end, not the gate end.
+
+Delivery time will drift: the cron is `15 3 * * *` and the observed Actions queue delay has
+historically run 2.5–5.5h, which is what that time was calibrated against.
