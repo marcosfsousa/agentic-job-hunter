@@ -86,8 +86,20 @@ def _the_one_bypass() -> dict:
     other test's job, and duplicating it here made a second grant fail three
     tests instead of one — so the message someone actually read was about the
     role or the mode of an actor that was never the problem.
+
+    The shape is checked before the emptiness for the same reason the emptiness
+    is checked before the index: a truthy non-list — a mapping, say — is truthy,
+    so it would reach ``actors[0]`` and raise ``KeyError`` instead of any of the
+    messages written here. ``test_bypass_actors_is_a_list_that_was_actually_read``
+    owns that failure too, and this points at it rather than crashing on the way.
     """
     actors = _ruleset().get("bypass_actors", [])
+    assert isinstance(actors, list), (
+        f"`bypass_actors` is {actors!r}, not a list, so there is no first actor "
+        "to describe.\nThat shape is "
+        "test_bypass_actors_is_a_list_that_was_actually_read's to report, and its "
+        "message says what to do."
+    )
     assert actors, (
         "The ruleset grants no bypass at all, so there is none for this test to "
         "describe.\nThat is a real change — a tightening — but it is "
