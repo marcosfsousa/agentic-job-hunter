@@ -342,27 +342,45 @@ class TestTheCopiedGuardWasNotEdited:
 
     def test_the_hash_is_taken_over_a_body_and_not_the_whole_file(self):
         # Guards the guard, as upstream's `test_only_the_header_differs` does for
-        # the same seam: if the `\"\"\"` marker ever moved *upwards* — into the
-        # header, where a docstring-like line could appear — the split would
-        # return more of the file than it should, and this class would go on
-        # passing while silently hashing the provenance comment a re-copy is
-        # supposed to rewrite.
+        # the same seam.
         #
-        # A marker that vanished outright is a different failure and is not this
-        # test's: `_guard_body`'s `next()` raises StopIteration, so every test in
-        # the class errors rather than passing vacuously. Loud either way, but by
-        # an unauthored exception rather than by anything written here.
+        # The seam is *slippery*, which is the thing to understand here. It is the
+        # first line equal to `\"\"\"`, and the guard contains several — so deleting
+        # the module docstring's opening quote does not raise: `next()` simply
+        # finds the *closing* one and the body silently starts 70-odd lines lower.
+        # Measured, not reasoned about: with that one line removed, two of this
+        # class's three tests still pass. Only `test_the_guard_body_is_unchanged`
+        # notices, and only because the hash moved.
+        #
+        # (An earlier version of this comment claimed the vanishing case raises
+        # StopIteration and errors every test in the class. It does not, and could
+        # only do so in a file with no other bare `\"\"\"` line at all.)
+        #
+        # So the header assertion below is the one that makes this test earn its
+        # name: the guard's header is entirely `#` comments, and every way the seam
+        # can slip *downwards* drags docstring prose into the header. Checking the
+        # header's shape catches that class outright, rather than hoping the hash
+        # happens to move.
         whole = _GUARD.read_text(encoding="utf-8").replace("\r\n", "\n")
         body = _guard_body()
+        header = whole[: len(whole) - len(body)]
         assert body.startswith('"""'), (
             "the guard's body does not start at its module docstring — the seam "
             "`_guard_body` splits on has moved"
+        )
+        assert all(line.startswith("#") for line in header.splitlines() if line.strip()), (
+            "the guard's header contains a non-comment line, so `_guard_body` split "
+            "somewhere below the module docstring rather than at it.\n"
+            "The hash is then taken over less of the file than it claims, and the "
+            "part left out is the provenance comment a re-copy is supposed to "
+            "rewrite. Most likely the module docstring's opening `\"\"\"` was "
+            "removed or moved, and the split landed on a later one."
         )
         assert len(body) < len(whole), (
             "the guard's header is empty, so the hash covers the whole file "
             "including the provenance comment a re-copy rewrites"
         )
-        assert "gh-repo-baseline" in whole[: len(whole) - len(body)], (
+        assert "gh-repo-baseline" in header, (
             "the guard's header no longer says where the file is copied from, "
             "which is the claim this whole class exists to hold someone to"
         )
