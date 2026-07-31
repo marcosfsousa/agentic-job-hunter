@@ -82,6 +82,17 @@ gone stale — same failure mode the `v1.0.0` paragraph above already warns abou
 is gated `if: false` after repeated unexplained failures. `@claude <request>` on a PR still reviews on
 demand; re-arm by restoring that job's `if:` condition.
 
+✅ **The daily run is live** (since 2026-07-31) — `daily_run.yml` fires at `15 3 * * *` and emails the
+digest. **A workflow has two independent switches, and only one is in the repo.** The YAML's
+`schedule:` block was armed by spec 3 in `391aab4`, but the workflow *object* stayed
+`disabled_manually` at the GitHub level from spec 1's dark period until it was enabled by hand on
+2026-07-31 — so for 19 days the file, `git log` and green CI all read healthy while nothing ran.
+**Never conclude the schedule is live from the YAML alone**; `gh workflow list --all` is the only
+place that state is visible. Verified end to end by dispatch run `30656471332`: 75 ingested → 22 past
+the hard filter → 8 emailed. Note `Run tests` is gated `if: github.event_name != 'schedule'`, so
+scheduled runs execute the pipeline with no test gate — use `gh workflow run daily_run.yml` when you
+want `pytest` to run first.
+
 ## Agent skills
 
 ### Issue tracker
