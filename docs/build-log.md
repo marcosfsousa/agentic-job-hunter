@@ -1254,13 +1254,36 @@ only one:
   `_COMMENTED_EVENT` are byte-identical before and after; both still hardcode `^  `.
 - `_trigger_branches:filter-name-any-depth` — **unchanged.** `^\s{3,}` byte-identical.
 
-Those last two are **one upstream change, not two**, and it does not exist yet. Both are
-gated on reading the event indent off the first key under `on:` and matching it *exactly*:
-a loose pattern moves `current` onto `types:` under `pull_request:`, and the `branches:`
-below then filters `types` instead — leaving the real event unfiltered, which passes. #13's
-closing comment records the design, including that the filter-key pattern must derive its
-minimum indent from that same level (`\s{event_indent+1,}`). Tracked upstream in
-gh-repo-baseline#10 as `_EVENT_KEY:event-indent-is-still-exactly-two`, open and unticked.
+Those last two are **one upstream change, not two**. Both are gated on reading the event
+indent off the keys under `on:` rather than assuming two spaces: a loose pattern moves
+`current` onto `types:` under `pull_request:`, and the `branches:` below then filters
+`types` instead — leaving the real event unfiltered, which passes. #13's closing comment
+records the design, including that the filter-key pattern must derive its minimum indent
+from that same level (`\s{event_indent+1,}`).
+
+**That upstream change now exists, and an earlier revision of this paragraph said it did
+not.** It read "and it does not exist yet ... Tracked upstream in gh-repo-baseline#10 ...
+open and unticked". Both halves were false within hours of being committed: `18e71395`
+("read the indent an `on:` block uses rather than assuming two") was authored thirteen
+minutes after this pull request was opened and merged as gh-repo-baseline#23 at 17:59Z,
+and gh-repo-baseline#10 closed as completed at 21:02Z the same day. Caught by the
+`/pr-cycle` round-1 review of this PR. Note the failure mode is not the one this section
+keeps recording: nothing here was inferred from a title or a docstring. The claim was
+researched and true when written, and went stale before it merged — which no amount of
+diffing the code at authoring time would have caught.
+
+Checked in the template at `3471c855` rather than inferred from the commit title, per the
+rule this section opens with: `_EVENT_KEY` and `_COMMENTED_EVENT` are gone as hardcoded-`^  `
+constants, an `_event_indent()` helper measures the block instead, and the filter pattern is
+built as `rf"^\s{{{indent + 1},}}..."` — the design #13 recorded. Whether it is *correct* is
+deliberately not asserted here. That is the next re-copy's job, line by line against the
+copied file.
+
+**Both items still stand against this repo's copy**, which is at `9e9a4eef` and unaffected.
+What changed is that the fix is available rather than pending, so the next re-copy is worth
+doing rather than deferring — and it will not be a small one: five commits have touched the
+template since `9e9a4eef`, and upstream `main` now carries it at 96,017 bytes against this
+copy's 74,829.
 
 **Six net-new tests**, all from the template, all about placing a job's keys by shape rather
 than by column: `test_a_job_written_at_two_indents_is_refused`,
