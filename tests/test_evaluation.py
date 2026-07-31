@@ -378,7 +378,7 @@ class TestBuildPrompt:
         costs 1 rather than 0 only when the listing declares German as the working language
         (#54 — the band itself is pinned by the test below)."""
         assert "CEFR C1 or above" in SYSTEM_PROMPT
-        # The individual carve-outs are pinned by TestGermanCarveOutParity in
+        # The individual carve-outs are pinned by TestGermanClauseParity in
         # tests/test_config.py, which checks them against profile.yaml at the same time.
         # Asserting them here too would mean a fifth carve-out has to be added in two
         # places — the drift this whole guard exists to prevent (#55).

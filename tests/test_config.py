@@ -81,7 +81,7 @@ class TestShippedProfileLoads:
 
     def test_real_profile_german_entry_states_the_rule(self):
         """The entry has to carry the condition itself; the carve-outs it shares with
-        SYSTEM_PROMPT are pinned by TestGermanCarveOutParity below."""
+        SYSTEM_PROMPT are pinned by TestGermanClauseParity below."""
         assert "non-optional" in _shipped_german_entry()
 
     def test_real_profile_loads_as_utf8_regardless_of_platform_default(self):
@@ -144,11 +144,15 @@ GERMAN_FIRE_BANDS = [
 GERMAN_CLAUSE_ROWS = GERMAN_CARVE_OUTS + GERMAN_FIRE_BANDS
 
 
-class TestGermanCarveOutParity:
-    """Neither side may drop a carve-out — or a fire band — the other still names."""
+class TestGermanClauseParity:
+    """Neither side may drop a clause row — carve-out or fire band — the other still names.
+
+    Named for the union it is parametrised over, not for the carve-outs alone: a
+    dropped fire band used to report as a dropped carve-out and send the reader to
+    the wrong half of the prompt (#65)."""
 
     @pytest.mark.parametrize("prompt_marker, profile_marker", GERMAN_CLAUSE_ROWS)
-    def test_carve_out_is_present_on_both_sides(self, prompt_marker, profile_marker):
+    def test_clause_row_is_present_on_both_sides(self, prompt_marker, profile_marker):
         assert prompt_marker in SYSTEM_PROMPT, (
             f"SYSTEM_PROMPT dropped the {prompt_marker!r} rule that profile.yaml "
             f"still states as {profile_marker!r}"
@@ -166,12 +170,12 @@ class TestGermanCarveOutParity:
         name'), so the half left uncounted is the half likelier to go ambiguous first."""
         assert SYSTEM_PROMPT.count(prompt_marker) == 1, (
             f"{prompt_marker!r} appears {SYSTEM_PROMPT.count(prompt_marker)} times in "
-            f"SYSTEM_PROMPT — pick a marker unique to the carve-out"
+            f"SYSTEM_PROMPT — pick a marker unique to the clause row"
         )
         german = _shipped_german_entry()
         assert german.count(profile_marker) == 1, (
             f"{profile_marker!r} appears {german.count(profile_marker)} times in the "
-            f"profile.yaml German entry — pick a marker unique to the carve-out"
+            f"profile.yaml German entry — pick a marker unique to the clause row"
         )
 
 
