@@ -136,4 +136,18 @@ freelancermap_queries:
 
 # Minimum LLM match score (1–10) to include a job in the email digest.
 # Jobs below this threshold are still written to the daily digest file.
-email_min_score: 4
+#
+# 5, raised from 4 on 2026-07-31. This restores the pre-pivot value: it was dropped
+# to 4 while the FTE-era rubric was being rewritten and nobody knew which way the
+# distribution had moved, and 4 outlived that reason. Two things settled it. The
+# rubric now grades a German penalty (#54, #63, #65), and a -1 band lands rows
+# squarely on the 4/3 boundary the gate sits on, so 4 was the least stable place to
+# put it. And the last two validation runs both show the 4-band is where the bulk
+# sits — #65's 20-listing run scored `1x8, 2x7, 3x6, 2x5, 6x4, 3x3, 2x2`, so a gate
+# at 4 emails 14 rows and a gate at 5 emails 8. That cut is the point: this tool
+# exists to return fewer, better matches, and everything below the gate is still
+# written to the daily digest file rather than lost.
+#
+# Independent of `reeval_below` (the re-evaluation floor, config.py) since #45 —
+# raising this no longer drags that with it.
+email_min_score: 5
