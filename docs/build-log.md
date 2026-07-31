@@ -930,3 +930,46 @@ pipeline needs an API key and the DB survives only in the Actions cache, not loc
 **Deliberately not touched:** `docs/session-state.md` lines 42/50 still record the gate at 4 with a
 2026-04-07 review checkbox. That file is **closed** (2026-07-22) and kept as a historical record of
 the FTE era; CLAUDE.md says not to update it, so it keeps saying what was true when it was written.
+
+## Fix — 2026-07-31 — three deferred test nits, bundled
+
+Three trivial deferred findings, test-file-only, closed in one PR because separately they were
+three PRs' worth of ceremony for about thirty lines. None touches pipeline behaviour, and none
+touches the LLM prompt — so the ≥5-listing validation gate does not apply, which is why they were
+deferred rather than folded into the PRs that found them.
+
+**#65 — the German parity guard was named for half of what it checks.** `GERMAN_FIRE_BANDS` is
+unioned with `GERMAN_CARVE_OUTS` into `GERMAN_CLAUSE_ROWS`, but the class, the test and two failure
+messages all said "carve-out", so a dropped *fire band* reported as a dropped *carve-out* and sent
+the reader to the wrong half of the prompt. Renamed to `TestGermanClauseParity` /
+`test_clause_row_is_present_on_both_sides`; parametrisation, markers and assertions untouched.
+
+**#74 — `_the_one_bypass` indexed a list it had not proved was one.** It asserted non-empty, then
+returned `actors[0]`. A truthy non-list passes the emptiness assertion and raises `KeyError` on the
+index, so the reader gets a traceback instead of the message written directly above it. Shape is now
+checked first, pointing at `test_bypass_actors_is_a_list_that_was_actually_read`, which already owned
+that failure. Noise, not correctness — the shape was caught either way.
+
+**#76 — nothing enforced the byte-identity `test_required_checks.py`'s header claims.** That file is
+a copy of a `gh-repo-baseline` template and its header says fixes belong upstream "or they are lost
+on the next copy". #75 recorded the upstream sha in the header, which was the precondition for
+automating this. `TestTheCopiedGuardWasNotEdited` now pins a sha256 of the guard below its header
+(newlines normalised), that the header still names the sha the hash is anchored to, and that the
+split takes a body rather than the whole file.
+
+**What that check deliberately does not do.** It attests that the local copy is *unmodified*; it does
+**not** verify it against upstream. The hash is recorded by whoever does the copy, so it is a
+self-attestation. Proving identity needs the template at that sha — a network fetch, which belongs in
+a CI step rather than in pytest. Upstream's own `TestTheLiveGuardMatchesTheTemplate` gets away with a
+plain file diff only because it holds both copies in one repo; downstream cannot. The class docstring
+and the failure message both say this outright, so a green tick cannot be misread as "we match the
+baseline". The weaker check was chosen on purpose: the realistic failure here is a session fixing a
+bug *in* the copied guard instead of upstream, and #76 has three such upstream-owned bugs open
+against that very file. Tamper-evidence catches exactly that, for one constant and no network.
+
+Verified by mutation rather than by assertion-counting: a one-character body edit fails only the hash
+test, a stale header sha fails only the sha test, a wholesale CRLF rewrite fails nothing, and a
+deleted header trips the vacuity check. `tests/test_required_checks.py` is not edited by this work —
+it is not this repo's to edit.
+
+Suite: 379 → 382 passing.
