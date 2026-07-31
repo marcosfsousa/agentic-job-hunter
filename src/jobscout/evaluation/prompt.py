@@ -10,7 +10,7 @@ below 5 means poor fit)
 - matching_skills: list of strings — skills from the candidate's profile that this \
 specific job particularly values or emphasises. Prefer distinctive skills \
 (e.g. RAG systems, LangChain, domain-specific frameworks) over generic ones \
-(e.g. Python, Docker, SQL). When both strong and working-knowledge skills match, \
+(e.g. Docker, SQL). When both strong and working-knowledge skills match, \
 prefer skills from the strong list. Only include a skill the job explicitly calls for — no padding. Return at most 5. \
 - gaps: list of strings — skills or requirements the job needs that the profile lacks
 - explanation: one or two sentences summarising the fit and calling out any \
@@ -44,10 +44,12 @@ name it in gaps whenever it fires):
 C1 or above: explicit "C1"/"C2", or phrases implying that band: "verhandlungssicher", \
 "fluent"/"business-fluent" German, "sehr gute Deutschkenntnisse", or \
 "native"/"Muttersprachler";
-       1 pt — the listing DECLARES German as the language the work is conducted in but \
+       1 pt — the listing DECLARES German as a language the work is conducted in but \
 states no level: "Projektsprache: Deutsch", "Arbeitssprache Deutsch", "the project runs \
 in German". A declared working language is a deliberate operational statement, so it is \
-not free — but it names no level, so it does not earn the full penalty;
+not free — but it names no level, so it does not earn the full penalty. German declared \
+ALONGSIDE another language ("Projektsprache: Deutsch und Englisch") fires this band too — \
+the band asks whether German is A declared working language, not THE only one;
        0 pts — everything else. Do NOT fire on: a German job location, a German company \
 name, a posting written in German, German listed as "nice to have"/"von Vorteil", or \
 German stated at B2 or below (including "gute Deutschkenntnisse"). If German is \
@@ -58,9 +60,9 @@ PRECEDENCE — when a firing cue from EITHER band and an optional qualifier desc
 SAME requirement (e.g. "verhandlungssicheres Deutsch von Vorteil", "fluent German is a \
 plus", "Deutsch als Projektsprache von Vorteil"), the optional qualifier WINS and this \
 penalty does NOT apply: an optional requirement stays optional at any level. The penalty \
-needs a cue AND a non-optional framing. A SECOND declared language is not an optional \
-qualifier: "Projektsprache: Deutsch und Englisch" still declares German as a language the \
-work is conducted in, so the 1-pt band applies.
+needs a cue AND a non-optional framing. A SECOND declared language is NOT an optional \
+qualifier and does not trigger this precedence rule — see the 1-pt band, which fires on \
+"Projektsprache: Deutsch und Englisch".
    - REDUCE by 0–3 pts for RAMP-UP RISK (graded — this is the seniority judgement, \
 made on deliverable evidence rather than a year-count). Ask: could the candidate \
 ship THIS project's core deliverable with no onboarding? Weigh what the profile \
@@ -75,10 +77,10 @@ evidence of shipping it at this scope;
        3 pts — the deliverable requires owning something the profile shows no evidence \
 of (e.g. an owned end-to-end ML platform, or heavy production MLOps).
      Treat any stated years-of-experience requirement as a WEAK input to this \
-judgement, never a mechanical trigger: the candidate has 3 months hands-on AI \
-engineering on top of 2.5 years professional software engineering, and the question \
-is deliverable-fit, not whether a year-count is met. Name the missing deliverable in \
-gaps when this fires.
+judgement, never a mechanical trigger: grade against the shipped-deliverable evidence \
+in the candidate profile above — its Background and Strong skills are the record — and \
+not against whether a year-count is met. Name the missing deliverable in gaps when this \
+fires.
    - REDUCE by 1 pt: MLOps, Kubernetes, or cloud infrastructure are core \
 requirements, not secondary
    - REDUCE by 1 pt: role requires strong or extensive cloud platform experience \

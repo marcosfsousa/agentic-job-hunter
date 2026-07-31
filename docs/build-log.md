@@ -1098,3 +1098,134 @@ eliminate, and which the raw-ingest floor only catches at the *ingest* end, not 
 
 Delivery time will drift: the cron is `15 3 * * *` and the observed Actions queue delay has
 historically run 2.5–5.5h, which is what that time was calibrated against.
+
+## Fix #89 + #67 — 2026-07-31 — three deferred prompt findings, bundled behind one validation run
+
+Bundled deliberately. Two of #89's three deferred items and the one item left open on #67 are
+all `SYSTEM_PROMPT` text edits, and each was deferred for the *same* stated reason: editing the
+prompt re-opens CLAUDE.md's ≥5-listing validation gate. Landed separately they would have cost
+three validation runs to answer one question, so they ship together and share one before/after.
+
+**The three edits**
+
+- `stale-3-months-anchor` (#89) — the ramp-up clause hardcoded *"the candidate has 3 months
+  hands-on AI engineering on top of 2.5 years professional software engineering"*. #88 removed
+  exactly that claim from `profile.yaml:background`, so prompt and profile were disagreeing
+  inside a single request to Haiku. The clause now grades against the profile text the request
+  already carries. `profile.yaml`'s own note flagged this second copy as `— open`; it is closed
+  there in the same commit.
+- `python-collides-with-generic-skill-rule` (#89) — `matching_skills` named Python as the
+  example of a *generic* skill to deprioritise while #88 promoted Python into `skills.strong`
+  and added three Python-backend `target_roles`. `Python` is dropped from that example list;
+  `Docker, SQL` remain. The neighbouring "prefer the strong list" rule already resolves the
+  tiebreak once Python is not named as a counter-example.
+- `band-widening-only-in-precedence-para` (#67) — the 1-pt German band defined the cue as
+  German being *"THE language the work is conducted in"* while the precedence paragraph said
+  *"a language"* and fired on two. The widening now lives in the band definition, and the
+  precedence paragraph keeps only the point that is genuinely about precedence.
+
+**Validation (CLAUDE.md's ≥5-listing check — required before merge)**
+
+Run as a controlled before/after, not a bare after: same 58-listing filtered pool fetched once
+and cached, same ranking, same model, only `SYSTEM_PROMPT` differing between arms. 25 listings
+per arm, matching #88's scale.
+
+```
+                        OLD (origin/main)        NEW (this change)
+parsed                  25/25                    24/25
+distribution            8x2 7x2 6x3 5x9 4x5 3x4  8x2 7x2 6x4 5x7 4x3 3x6
+mean                    5.00                     4.96
+>= email_min_score 5    16/25                    15/24
+```
+
+**21 of 25 listings scored identically; 3 moved by ±1.** The rubric is not destabilised.
+
+The single NEW-arm parse failure is **not** a prompt regression. Listing 3003311 was re-run 5×
+under the new prompt: 4/5 parsed, score stably 5 in every parse, and 5 in the OLD arm too. Its
+explanations run 780–930 chars — the known JSON-truncation-at-`max_tokens` behaviour this file
+already records, on a verbose listing, not a new failure mode.
+
+Per-edit evidence, since a distribution alone cannot tell three edits apart:
+
+- **Edit 1 fired.** Year-count phrasing in explanations and gaps fell 12 → 7 mentions. The
+  remaining 7 are correct: they read "2.5 years" out of `profile.yaml:background`, which still
+  says it, rather than out of a constant compiled into the prompt. That is the whole point of
+  the edit — one source, and it is the profile.
+- **Edit 2 is a consistency fix, not a behaviour change.** Python was named in `matching_skills`
+  on 14 listings under OLD and 15 under NEW. Haiku was already surfacing it; the prompt was
+  simply contradicting the profile while it did. Recorded plainly because the finding's own
+  framing implied suppression that the measurement does not show.
+- **Edit 3 changes no behaviour, and the main run did not exercise it at all.** Both listings in
+  the 58-pool that declare German alongside another language rank *below* the top-25 cut, so
+  they were never evaluated. Rather than ship the edit unexercised they were run directly, 3×
+  per arm: `Deutsch und Englisch` and `Deutsch, Englisch` both scored 5/5/5 under **both**
+  prompts, with German named in gaps 3/3 in both. #67 predicted exactly this — *"Haiku already
+  reads it the wide way"* — and this is the evidence for it. The edit makes the band text agree
+  with behaviour that was already correct.
+
+**Test guards.** Suite 389 → 389 (two assertions added to existing German-clause tests, no new
+test functions). Both new guards were mutation-checked: reverted against `origin/main`'s prompt
+they fail, and they fail for the right reason. A first draft asserted the bare string
+`"Projektsprache: Deutsch und Englisch"`, which **also appears in the precedence paragraph** and
+so would have passed against the pre-#67 prompt while guarding nothing — replaced with the
+band's own sentence. Recording it because it is the vacuity failure #81/#86 keep finding.
+
+## Measurement #89 — 2026-07-31 — do the Python-backend `target_roles` dilute the ranking query?
+
+#89's third deferred item could not be settled by reading the code — the review said so
+explicitly: it needs "a ranking-quality measurement, not an edit". So it was measured. The
+same instrument answers the `top_n` question #88 left open, which is why they were run together.
+
+**Method.** One live freelancermap fetch at production defaults (`max_results=250`, 9 queries),
+cached to disk so both arms score a byte-identical corpus: `132 fetched -> 128 dedup -> 58
+filtered`, reproducing #88's funnel exactly. Job vectors do not depend on the profile, so they
+are encoded once and dotted against both profile query vectors — which is what `rank_jobs` does
+with `feedback_docs=None`, the production state today (`jobscout.db` is empty, so there is no
+feedback centroid to blend). DB-free throughout: the run must not mark today's listings seen and
+starve the scheduled run.
+
+- **A** — `target_roles` as shipped by #88 (10 titles)
+- **B** — the three Python-backend titles removed (7 titles, the pre-#88 ML-only list)
+
+**Result — the titles move the query, barely, and the swap they cause is inside the noise.**
+
+```
+cosine(query_A, query_B)      0.9931
+top-25 membership             22/25 identical
+rank shift A->B               mean 2.14, max 7, 13/58 unmoved
+plateau at the cut  A         rank25 0.86890 / rank26 0.86833   gap +0.00057
+                    B         rank25 0.86842 / rank26 0.86789   gap +0.00052
+```
+
+The 3 listings the backend titles pull INTO the top 25 (`Senior Python Engineer | CAD, 3D
+Geometry`, `Data Engineer - Machine Learning`, `Freelance Instructor GenAI`) displace 3 that are
+better fits on their face (`AI Engineer (m/w/d) - Intelligente Suche`, `KI Entwickler`, `Senior
+AI Platform Engineer`). So the finding is **real, and the direction is against intent** — the CAD
+listing is exactly the classical-ML shape `deprioritise` then penalises.
+
+But all six sit between cosine 0.866 and 0.874, in a plateau where adjacent ranks differ by
+~0.0005. Which three survive the cut there is not a judgement the ranking is making.
+
+**Disposition: `target_roles` unchanged, and the rank cut is the actual lever.** At `top_n: 30`
+all six swapped listings are evaluated and the trade disappears entirely — without giving up the
+backend-titled contract postings the titles were added to reach. Removing the titles would fix
+the symptom by discarding the coverage.
+
+**The `top_n` evidence, from the same run.** #88 observed the cut lands mid-plateau; this locates
+where it should land instead. Largest gaps in the ranks 10–45 window:
+
+```
+after rank 43   +0.00519        after rank 30   +0.00382
+after rank 10   +0.00471        after rank 40   +0.00298
+after rank 13   +0.00412        after rank 25   +0.00057  <- where the cut is now
+```
+
+Rank 30 is a real break — **6.7x the gap the cut currently sits on** — and costs 5 more Haiku
+calls. Rank 43 is the largest break in the window but evaluates 43 of 58 survivors, which is most
+of the pool and stops being a rank cut in any meaningful sense. Filed separately: it is a
+`config.py` change with no prompt-validation gate, and it should not ride a prompt PR.
+
+**Caveat worth keeping.** `require_any_keyword` still gates the pool before ranking ever runs, so
+backend-titled rows only reach the query if they also mention ML/AI/LLM. This measurement bounds
+what the titles do to *ranking*; it says nothing about what they do to *reach*, which is a
+hard-filter question and a different instrument.

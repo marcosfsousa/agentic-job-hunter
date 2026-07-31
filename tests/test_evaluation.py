@@ -400,7 +400,12 @@ class TestBuildPrompt:
         # suppression the rubric never had. Replaced with a real instance, and the
         # two-languages case is now stated as firing rather than left to be inferred.
         assert "Deutsch als Projektsprache von Vorteil" in SYSTEM_PROMPT
-        assert "A SECOND declared language is not an optional qualifier" in SYSTEM_PROMPT
+        # #67/#89: the precedence paragraph keeps the point that is genuinely about
+        # precedence — a second language is not an optional qualifier, so it does not
+        # suppress anything. What that implies for FIRING now lives in the 1-pt band
+        # itself (asserted in the band test below), because a rule that only appears
+        # in the precedence paragraph is a rule the band definition contradicts.
+        assert "A SECOND declared language is NOT an optional qualifier" in SYSTEM_PROMPT
 
     def test_system_prompt_grades_declared_working_language_below_c1(self):
         """#54: `Projektsprache: Deutsch` states a language but no level, so it hit the
@@ -415,6 +420,18 @@ class TestBuildPrompt:
         assert "REDUCE by 0–2 pts for a GERMAN-LANGUAGE REQUIREMENT" in SYSTEM_PROMPT
         assert "0 pts — everything else" in SYSTEM_PROMPT
         assert '"Projektsprache: Deutsch"' in SYSTEM_PROMPT
+        # #67: the band defined German as "THE language the work is conducted in" while
+        # the precedence paragraph said "a language" and fired on two. Haiku already read
+        # it the wide way (listing 3030001), so this pins the widening at the band — the
+        # definite article is what a two-language listing contradicts.
+        assert "DECLARES German as a language the work is conducted in" in SYSTEM_PROMPT
+        # Pins the band's OWN sentence, not the bare example string: the example also
+        # appears in the precedence paragraph, so asserting it alone would pass against
+        # the pre-#67 prompt and guard nothing.
+        assert (
+            'German declared ALONGSIDE another language ("Projektsprache: Deutsch und '
+            'Englisch") fires this band too'
+        ) in SYSTEM_PROMPT
         # The bands must be exclusive: without this a C1+ listing that also declares a
         # working language reads as 2+1, restoring over-firing through a third door.
         assert "The bands are exclusive" in SYSTEM_PROMPT

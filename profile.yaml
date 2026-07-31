@@ -23,14 +23,16 @@ ideal_role: >
 # every row of a senior-skewing freelance corpus, and prompt.py's ramp-up clause now
 # makes the same judgement on deliverable evidence instead. The blanket "3 months
 # hands-on AI engineering" string was removed from `background` (2026-07-31): it was
-# the last unconditional year-count penalty on the embedding side. NOTE: the string
-# still appears hardcoded in prompt.py's ramp-up clause — open.
+# the last unconditional year-count penalty on the embedding side. CLOSED (2026-07-31,
+# #89): the same string was hardcoded a second time in prompt.py's ramp-up clause and
+# has been removed there too — that clause now grades against the profile text this
+# file supplies, so the year-count lives in neither place.
 # Six entries. Four (German, classical ML, MLOps/cloud, research) have weighted bands
 # in SYSTEM_PROMPT; the ownership and framing entries exist only here, unweighted.
 deprioritise:
   # Kept lockstep with prompt.py's SYSTEM_PROMPT German clause — both fire bands, all
   # five carve-outs and the precedence rule, not a subset of them (#51, #54).
-  - "Requires German at CEFR C1 or above as a deliberately stated, non-optional condition — the strongest form of this deprioritisation. A declared working language carrying no level (Projektsprache: Deutsch) deprioritises more mildly, not as much as a stated C1+ requirement (not a penalty at all: B2 or below, no level stated and no working language declared, German implied only by job location / company name / posting language, or German listed as nice-to-have / von Vorteil — an optional qualifier wins over the level)"
+  - "Requires German at CEFR C1 or above as a deliberately stated, non-optional condition — the strongest form of this deprioritisation. A declared working language carrying no level (Projektsprache: Deutsch, and equally Projektsprache: Deutsch und Englisch — a second declared language does not undo the declaration) deprioritises more mildly, not as much as a stated C1+ requirement (not a penalty at all: B2 or below, no level stated and no working language declared, German implied only by job location / company name / posting language, or German listed as nice-to-have / von Vorteil — an optional qualifier wins over the level)"
   - "Focused primarily on recommendation systems, forecasting, or classical ML pipelines"
   - "Heavy MLOps, Kubernetes, or cloud infrastructure as core job requirements"
   - "Primarily model research or academic role"
@@ -47,6 +49,21 @@ deprioritise:
     to write code), while the Aufgaben themselves contain no model, prompt, retrieval,
     evaluation or agent work"
 
+# Feeds BOTH the ranking query (_build_profile_text) and the eval prompt (build_prompt),
+# so a title added for reach also moves the query vector. #89 asked whether the three
+# Python-backend titles below dilute it. MEASURED (2026-07-31, 58-listing live pool,
+# production defaults) rather than argued, because the finding could not be settled by
+# reading: with the three titles removed the query vector moves only 0.9931 cosine, and
+# 22 of the top 25 are the same listings. The 3 that swap all sit inside the 0.866–0.874
+# plateau, where adjacent ranks differ by ~0.0005 — so WHICH 25 you get there is noise,
+# not a preference the ranking is expressing.
+#
+# Kept, deliberately. The swap is not free — the titles pull in a CAD/3D "Senior Python
+# Engineer" and a "Data Engineer - ML" while pushing out an "AI Engineer (Intelligente
+# Suche)" and a "KI Entwickler" — but the fix for that is the rank cut, not the titles:
+# at top_n 30 all six of the swapped listings are evaluated and the trade disappears.
+# Removing the titles would also cost the backend-titled contract postings they exist to
+# reach, which is the coverage #88 added them for. See the top_n issue.
 target_roles:
   - "ML Engineer"
   - "AI Engineer"
