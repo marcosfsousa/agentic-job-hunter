@@ -1,10 +1,16 @@
 # tests/test_ruleset_pins.py
 #
 # The sibling `tests/test_required_checks.py` names is real. That file is a copy
-# of a template maintained in github.com/marcosfsousa/gh-repo-baseline and is
-# held byte-identical to it below its header, so anything about *this* repo's
-# team or deployment cannot live there — it would be edited on every copy and
-# would rot into an assertion nobody trusts. This is where those go.
+# of a template maintained in github.com/marcosfsousa/gh-repo-baseline, and the
+# convention is that it stays byte-identical to that template below its header,
+# so anything about *this* repo's team or deployment cannot live there — it would
+# be edited on every copy and would rot into an assertion nobody trusts. This is
+# where those go.
+#
+# "Byte-identical" is the convention, not a verified fact. `TestTheCopiedGuardWasNotEdited`
+# below pins the copy against *local* edits; nothing here checks it against
+# upstream, which would need a network fetch. Read that class before treating its
+# green tick as "we match the baseline".
 
 """
 The decisions in ``.github/rulesets/main.json`` that are this repo's, not the
@@ -254,11 +260,16 @@ def _guard_body() -> str:
     the template verbatim.
 
     Split on the first line that is exactly ``\"\"\"``, which is the same seam
-    upstream's own ``TestTheLiveGuardMatchesTheTemplate`` uses. Newlines are
-    normalised because a hash is being taken over the result: this repo has
-    files with mixed line endings, and a checkout or an editor that rewrote the
-    guard's endings without touching a character of it would otherwise report as
-    an edit.
+    upstream's own ``TestTheLiveGuardMatchesTheTemplate`` uses.
+
+    A hash is taken over the result, so newlines have to be normalised: this repo
+    has files with mixed line endings, and a checkout or an editor that rewrote
+    the guard's endings without touching a character of it would otherwise report
+    as an edit. **``read_text`` is what actually does that** — it opens in text
+    mode, so universal-newline translation has already turned CRLF into LF before
+    the replace below runs, which makes that replace a no-op today. It is kept
+    because it is the line that states the invariant: if the read is ever changed
+    to ``read_bytes`` the normalisation must not quietly leave with it.
     """
     lines = _GUARD.read_text(encoding="utf-8").splitlines(keepends=True)
     start = next(i for i, line in enumerate(lines) if line.rstrip("\r\n") == '"""')
@@ -331,10 +342,16 @@ class TestTheCopiedGuardWasNotEdited:
 
     def test_the_hash_is_taken_over_a_body_and_not_the_whole_file(self):
         # Guards the guard, as upstream's `test_only_the_header_differs` does for
-        # the same seam: if the `\"\"\"` marker ever moved or vanished, the split
-        # could return the entire file and this class would go on passing while
-        # silently hashing the header too — pinning the very provenance comment a
-        # re-copy is supposed to rewrite.
+        # the same seam: if the `\"\"\"` marker ever moved *upwards* — into the
+        # header, where a docstring-like line could appear — the split would
+        # return more of the file than it should, and this class would go on
+        # passing while silently hashing the provenance comment a re-copy is
+        # supposed to rewrite.
+        #
+        # A marker that vanished outright is a different failure and is not this
+        # test's: `_guard_body`'s `next()` raises StopIteration, so every test in
+        # the class errors rather than passing vacuously. Loud either way, but by
+        # an unauthored exception rather than by anything written here.
         whole = _GUARD.read_text(encoding="utf-8").replace("\r\n", "\n")
         body = _guard_body()
         assert body.startswith('"""'), (
