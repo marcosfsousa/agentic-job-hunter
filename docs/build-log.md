@@ -1016,11 +1016,18 @@ what the titles suggest):
 - `_job_contexts:matrix-refusal-one-indent` — **not resolved.** Still
   `re.match(r"^      matrix\s*:", line)`: one hardcoded indent, no quoted keys, no inline
   flow mappings.
-- `_trigger_branches:filter-name-any-depth` — **resolved, but not the way the item asked.**
-  The item wanted the filter name bound to the event's own indent level; upstream did the
-  opposite, matching filter names at any indent ≥ 3 (`^\s{3,}`), bounded by the filter names
-  being a closed, stable set, with the residual stated in the docstring. The underlying
-  defect — a filter at an unexpected indent parsing as *unfiltered* and passing — is gone.
+- `_trigger_branches:filter-name-any-depth` — **not resolved, and not touched by this copy.**
+  A first draft of this entry claimed it was resolved "by the opposite mechanism", reading the
+  docstring's any-indent rationale as evidence of a change. It is not one: `^\s{3,}` is
+  byte-identical at `130a56a5`, at `ae78c6b3`, and in the pre-copy file, so that behaviour
+  predates this re-copy entirely. The item asked for the filter name to be bound to the
+  event's own indent level, and nothing here attempts that.
+
+  Caught by the `/pr-cycle` round-1 review of #82, as a blocking finding: left in, it would
+  have ticked an open tracker item that was never started. Worth recording because of where
+  it sits — this very section exists to check resolutions against the file rather than infer
+  them from upstream PR titles, and the inference still got in, one level down, from a
+  docstring instead of a title. Diff the code, not the prose about the code.
 
 Suite: 382 → 387. The five net-new tests are the template's own and pass against this
 repo's `tests.yml` unchanged.
