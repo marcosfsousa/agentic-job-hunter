@@ -7,21 +7,26 @@ name: "Marcos"
 # embedder never sees it. (F #9 decision 3; N #19 §5.)
 background: >
   2.5 years software engineering and tech lead experience (enterprise, client-facing projects).
-  3 months hands-on AI engineering: built RAG pipelines, NLP systems, LLM fine-tuning workflows,
-  and agentic applications. Strong on the application layer — a builder.
+  Builds and ships LLM applications: RAG pipelines with evaluation harnesses, agentic
+  workflows, NLP systems, deployed as APIs and web services. Strong on the application
+  layer — a builder.
 
 ideal_role: >
-  Building and deploying LLM-based applications, RAG pipelines, or NLP systems. End-to-end ownership
-  from prototype to deployed interface. Consulting-adjacent or product-facing. Small-to-mid size
-  company, or a specialist AI/consulting unit within a larger company where individual contributions
-  are visible.
+  Building and shipping defined deliverables: LLM-based applications, RAG pipelines,
+  or NLP systems, from prototype through to a deployed interface. Feature and component
+  work with a named handover. Consulting-adjacent or product-facing. Small-to-mid size
+  company, or a specialist AI/consulting unit within a larger company where individual
+  contributions are visible.
 
-# The negative half of background / ideal_role lives here (see the note above). These
-# four already cover "weaker on MLOps/cloud/classical ML", "Not a researcher", and
-# "not model research or classical ML", so consolidation was deletion, not restatement.
-# The FTE-era "5+ years senior" entry is GONE (P #22 decision 3): it is the config half
-# of the year-count penalty deleted from prompt.py, and on a senior-skewing freelance
-# corpus it fired on nearly every row.
+# The negative half of background / ideal_role lives here (see the note above).
+# The FTE-era "5+ years senior" entry is gone (P #22 decision 3) — it fired on nearly
+# every row of a senior-skewing freelance corpus, and prompt.py's ramp-up clause now
+# makes the same judgement on deliverable evidence instead. The blanket "3 months
+# hands-on AI engineering" string was removed from `background` (2026-07-31): it was
+# the last unconditional year-count penalty on the embedding side. NOTE: the string
+# still appears hardcoded in prompt.py's ramp-up clause — open.
+# Six entries. Four (German, classical ML, MLOps/cloud, research) have weighted bands
+# in SYSTEM_PROMPT; the ownership and framing entries exist only here, unweighted.
 deprioritise:
   # Kept lockstep with prompt.py's SYSTEM_PROMPT German clause — both fire bands, all
   # five carve-outs and the precedence rule, not a subset of them (#51, #54).
@@ -29,6 +34,18 @@ deprioritise:
   - "Focused primarily on recommendation systems, forecasting, or classical ML pipelines"
   - "Heavy MLOps, Kubernetes, or cloud infrastructure as core job requirements"
   - "Primarily model research or academic role"
+  - "Ownership of a platform rather than delivery within one: architecture or design
+    authority over a data platform or AI platform, setting engineering standards for
+    other teams, self-service platform services, central point of contact / zentrale:r
+    Ansprechpartner:in, or operating and maintaining an existing platform (Betrieb,
+    Überwachung, Administration, Wartung, Kapazitätsplanung) rather than building on
+    it. Architecture and design decisions scoped to a single named deliverable are
+    not this and carry no deprioritisation"
+  - "AI, KI or LLM appears only in the framing paragraph describing the environment
+    (Cloud-first KI-/LLM-Umfeld, produktive KI-Services) or as development tooling
+    (Einsatz moderner KI-Tools, KI-gestützte Entwicklungsansätze — using AI assistants
+    to write code), while the Aufgaben themselves contain no model, prompt, retrieval,
+    evaluation or agent work"
 
 target_roles:
   - "ML Engineer"
@@ -38,34 +55,36 @@ target_roles:
   - "GenAI Engineer"
   - "LLM Engineer"
   - "AI Software Engineer"
+  - "Python Backend Engineer"
+  - "Python Backend Developer"
+  - "Backend Engineer"
 
 skills:
   strong:
+    - Python
     - RAG systems
     - LangChain / LangGraph
-    - Vector databases (Pinecone, ChromaDB)
     - LLM application development
+    - "LLM evaluation (LangSmith, eval sets, LLM-as-judge, regression suites)"
+    - "agentic systems"
     - Prompt engineering
+    - Vector databases (Pinecone, ChromaDB)
+    - "FastAPI / REST API development"
+    - "Claude Code / agentic development workflows"
     - Sentence Transformers
     - HuggingFace ecosystem
     - "NLP pipelines"
-    - "agentic systems"
-    - "OpenAI API"
+    - "OpenAI API, Groq, Cohere embeddings & rerank"
   working_knowledge:
-    - Python
-    - Docker
-    - REST APIs
+    - Docker / Docker Compose
+    - "GitHub Actions CI/CD"
+    - "GCP (Cloud Run, Cloud Run Jobs, GCS)"
     - SQL
+    - "pytest"
     - "Streamlit"
-    - "scikit-learn"
-  learning:
-    - PyTorch
-    - TensorFlow
-    - MLflow
-    - AWS SageMaker
 
 location:
-  target_countries: ["Germany", "Deutschland"]   # only surviving location field
+  target_countries: ["Germany", "Deutschland"] # only surviving location field
 
 # Negotiating position. NO PIPELINE CONSUMER — no filter, no ranking, no prompt
 # reads this, and that is deliberate, not dead config awaiting deletion. A rate
@@ -74,10 +93,10 @@ location:
 # and never converted: a Tagessatz records what you would actually quote, and
 # deriving one from the other would fabricate it.
 rate:
-  minimum_hourly: 50      # Stundensatz floor (EUR/hour)
-  target_hourly: 70       # hourly negotiation target
-  minimum_daily: 450      # Tagessatz floor — STATED, never derived
-  target_daily: 600       # daily negotiation target
+  minimum_hourly: 50 # Stundensatz floor (EUR/hour)
+  target_hourly: 70 # hourly negotiation target
+  minimum_daily: 450 # Tagessatz floor — STATED, never derived
+  target_daily: 600 # daily negotiation target
   currency: "EUR"
 
 dealbreakers:
@@ -86,12 +105,13 @@ dealbreakers:
     - "Unpaid"
     - "Volunteer"
     - "audio"
-    - "QA"
-    - "Kubernetes"
     - "Big Data"
     - "Recommendation Engine"
+    - "Empfehlungssystem"
     - "Computer Vision"
+    - "Bildverarbeitung"
     - "Robotics"
+    - "Robotik"
   require_any_keyword:
     - "machine learning"
     - "ML"
@@ -133,6 +153,10 @@ freelancermap_queries:
   - "Generative AI"
   - "Maschinelles Lernen"
   - "KI"
+  - "RAG"
+  - "LangChain"
+  - "AI Engineer"
+  - "Agentic"
 
 # Minimum LLM match score (1–10) to include a job in the email digest.
 # Jobs below this threshold are still written to the daily digest file.
