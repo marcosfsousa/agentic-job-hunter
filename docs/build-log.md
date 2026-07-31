@@ -1016,7 +1016,10 @@ what the titles suggest):
 - `_job_contexts:matrix-refusal-one-indent` — **not resolved.** Still
   `re.match(r"^      matrix\s*:", line)`: one hardcoded indent, no quoted keys, no inline
   flow mappings.
-- `_trigger_branches:filter-name-any-depth` — **not resolved, and not touched by this copy.**
+- `_trigger_branches:filter-name-any-depth` — **not resolved.** (Not *untouched*: `_trigger_branches`
+  itself was substantially rewritten upstream between the two shas, 7253 → 12013 characters. What is
+  unchanged is the `^\s{3,}` filter-key behaviour this item is about — an earlier revision said
+  "not touched by this copy", which overreached.)
   A first draft of this entry claimed it was resolved "by the opposite mechanism", reading the
   docstring's any-indent rationale as evidence of a change. It is not one: `^\s{3,}` is
   byte-identical at `130a56a5`, at `ae78c6b3`, and in the pre-copy file, so that behaviour
@@ -1029,5 +1032,7 @@ what the titles suggest):
   them from upstream PR titles, and the inference still got in, one level down, from a
   docstring instead of a title. Diff the code, not the prose about the code.
 
-Suite: 382 → 387. The five net-new tests are the template's own and pass against this
-repo's `tests.yml` unchanged.
+Suite: 382 → 387. The five net-new tests are the template's own and pass unchanged. They do
+**not** exercise this repo's `tests.yml`: all five are `tmp_path` unit tests of
+`_trigger_branches` over synthetic workflows. An earlier revision of this line said they
+"pass against this repo's `tests.yml`", which claimed a kind of coverage they do not provide.

@@ -1,10 +1,16 @@
 # tests/test_ruleset_pins.py
 #
 # The sibling `tests/test_required_checks.py` names is real. That file is a copy
-# of a template maintained in github.com/marcosfsousa/gh-repo-baseline and is
-# held byte-identical to it below its header, so anything about *this* repo's
-# team or deployment cannot live there — it would be edited on every copy and
-# would rot into an assertion nobody trusts. This is where those go.
+# of a template maintained in github.com/marcosfsousa/gh-repo-baseline, and the
+# convention is that it stays byte-identical to that template below its header,
+# so anything about *this* repo's team or deployment cannot live there — it would
+# be edited on every copy and would rot into an assertion nobody trusts. This is
+# where those go.
+#
+# "Byte-identical" is the convention, not a verified fact. `TestTheCopiedGuardWasNotEdited`
+# below pins the copy against *local* edits; nothing here checks it against
+# upstream, which would need a network fetch. Read that class before treating its
+# green tick as "we match the baseline".
 
 """
 The decisions in ``.github/rulesets/main.json`` that are this repo's, not the
@@ -254,11 +260,16 @@ def _guard_body() -> str:
     the template verbatim.
 
     Split on the first line that is exactly ``\"\"\"``, which is the same seam
-    upstream's own ``TestTheLiveGuardMatchesTheTemplate`` uses. Newlines are
-    normalised because a hash is being taken over the result: this repo has
-    files with mixed line endings, and a checkout or an editor that rewrote the
-    guard's endings without touching a character of it would otherwise report as
-    an edit.
+    upstream's own ``TestTheLiveGuardMatchesTheTemplate`` uses.
+
+    A hash is taken over the result, so newlines have to be normalised: this repo
+    has files with mixed line endings, and a checkout or an editor that rewrote
+    the guard's endings without touching a character of it would otherwise report
+    as an edit. **``read_text`` is what actually does that** — it opens in text
+    mode, so universal-newline translation has already turned CRLF into LF before
+    the replace below runs, which makes that replace a no-op today. It is kept
+    because it is the line that states the invariant: if the read is ever changed
+    to ``read_bytes`` the normalisation must not quietly leave with it.
     """
     lines = _GUARD.read_text(encoding="utf-8").splitlines(keepends=True)
     start = next(i for i, line in enumerate(lines) if line.rstrip("\r\n") == '"""')
@@ -331,21 +342,45 @@ class TestTheCopiedGuardWasNotEdited:
 
     def test_the_hash_is_taken_over_a_body_and_not_the_whole_file(self):
         # Guards the guard, as upstream's `test_only_the_header_differs` does for
-        # the same seam: if the `\"\"\"` marker ever moved or vanished, the split
-        # could return the entire file and this class would go on passing while
-        # silently hashing the header too — pinning the very provenance comment a
-        # re-copy is supposed to rewrite.
+        # the same seam.
+        #
+        # The seam is *slippery*, which is the thing to understand here. It is the
+        # first line equal to `\"\"\"`, and the guard contains several — so deleting
+        # the module docstring's opening quote does not raise: `next()` simply
+        # finds the *closing* one and the body silently starts 70-odd lines lower.
+        # Measured, not reasoned about: with that one line removed, two of this
+        # class's three tests still pass. Only `test_the_guard_body_is_unchanged`
+        # notices, and only because the hash moved.
+        #
+        # (An earlier version of this comment claimed the vanishing case raises
+        # StopIteration and errors every test in the class. It does not, and could
+        # only do so in a file with no other bare `\"\"\"` line at all.)
+        #
+        # So the header assertion below is the one that makes this test earn its
+        # name: the guard's header is entirely `#` comments, and every way the seam
+        # can slip *downwards* drags docstring prose into the header. Checking the
+        # header's shape catches that class outright, rather than hoping the hash
+        # happens to move.
         whole = _GUARD.read_text(encoding="utf-8").replace("\r\n", "\n")
         body = _guard_body()
+        header = whole[: len(whole) - len(body)]
         assert body.startswith('"""'), (
             "the guard's body does not start at its module docstring — the seam "
             "`_guard_body` splits on has moved"
+        )
+        assert all(line.startswith("#") for line in header.splitlines() if line.strip()), (
+            "the guard's header contains a non-comment line, so `_guard_body` split "
+            "somewhere below the module docstring rather than at it.\n"
+            "The hash is then taken over less of the file than it claims, and the "
+            "part left out is the provenance comment a re-copy is supposed to "
+            "rewrite. Most likely the module docstring's opening `\"\"\"` was "
+            "removed or moved, and the split landed on a later one."
         )
         assert len(body) < len(whole), (
             "the guard's header is empty, so the hash covers the whole file "
             "including the provenance comment a re-copy rewrites"
         )
-        assert "gh-repo-baseline" in whole[: len(whole) - len(body)], (
+        assert "gh-repo-baseline" in header, (
             "the guard's header no longer says where the file is copied from, "
             "which is the claim this whole class exists to hold someone to"
         )
