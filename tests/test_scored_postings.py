@@ -81,7 +81,11 @@ _LIVE_ENV_VAR = "JOBSCOUT_LIVE_EVAL"
 # and would pass with D1 and D4 unfixed, which is the whole point. Marking them xfail
 # says "this assertion cannot decide this case"; strict would demand they fail, which
 # they do not and should not. They report as XPASS, and XPASS is not an error here.
-BAND_BLIND_REASON = "band assertion cannot detect this defect; needs score_trace (#95)"
+# The reason named #95 while `score_trace` was still unbuilt; #95 has since landed, so it
+# now names #97/#98 — the assertions that consume the trace — which is when this comes off.
+BAND_BLIND_REASON = (
+    "band assertion cannot detect this defect; needs the score_trace assertions (#97/#98)"
+)
 
 # § 6 lists fourteen cases. Pinned as a number so a dropped row is a failure rather
 # than a smaller parametrisation nobody notices.

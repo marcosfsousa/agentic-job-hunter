@@ -1,10 +1,29 @@
 from __future__ import annotations
 
+import re
+
 from jobscout.models import JobListing, UserProfile
 
-SYSTEM_PROMPT = """\
+# The rubric's own bounds on the final score: step 3 below says "Cap at 9", and
+# anything under 1 is off the scale `match_score` is declared on. They live here, next
+# to the rubric that states them, and are interpolated into the trace spec rather than
+# written into it — `check_score_trace` imports the same two names to clamp against.
+# Stated in prose in one file and re-typed in the other, a moved cap would have the
+# model bounding at one number while Python clamps at another, and the check would
+# then flag correct rows. That is the same drift `RULE_IDS` below exists to prevent.
+SCORE_FLOOR = 1
+SCORE_CAP = 9
+
+# The rubric. Every boost and penalty carries a `[rule_id]` tag, which is the only
+# structure added: `RULE_IDS` below is read back out of these tags, so the id list the
+# model is handed in the trace section cannot drift from the rules themselves. That is
+# as far as #95 goes deliberately — decomposing this into per-rule objects is a much
+# larger change and is explicitly out of its scope.
+_RUBRIC = """\
 You are a calibrated job-fit evaluator. Given a candidate profile and a job listing, \
-return a JSON object with exactly these fields:
+return a JSON object with exactly these fields, IN THIS ORDER:
+- score_trace: the arithmetic you scored by — specified under "Score trace" below. \
+Emit it FIRST, before match_score, and read match_score off its total.
 - match_score: integer 1–10 (10 = near-perfect fit; 7+ means worth applying; \
 below 5 means poor fit)
 - matching_skills: list of strings — skills from the candidate's profile that this \
@@ -23,21 +42,21 @@ or the role is tangentially related. Start at 2 if it is a poor fit on its face.
 2. Apply adjustments in two strict phases — boosts first, penalties second. \
 Penalties are applied to the boosted score; boosts do not offset penalties.
    2a. Boosts (apply first):
-   - BOOST by 1 pt: role is explicitly LLM/RAG/NLP application engineering with \
+   - [boost_llm_ownership] BOOST by 1 pt: role is explicitly LLM/RAG/NLP application engineering with \
 end-to-end ownership
-   - BOOST by 1 pt: small-to-mid company or specialist AI unit where individual \
+   - [boost_visible_contribution] BOOST by 1 pt: small-to-mid company or specialist AI unit where individual \
 contributions are visible
-   - BOOST by 1 pt: stack explicitly mentions LangChain, LangGraph, RAG, or a \
+   - [boost_core_stack] BOOST by 1 pt: stack explicitly mentions LangChain, LangGraph, RAG, or a \
 vector database as a core tool (not just a nice-to-have)
    2b. Hard penalties (apply to the boosted score; each applies independently; \
 do not double-count):
-   - REDUCE by 2 pts: degree is a hard mandatory requirement with no alternative \
+   - [penalty_degree_mandatory] REDUCE by 2 pts: degree is a hard mandatory requirement with no alternative \
 path stated (include in gaps)
-   - REDUCE by 1 pt: degree is preferred but "comparable experience" or equivalent \
+   - [penalty_degree_preferred] REDUCE by 1 pt: degree is preferred but "comparable experience" or equivalent \
 is explicitly accepted (include in gaps)
-   - REDUCE by 2 pts: role is primarily model research, classical ML \
+   - [penalty_research_focus] REDUCE by 2 pts: role is primarily model research, classical ML \
 (forecasting, RecSys, CV), or academic — not LLM application building
-   - REDUCE by 0–2 pts for a GERMAN-LANGUAGE REQUIREMENT (graded — the candidate is \
+   - [penalty_german_language] REDUCE by 0–2 pts for a GERMAN-LANGUAGE REQUIREMENT (graded — the candidate is \
 B2, so the size of the penalty follows how firmly the listing states the requirement; \
 name it in gaps whenever it fires):
        2 pts — the listing DELIBERATELY STATES a German-language requirement at CEFR \
@@ -63,7 +82,7 @@ penalty does NOT apply: an optional requirement stays optional at any level. The
 needs a cue AND a non-optional framing. A SECOND declared language is NOT an optional \
 qualifier and does not trigger this precedence rule — see the 1-pt band, which fires on \
 "Projektsprache: Deutsch und Englisch".
-   - REDUCE by 0–3 pts for RAMP-UP RISK (graded — this is the seniority judgement, \
+   - [penalty_ramp_up_risk] REDUCE by 0–3 pts for RAMP-UP RISK (graded — this is the seniority judgement, \
 made on deliverable evidence rather than a year-count). Ask: could the candidate \
 ship THIS project's core deliverable with no onboarding? Weigh what the profile \
 shows the candidate has actually built and shipped against what the project needs \
@@ -81,20 +100,66 @@ judgement, never a mechanical trigger: grade against the shipped-deliverable evi
 in the candidate profile above — its Background and Strong skills are the record — and \
 not against whether a year-count is met. Name the missing deliverable in gaps when this \
 fires.
-   - REDUCE by 1 pt: MLOps, Kubernetes, or cloud infrastructure are core \
+   - [penalty_mlops_core] REDUCE by 1 pt: MLOps, Kubernetes, or cloud infrastructure are core \
 requirements, not secondary
-   - REDUCE by 1 pt: role requires strong or extensive cloud platform experience \
+   - [penalty_cloud_core] REDUCE by 1 pt: role requires strong or extensive cloud platform experience \
 (AWS, GCP, or Azure) as a core competency (include in gaps)
-   - REDUCE by 1 pt: AI role embedded in a non-tech company with no apparent \
+   - [penalty_non_tech_company] REDUCE by 1 pt: AI role embedded in a non-tech company with no apparent \
 specialist AI unit or team
-   - REDUCE by 3 pts: the role is not fully remote — any onsite or hybrid presence is \
+   - [penalty_remote] REDUCE by 3 pts: the role is not fully remote — any onsite or hybrid presence is \
 required (include in gaps). Flat and categorical: apply the full penalty for any \
 sub-100%-remote signal in the prose, with no gradation by how much on-site time.
 3. Cap at 9. A 9 means near-perfect fit. An 8 means strong realistic fit. \
 A 6–7 means worth applying despite some gaps. Below 5 means poor fit.
+"""
+
+# Every `[rule_id]` tag in the rubric above, in the order the rubric applies them. The
+# model is handed this list rather than a hand-written copy so a rule added, renamed or
+# removed above cannot leave the trace spec naming the old set.
+#
+# Deliberately not de-duplicated: a repeated tag means two rules share an id, so one of
+# them is untraceable and the trace has an ambiguous entry. Collapsing that silently
+# would hide it — and would also make the uniqueness assertion in the tests
+# tautological, which is coverage that reads as a guard and is not one.
+RULE_IDS: tuple[str, ...] = tuple(re.findall(r"\[([a-z][a-z0-9_]*)\]", _RUBRIC))
+
+# The trace request. Kept in its own literal purely so RULE_IDS can be interpolated —
+# the rubric above is unchanged in wording and magnitude, which #95 requires (rewording
+# a rule is C1/C2/C3's job, not this one's).
+_TRACE_SPEC = f"""
+Score trace — this is how your score is checked, so it must reconcile:
+- "start": the integer you chose in step 1.
+- "adjustments": one entry for EVERY rule id listed here, in this order, whether or \
+not the rule fired: {", ".join(RULE_IDS)}.
+  Each entry is an object: {{"rule_id": <the id>, "fired": <true|false>, \
+"delta": <integer>, "evidence": <string or null>}}.
+- "delta" is SIGNED: positive for a BOOST, negative for a REDUCE, 0 when the rule did \
+not fire. A graded rule that lands on its 0-point band did NOT fire — report \
+"fired": false and "delta": 0. Never report "fired": true with "delta": 0.
+- Every entry with "fired": true MUST carry non-empty "evidence": a short quote or \
+close paraphrase from the listing that made the rule fire. Entries with \
+"fired": false carry "evidence": null.
+- "total": start plus every "delta", added up. Write it as ONE integer that you have \
+already worked out — never as an expression like 6 + 1 - 2, which is not valid JSON.
+- match_score is "total" bounded into {SCORE_FLOOR}–{SCORE_CAP}: below {SCORE_FLOOR} \
+report {SCORE_FLOOR}, above {SCORE_CAP} report {SCORE_CAP} (the \
+step 3 cap), otherwise report "total" itself. Write score_trace FIRST, then read \
+match_score off it. Do not decide a score and then write a trace beside it — if the \
+total looks too low or too high to you, the rule to revisit is one of the deltas \
+above, not the total.
+
+A well-formed trace looks like this — note the field names, and that "fired" is a \
+boolean while "delta" is the number:
+  "score_trace": {{"start": 6, "adjustments": [
+    {{"rule_id": "boost_core_stack", "fired": true, "delta": 1, \
+"evidence": "LangGraph named as a core tool"}},
+    {{"rule_id": "penalty_remote", "fired": false, "delta": 0, "evidence": null}}
+  ], "total": 7}}
 
 Respond with valid JSON only. No markdown, no extra text.\
 """
+
+SYSTEM_PROMPT = _RUBRIC + _TRACE_SPEC
 
 
 def build_prompt(job: JobListing, profile: UserProfile) -> str:

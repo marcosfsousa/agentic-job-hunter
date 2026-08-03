@@ -1297,6 +1297,142 @@ Suite: 389 → 395. (Authored as 387 → 393 against the pre-#85 base; this bran
 onto `main` after #85 and #88 landed, and #88's two `test_config.py` additions moved the
 floor. The +6 is unchanged — it is the six tests listed above.)
 
+## Fix #95 — 2026-08-03 — emit and verify the score arithmetic (Wave A keystone)
+
+`EvaluationResult` gains `score_trace`, `SYSTEM_PROMPT` asks for it with a stable `rule_id` per
+rule, and `check_score_trace` reconciles `start + Σdelta` against `match_score` in Python. The
+row is never dropped for failing: it is logged at WARNING with the posting id, carries the
+reasons in `ScoredJob.trace_warnings`, and renders them as an `**UNVERIFIED SCORE:**` line in
+the digest.
+
+**Placement is the load-bearing part.** `EvaluationResult.model_validate` sits inside
+`_evaluate_one`'s bare `except Exception`, whose handler returns the job unevaluated — and
+`format_digest` filters unevaluated rows out entirely. A check that raised in there would
+delete the row it was meant to flag. It therefore runs in `evaluate_jobs`, after
+`_evaluate_one` returns, on the surviving sample after re-evaluation. `check_score_trace` is
+pure and non-raising so it needs no `try` of its own, and the placement is pinned by its
+consequence — a test asserts a failing check still yields a digest row.
+
+`score_trace` is optional on the model for the same reason: making it required would raise
+inside that same `except`. An absent trace is reported by the checker, not by Pydantic.
+
+**Rule ids are derived, not hand-written.** Each boost and penalty carries a `[rule_id]` tag at
+the head of its bullet — at the *head* so every rule sentence still begins at its original
+first word, since #95 must not reword or re-weight a rule (that is C1/C2/C3). `RULE_IDS` is
+read back out of those tags by regex and interpolated into the trace spec, so a renamed rule
+cannot leave the spec asking for the old id. The prompt is not decomposed into rule objects;
+the issue put that out of scope and it was not needed.
+
+### The measurement — one live freelancermap pool of 25, cached, same listings for every arm
+
+```
+                          parsed  trunc  arith-clean   mean   >=5   out-tok max
+OLD (no trace, 512)       23/25     3        n/a       4.78    13    512 (capped)
+trace-last, 1536          18/25     7      1/16 ( 6%)  5.44    13   1536 (capped)
+trace-first, 2560         17/25     0     14/17 (82%)  4.12     8   2047
++total, +floor            24/25     0     22/24 (92%)  3.46     7   1666
+SHIPPED (dup bullet gone) 25/25     0     22/25 (88%)  3.40     6   1294
+```
+
+The last row is the prompt as merged. The row above it is the same prompt carrying a
+duplicated `score_trace` bullet, which `/simplify` found and removed — the field was
+specified twice, and the stale copy sat *last* in a list relabelled "IN THIS ORDER",
+handing the model two orderings for the one field whose position this whole result
+turns on. Removing it took parseability to 25/25 and cut the output maximum by ~370
+tokens. Re-measured rather than assumed: an unmeasured prompt edit is not finished.
+
+**Three findings the issue did not anticipate, in the order they surfaced.**
+
+1. **The token collision is total, not partial.** The issue predicted 512 "will re-open that
+   failure mode". At 512 with the trace requested, **0 of 25 responses parsed** and all 25
+   truncated at exactly the ceiling. 1536 did not clear it either. 2560 does: 24/25, zero
+   truncation, max observed output 1666 tokens. That 24/25 is the same rate the pre-trace
+   prompt achieved at 512, so the trace costs no parseability once the ceiling fits it.
+
+2. **Asking for the trace *after* the score makes it decorative.** In the first arm the trace
+   was the last field, so it was generated after `match_score` and could only rationalise it:
+   **15 of 16 parseable traces failed the arithmetic, directionally** — the model scored above
+   its own total, typically by +2 or +3. Field order is generation order. Moving `score_trace`
+   to the first field, with the instruction to read the score off its total, took adherence
+   from 1/16 to 14/17. This is what the handoff means by *forcing the arithmetic to be explicit
+   rather than implicit*; asked for last, it forces nothing.
+
+3. **The model wrote a `total` field whether or not it was asked, and wrote it as an
+   expression.** Six of the trace-first failures were one identical `JSONDecodeError`. Dumping
+   the raw response showed the cause: `"total": 6 + 1 + 1 - 2 - 1 - 3` — the addition worked
+   out in the open, with nowhere to put the answer, and not valid JSON. Asking for `total` as
+   one already-evaluated integer fixes those six, and buys a third check for free: a wrong
+   `total` is the model failing at *addition*, while a correct `total` that `match_score`
+   contradicts is the model *overriding a sum it had already worked out* — the D2/D3/D4 shape.
+   Those were previously indistinguishable.
+
+   One further failure was `match_score: 0`. Step 3 of the rubric states a cap and **no floor**,
+   so a trace totalling 0 was emitted as 0 and `Field(ge=1)` rejected it, costing the row. The
+   spec now names the floor, which makes explicit what `match_score: integer 1–10` already
+   implied. No rule's magnitude changed.
+
+**The check compares against a bounded total**, `clamp(start + Σdelta, 1, 9)`, not the bare sum
+the issue wrote. A listing starting at 2 that takes the remote (−3) and ramp-up (−3) penalties
+sums to −4 and `match_score` cannot go there — that is D6's shape exactly, so a raw-sum check
+would flag correctly-scored rows on every run. Both bounds are the rubric's own (step 3's cap;
+`Field(ge=1)`). The cap is unreachable by the rubric's maxima (6 + three 1-pt boosts = 9) and is
+applied only because step 3 states it.
+
+### Validation (CLAUDE.md's ≥5-listing gate — `tests/fixtures/scored_postings/` does not exist yet)
+
+Run at 25 listings, as a controlled before/after: same cached pool, same ranking, same model,
+only the prompt and `max_tokens` differing. Against the five §1 postings the handoff hand-scored:
+
+```
+posting   human  OLD  run1  run2    human band   OLD band    run1        run2
+3004625     6.5    8     7     9    marginal     apply       apply       apply
+3018325       4    7     5     5    hard_skip    apply       marginal    marginal
+3025628       3    6     4     4    hard_skip    marginal    hard_skip   hard_skip
+3028920       6    5     8     7    marginal     marginal    apply       apply
+3003311     1.5    5     4     4    hard_skip    marginal    hard_skip   hard_skip
+
+band accuracy   OLD 1/5   run1 2/5   run2 2/5
+mean abs error  OLD 2.40  run1 1.20  run2 1.60
+```
+
+Band accuracy moves, which is the bar CLAUDE.md sets — *"a change that moves scores without
+moving band accuracy is not an improvement"*. **D4 (#3028920) regressed**, 5 → 8/7 against a
+human 6, and is recorded rather than averaged away.
+
+**Two runs are shown because the second one revealed how noisy a single draw is, and that
+caveat is load-bearing.** `run1` and `run2` are the same prompt over the same cached pool,
+differing only by the duplicated-bullet removal: they **disagree on 8 of 24 listings, with a
+maximum swing of 4 points**. So the direction is consistent — band accuracy 1/5 → 2/5 and MAE
+down in both runs — but the *magnitude* (1.20 vs 1.60) is inside the sampling noise, and five
+labelled postings cannot resolve it. Quoting a single MAE figure as if it were precise would
+overstate what was measured.
+
+That variance is a finding in its own right and a direct input to **A2/#96**: a fixture suite
+asserting single-draw scores would flake badly at this spread. It is a second, independent
+reason for the handoff's *"assert on band, not exact score"* — and it compounds with the
+`reeval_below` max-of-two-draws interaction filed as #108.
+
+**This is a real behavioural change, and no version of A1 was behaviour-neutral.** Trace-last
+moved the pool mean *up* 4.78 → 5.44 while leaving the check firing on 94% of rows; the shipped
+prompt moves it *down* to 3.40 with the check clean on 22 of 25. The distribution also
+decompresses (`9x1 8x1 7x1 6x1 5x2 4x7 3x1 2x3 1x8` against a bunched `5x7 3x7`), which is D6 —
+several hard blockers scoring the same as one soft mismatch — beginning to resolve. Fewer rows
+clear `email_min_score: 5`: **6 of 25 against 13 of 23**. That is the rubric applied as written, and it is
+the measurement C1/C2/C3 were waiting on; `email_min_score` is deliberately **not** touched here.
+
+**The residual failure cleared.** The `+total, +floor` arm had one listing of 25 transposing
+`fired` and `delta` (`"fired": -3`); on the shipped prompt all 25 parse. Recorded rather than
+celebrated — one pool on one day, and the transposition is the kind of malformation that will
+recur. It fails loudly and sorts last if it does, as parse failures already did; coercing it
+would hide a real malformation.
+
+**Discovered, filed separately, not fixed here:** `reeval_below: 4` re-evaluates anything below
+4 and keeps the *higher* of two draws. With the arithmetic now applied faithfully, eight of 25
+listings score 1 and twelve score below 4, so re-evaluation fires on roughly half the pool and systematically inflates
+exactly the band the trace just corrected. `reeval_below` is explicitly out of #95's scope.
+
+Suite: 395 → 424 (`/simplify` removed one test already owned by `test_models.py`).
+
 ---
 
 ## Feature #96 — 2026-08-03 — the A2 regression corpus, split manifest / local text
@@ -1472,6 +1608,13 @@ is exactly where the `hard_skip` rows a before/after run is watching live.
 Suite: 425 collected — 412 passed, 6 xfailed, 2 xpassed, 5 skipped. The four excerpt files
 load and parse (verified against the loader directly, since a live run needs a key); the
 fifth skips pending text.
+
+(Both counts above were taken against the pre-#95 base. This branch merged `main` after #95
+landed; the merged floor is **460 collected — 447 passed, 6 xfailed, 2 xpassed, 5 skipped**.
+The 425 was also the tally at this entry, and three later commits on the branch added tests
+after it. The 6 xfailed and 2 xpassed are unchanged, which is the number that matters here —
+see the module's `BAND_BLIND_REASON`, whose issue pointer moved from #95 to #97/#98 in the
+same merge, `score_trace` now being built rather than pending.)
 
 ---
 
