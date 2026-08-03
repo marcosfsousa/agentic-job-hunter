@@ -127,6 +127,17 @@ def _case_id(case: dict) -> str:
     return f"{case['id']}-{case['label'].replace(' ', '-')}"
 
 
+def _is_blank(value: object) -> bool:
+    """Whether a YAML value counts as absent.
+
+    `key:` with no value parses to `None`, and `str(None)` is the four truthy
+    characters `None` — so the obvious `str(d.get(k, "")).strip()` reports a
+    blank key as present. Every guard below that treats "declared but empty" as
+    a false pass has to check the value, not its repr.
+    """
+    return value is None or not str(value).strip()
+
+
 def _cases_with(baseline: str) -> list[dict]:
     return [c for c in _CASES if c["baseline"] == baseline]
 
@@ -176,7 +187,7 @@ class TestCorpusIntegrity:
     def test_every_case_names_the_rule_it_exercises(self):
         """#96's second acceptance criterion. A fixture that does not say what it is
         for becomes a fixture nobody dares delete and nobody can act on."""
-        unlabelled = [c["id"] for c in _CASES if not str(c.get("exercises", "")).strip()]
+        unlabelled = [c["id"] for c in _CASES if _is_blank(c.get("exercises"))]
         assert unlabelled == []
 
     def test_every_case_declares_a_known_band(self):
@@ -301,7 +312,7 @@ class TestRecordedBaseline:
         assert {c["id"] for c in sub_band} == {"3004625", "3028920"}
         for case in sub_band:
             assert band_of(case["tool_score"]) == case["expected_band"], case["id"]
-            assert str(case.get("sub_band_defect", "")).strip(), (
+            assert not _is_blank(case.get("sub_band_defect")), (
                 f"{case['id']} is marked pass_with_known_defect but does not say what "
                 "the defect is — the marking is the only record that it exists"
             )
@@ -459,7 +470,7 @@ def _read_posting(case: dict) -> tuple[dict, str]:
     _, front_matter_text, body = text.split("---", 2)
     front_matter = yaml.safe_load(front_matter_text) or {}
 
-    missing = [k for k in _REQUIRED_FRONT_MATTER if not str(front_matter.get(k, "")).strip()]
+    missing = [k for k in _REQUIRED_FRONT_MATTER if _is_blank(front_matter.get(k))]
     if missing:
         pytest.fail(
             f"{path} is missing required front matter: {', '.join(missing)}. "

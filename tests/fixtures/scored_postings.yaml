@@ -6,7 +6,7 @@
 # rule the case exercises. Eight of them are the confirmed defects of § 1 (D1–D6);
 # six are controls the tool has never scored.
 #
-# WHY THE POSTING TEXT IS NOT HERE
+# WHY THE POSTING BODIES ARE NOT HERE
 # This repository is public and linked from a CV, and the postings are third-party
 # copyrighted text naming real contact persons. `tests/fixtures/scored_postings/` is
 # therefore gitignored and holds the text locally only; this manifest is the committed
@@ -14,6 +14,21 @@
 # it has the same mechanical tripwire — see `test_no_scored_posting_text_is_tracked`
 # in tests/test_repo_invariants.py. `contract_evaluation_log.md`, the source the human
 # scores come from, stays out of the repo entirely (handoff § 8).
+#
+# WHAT THIS MANIFEST MAY QUOTE — state the rule precisely, because the file has to
+# obey it. The line is not "no posting text at all"; it is:
+#   * NO posting bodies, paragraphs, or anything approaching a reproduction of a
+#     posting. That is what the gitignore and the tripwire exist to stop.
+#   * NEVER a named individual, in this file or anywhere else in the repo.
+#   * A short clause MAY be quoted verbatim where the rule under test turns on its
+#     exact wording and a paraphrase would destroy the thing being tested — D5 is
+#     about how `Englisch (C1) oder Deutsch (C1)` is parsed, so naming that clause
+#     IS the case definition. Quote the clause, not the sentence around it.
+#   * Everything else — skills bullets, responsibilities, boilerplate — gets
+#     paraphrased. If a paraphrase still identifies the clause for whoever is
+#     building the local excerpt, the verbatim version was decoration.
+# Card metadata (`100% remote`, `20 % Auslastung`) is factual, not expressive, and is
+# quoted freely — several cases are *about* the card disagreeing with the body.
 #
 # THE TWO SHAPES, AND WHAT EACH BUYS
 #   * metadata-only (all fourteen) — drives the offline baseline. The assertion is
@@ -154,8 +169,8 @@ cases:
       "Englisch (C1) oder Deutsch (C1)" clause verbatim, since D5 is about how the
       disjunction is read. Contact persons out.
     excerpt_must_omit: >-
-      The "mehrsprachige Backend-Entwicklung in Python, Node.js, Go und
-      JavaScript/TypeScript" bullet. It is an independent hard blocker and a large part
+      The multi-language backend bullet (the one listing Python, Node.js, Go and
+      JavaScript/TypeScript). It is an independent hard blocker and a large part
       of why the human score is 4 — but neither C1 nor B2 reads it, and including it lets
       the scorer reach `hard_skip` by firing the stack rule while both named rules stay
       broken. A fixture that passes for the wrong reason is worse than a missing one.
