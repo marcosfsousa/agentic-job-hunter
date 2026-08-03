@@ -419,27 +419,30 @@ Band targets, with the rule each case exercises. Cases 1–8 are current failure
 | #3004625 | 6 | 6.5 | marginal | false gaps (B1) |
 | #3028920 | 5 | 6 | marginal | inferred vs. declared language (B2) |
 | #2999393 | 7 | 6.5 | marginal | non-engineering deliverable (Wave D2) |
-| `ref-886891-1-en` | — | 8 | apply | zero-blocker positive control |
-| `dsgvo-rag-mcp-wissensserver` | — | 7.5 | apply | direct client, Werkvertrag shape |
-| `senior-ai-platform-engineer` | — | 7 | apply | thin posting, no language gate |
+| `case09` | — | 8 | apply | zero-blocker positive control |
+| `case10` | — | 7.5 | apply | direct client, Werkvertrag shape |
+| `case11` | — | 7 | apply | thin posting, no language gate |
 | #3028352 | — | 6.5 | marginal | strong content vs. structural gate |
-| `stuttgart-python-cut` | — | 6.5 | marginal | sibling-posting comparison |
+| `case13` | — | 6.5 | marginal | sibling-posting comparison |
 | #3027789 | — | 6 | marginal | strong AI content, weak profile match |
 
-**Every row has a stable identifier.** Eight cases key on their platform posting ID; the
-six the tool never scored have no such ID and key on the slug shown instead. The company
-each row refers to, and the full posting text, are in the private evaluation log —
-extract per fixture rather than in bulk.
+**Every row has a stable identifier.** Ten cases key on their platform posting ID. Four
+carry no such ID and key on a case number instead. That is a different split from the
+one the scores show: **six** rows have no tool score, because the tool never saw them,
+and two of those six do carry a posting ID. The company each row refers to, and the full
+posting text, are in the private evaluation log — extract per fixture rather than in
+bulk.
 
-Twelve of the fourteen keys match #96's manifest exactly. **Two deliberately do not** —
-the manifest's spelling of them embeds the company name, which is the thing this table's
-redaction removes, so the neutral form is used here instead. #115 carries both spellings
-and proposes the manifest adopt these. Until it does, those two rows do not join across
-the two documents, and both are `apply` positive controls.
+**No key is derived from a posting's identity**, and that is the rule rather than "no
+company names" — it holds without a judgement call each time a row is added. It is why
+`case13` is a case number despite naming only a city: a location next to a score is
+mildly identifying on its own. #96's manifest adopts these same fourteen keys in #111,
+which supersedes #115.
 
-The three `apply` rows are the positive controls #96's C3 sufficiency gate depends on, so
-they have to stay citable by name: `ref-886891-1-en`, `dsgvo-rag-mcp-wissensserver`,
-`senior-ai-platform-engineer`.
+The three `apply` rows are the positive controls #96's C3 sufficiency gate depends on.
+**Write that gate against `band: apply`, not against the labels** — the band is already
+in the manifest and is the queryable form, whereas a label grep matches one row of the
+three and passes when it should not.
 
 ---
 
