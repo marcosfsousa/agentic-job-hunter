@@ -33,6 +33,38 @@ Goal: fewer, higher-quality matches. This tool finds and ranks. User decides wha
 - Pipeline must be idempotent — same day = same digest.
 - Adapter pattern must stay clean — pipeline stages never change when adding a source.
 
+## Working a tracked issue
+
+When I say "work #<n>", fetch the issue and follow it. No further
+briefing should be needed.
+
+Before writing code:
+- Read the issue, and the handoff section it links
+  (`docs/jobscout_scoring_handoff.md`, incl. § 9 verification results)
+
+While working:
+- **If implementing reveals the diagnosis was wrong: STOP.** Comment
+  on the issue with what the code actually does, and report back.
+  Do not implement an adjacent fix you think is better.
+- Stay inside the issue's `Scope: In`. If you see something wrong
+  outside it, open a new issue labelled `discovered` and move on —
+  do not fix it in passing.
+- `Acceptance criteria` bound the work. Nothing beyond them ships.
+
+Validation for scoring changes:
+- If `tests/fixtures/scored_postings/` exists, run it and comment the
+  band-accuracy result before and after on the issue. **A change that
+  moves scores without moving band accuracy is not an improvement.**
+- Until it exists, the ≥5-listing validation gate below applies.
+  Once it exists, the fixture set supersedes that gate for any change
+  to `SYSTEM_PROMPT`, `profile.yaml`, or the filter predicates.
+
+**The private evaluation log stays out of the repo.** A finding from it becomes an issue
+only when it can be stated as a reproducible behaviour with a posting ID attached;
+everything else stays market intelligence. Quote a specific note inline in an issue if
+its reasoning is unclear — never commit the file, and never paraphrase its contents at
+length in a committed document.
+
 ## When making changes
 
 - Run `pytest` after any change to models, filters, or ranking
