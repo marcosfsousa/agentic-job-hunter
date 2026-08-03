@@ -1338,6 +1338,25 @@ front-matter loader enforces the first half: title, company and location are req
 deliberately not defaulted, because a defaulted `company: unknown` would anonymise the
 signal silently.
 
+**The fidelity limit, recorded per fixture rather than as a footnote.** An excerpt-scored
+fixture is not the conditions the human score was assigned under: the human read the whole
+posting, the scorer sees a fragment — and the excerpting rule above widens that gap on
+purpose. So a live result on an excerpt is evidence about *the rule* (did the clause fire,
+in the stated direction) and not about *the score*; it does not support "the tool would now
+score this posting correctly", and no rule should be tuned until an excerpt reproduces a
+human number. Removing the limit would mean keeping the full text, which is the thing the
+excerpting rule exists to prevent, so it is recorded rather than engineered away: a
+`text_provenance` field per case (`excerpt` / `full` / `absent`), repeated in each excerpt's
+front matter, checked against the manifest on load, and restated in the live assertion
+message — which is what someone actually reads at the moment they decide what the number
+means. The offline baseline is untouched by all of it: it asserts against a tool score
+produced from the full posting in a real run, and never opens the text.
+
+**The gitignore stands regardless of how little text a fixture carries.** Excerpting to the
+rule reduces the exposure; it does not make third-party text something a public repo should
+carry. Written into the `.gitignore` comment itself, where the argument for revisiting it
+would be made.
+
 **The offline mode asserts against the record, not against the model.** `band(recorded tool
 score) == expected band` needs no network, no API key and no posting text, which is what
 lets it run in CI at all. Live re-scoring (`JOBSCOUT_LIVE_EVAL=1`, one real call per case,

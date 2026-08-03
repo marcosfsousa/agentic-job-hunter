@@ -19,6 +19,10 @@ digests/
 # rule with no `!` exception: a negation here is one careless pattern away from
 # whitelisting the text back in, which is why the manifest sits outside the directory
 # rather than inside it. Enforced by tests/test_repo_invariants.py.
+#
+# This holds regardless of how little text a fixture ends up carrying. Excerpting to the
+# rule reduces the exposure; it does not make third-party text something a public repo
+# should carry, and "it's only a few clauses now" is not a reason to revisit this line.
 tests/fixtures/scored_postings/
 
 # Python

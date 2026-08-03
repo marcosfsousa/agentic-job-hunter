@@ -19,10 +19,11 @@
 #   * metadata-only (all fourteen) — drives the offline baseline. The assertion is
 #     `band(tool_score) == expected_band` against the score the tool *recorded*, so it
 #     needs no posting text, no network and no API key. This is what runs in CI.
-#   * live-rescorable (`live_rescorable: true`) — the six whose text exists locally.
+#   * live-rescorable (`live_rescorable: true`) — the five the maintainer holds text for.
 #     `JOBSCOUT_LIVE_EVAL=1 pytest tests/test_scored_postings.py` re-scores those
 #     through the real evaluator and asserts the same bands against a fresh draw.
-#     This is the mode Wave C measures its calibration changes with.
+#     This is the mode Wave C measures its calibration changes with — subject to the
+#     fidelity limit below, which is what an excerpt costs.
 #
 # EXCERPT FILE FORMAT — `tests/fixtures/scored_postings/<id>.md`, gitignored:
 #
@@ -32,8 +33,23 @@
 #     location: Frankfurt, Deutschland
 #     url: https://www.freelancermap.de/projekt/...
 #     remote_percentage: 100        # optional; omit if the posting states none
+#     provenance: excerpt           # required; must match the case's text_provenance
 #     ---
 #     Only the clauses the case's `exercises` field names. Nothing else.
+#
+# FIDELITY LIMIT — what a live re-score against an excerpt is and is not
+# An excerpt-scored fixture is NOT the conditions the human score was assigned under.
+# The human read the whole posting; the scorer sees a fragment. So a live result on a
+# `provenance: excerpt` fixture is evidence about **the rule** — did the clause fire,
+# in the direction and roughly the magnitude the rule says — and not about **the
+# score**. Do not read a passing excerpt as "the tool would now score this posting
+# correctly", and do not tune a rule until an excerpt reproduces a human number.
+# This is a real limit and not a caveat to be engineered away: the fix for it would be
+# keeping the full text, which is what the excerpting rule above exists to prevent.
+# `text_provenance` records the shape per case, the excerpt file repeats it in its front
+# matter, and the harness fails if the two disagree.
+# The offline baseline is unaffected — it asserts against the recorded tool score, which
+# was produced from the full posting in a real run, and it never reads the text at all.
 #
 # WHAT TO KEEP, WHAT TO STRIP
 #   * KEEP the company and the location, unanonymised. `build_prompt` puts both in the
@@ -95,6 +111,7 @@ cases:
     rules: [C1, B2]
     issues: [101, 98]
     live_rescorable: true
+    text_provenance: excerpt
     excerpt_must_keep: >-
       The real company and the öffentlicher-Auftraggeber framing — the client being a
       public-sector body is load-bearing for the ownership case — and the
@@ -120,6 +137,7 @@ cases:
     rules: [B4, C3]
     issues: [99, 103]
     live_rescorable: true
+    text_provenance: excerpt
     notes: >-
       D3: the platform card renders `100% Remote` from `remoteInPercent`, so the metadata
       filter passed it correctly; the disqualifying fact ("100% remote after an initial
@@ -146,6 +164,7 @@ cases:
     rules: [C2]
     issues: [102]
     live_rescorable: false
+    text_provenance: absent
 
   - id: "3003311"
     posting_id: "3003311"
@@ -160,6 +179,7 @@ cases:
     rules: [C3]
     issues: [103]
     live_rescorable: false
+    text_provenance: absent
 
   - id: "3027041"
     posting_id: "3027041"
@@ -174,6 +194,7 @@ cases:
     rules: [C3]
     issues: [103]
     live_rescorable: false
+    text_provenance: absent
 
   - id: "3004625"
     posting_id: "3004625"
@@ -188,6 +209,7 @@ cases:
     rules: [B1]
     issues: [97]
     live_rescorable: true
+    text_provenance: excerpt
     sub_band_defect: >-
       Three of four stated `gaps` were false — skills present in the CV reported as
       absent. The defect is in the `gaps` field, not in the number: 6 and the human's
@@ -207,6 +229,7 @@ cases:
     rules: [B2]
     issues: [98]
     live_rescorable: true
+    text_provenance: excerpt
     excerpt_must_keep: >-
       The real company and the real location, unanonymised. They are not context here,
       they are the input under test: the penalty fired on German inferred from exactly
@@ -236,6 +259,7 @@ cases:
     rules: [wave-d]
     issues: []
     live_rescorable: true
+    text_provenance: excerpt
     notes: >-
       Wave D is unfiled — the handoff says discuss scope before building. This case is
       the evidence that discussion will need.
@@ -260,6 +284,7 @@ cases:
     rules: []
     issues: []
     live_rescorable: false
+    text_provenance: absent
 
   - id: dsgvo-rag-mcp-wissensserver
     posting_id: null
@@ -274,6 +299,7 @@ cases:
     rules: []
     issues: []
     live_rescorable: false
+    text_provenance: absent
 
   - id: ibsc-senior-ai-platform-engineer
     posting_id: null
@@ -288,6 +314,7 @@ cases:
     rules: []
     issues: []
     live_rescorable: false
+    text_provenance: absent
     notes: >-
       digests/2026-07-30.md scores an "iBSC ltd — Senior AI Platform Engineer 100% Remote
       (EU)" at 8/10 under id 3029650. Deliberately NOT adopted as `tool_score`: § 6 marks
@@ -308,6 +335,7 @@ cases:
     rules: []
     issues: []
     live_rescorable: false
+    text_provenance: absent
 
   - id: stuttgart-python-cut
     posting_id: null
@@ -322,6 +350,7 @@ cases:
     rules: []
     issues: []
     live_rescorable: false
+    text_provenance: absent
 
   - id: "3027789"
     posting_id: "3027789"
@@ -336,6 +365,7 @@ cases:
     rules: []
     issues: []
     live_rescorable: false
+    text_provenance: absent
     notes: >-
       digests/2026-07-30.md records 5/10 for this id. Not adopted, for the same reason as
       the iBSC row: § 6 marks the Tool column "—" and this manifest transcribes § 6. Note

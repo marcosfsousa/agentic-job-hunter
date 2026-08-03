@@ -20,6 +20,18 @@ text). Re-scores through the real `evaluate_jobs` and asserts the same bands aga
 fresh draw. This is the mode that measures a calibration change; the offline mode
 records what it measured.
 
+THE FIDELITY LIMIT. An excerpt-scored fixture is **not** the conditions the human score
+was assigned under: the human read the whole posting, the scorer sees a fragment. So a
+live result on a `provenance: excerpt` fixture is evidence about **the rule** — did the
+clause fire, in the direction the rule states — and not about **the score**. It does not
+support "the tool would now score this posting correctly", and no rule should be tuned
+until an excerpt reproduces a human number. The limit is structural, not a caveat to be
+engineered away: removing it means keeping the full posting text, which is the thing the
+excerpting rule exists to prevent. `text_provenance` records the shape per case, each
+excerpt file repeats it in its front matter, and `_read_posting` fails if the two
+disagree. The offline baseline is unaffected — it asserts against a tool score produced
+from the full posting in a real run, and never reads the text at all.
+
 BAND, NOT EXACT SCORE — #96's scope, restated because it is the constraint most likely
 to be "improved" away: the goal is catching a 1 scored as a 5, not arguing 6 vs 6.5.
 Exact-score assertions on a stochastic model get disabled within a month.
@@ -186,6 +198,26 @@ class TestCorpusIntegrity:
             "pass_with_known_defect",
             "unrecorded",
         }
+
+    def test_every_case_declares_its_text_provenance(self):
+        """`excerpt`, `full` or `absent` — what the local text file is, if any.
+
+        Recorded per case because it bounds what a live result means: an excerpt is
+        not the conditions the human score was assigned under. See the fidelity limit
+        in the module docstring.
+        """
+        assert {c["text_provenance"] for c in _CASES} <= {"excerpt", "full", "absent"}
+
+    def test_provenance_and_live_rescorability_agree(self):
+        """A case is live-rescorable exactly when there is text to score it against.
+
+        The two are separate fields because they answer different questions — "is
+        there a local file" and "what is in it" — and a row where they disagree either
+        silently skips a case that has text, or promises a live run that cannot happen.
+        """
+        for case in _CASES:
+            has_text = case["text_provenance"] != "absent"
+            assert bool(case.get("live_rescorable")) == has_text, case["id"]
 
     def test_unrecorded_cases_carry_no_tool_score_and_scored_cases_do(self):
         """`unrecorded` means § 6 left the Tool column empty. The two must not drift:
@@ -396,7 +428,7 @@ def _live_cases() -> list:
 # the company and the location, which is the inference the rule carves out. A default
 # there would silently anonymise the signal and leave a case that passes without
 # testing anything. Fail instead.
-_REQUIRED_FRONT_MATTER = ("title", "company", "location")
+_REQUIRED_FRONT_MATTER = ("title", "company", "location", "provenance")
 
 
 def _read_posting(case: dict) -> tuple[dict, str]:
@@ -421,6 +453,19 @@ def _read_posting(case: dict) -> tuple[dict, str]:
             "Keep the company and the location unanonymised — they reach the model and "
             f"for some cases they are the signal. See `excerpt_must_keep` on this case "
             "in the manifest."
+        )
+
+    # The file states what it is, and the manifest states what it should be. Checked
+    # rather than trusted: a full posting sitting behind a case declared `excerpt` would
+    # quietly turn a rule-level result into a score-level claim, which is the one
+    # inference the fidelity limit forbids. Drift in the other direction — an excerpt
+    # behind a `full` declaration — overstates the result the same way.
+    declared = front_matter["provenance"]
+    if declared != case["text_provenance"]:
+        pytest.fail(
+            f"{path} declares `provenance: {declared}` but the manifest records "
+            f"`text_provenance: {case['text_provenance']}` for {case['id']}. One of "
+            "them is wrong, and which one changes what a live result here means."
         )
     return front_matter, body.strip()
 
@@ -487,8 +532,18 @@ class TestLiveRescoring:
             "failure, not a scoring one"
         )
         score = results[0].evaluation.match_score
+        # The caveat travels with the result rather than living only in the docstring:
+        # this message is what someone reads at the moment they are deciding what the
+        # number means, which is the moment the fidelity limit is easiest to forget.
+        fidelity = (
+            "Scored against an EXCERPT — the clauses the rule reads, not the posting "
+            "the human scored. Read this as evidence about the rule, not about the "
+            "score."
+            if front_matter["provenance"] == "excerpt"
+            else "Scored against the full posting text."
+        )
         assert band_of(score) == case["expected_band"], (
             f"{case['id']} ({case['label']}): live score {score} -> {band_of(score)}, "
             f"human scored {case['human_score']} -> {case['expected_band']}. "
-            f"Exercises: {case['exercises']}."
+            f"Exercises: {case['exercises']}. {fidelity}"
         )

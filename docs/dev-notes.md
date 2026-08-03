@@ -112,6 +112,14 @@ Run this before and after a `SYSTEM_PROMPT` change — the five `live_rescorable
 real listings hand-scored against the real `profile.yaml`, which is exactly what CLAUDE.md's
 "test with at least 5 real job listings" gate is asking for.
 
+**Read a live result as evidence about the rule, not about the score.** Those five are
+scored against *excerpts* — the clauses the rule reads — and the human scored the whole
+posting, so the two are not the same conditions. Watch whether the clause fires and in
+which direction; do not tune a rule until an excerpt reproduces a human number. Each case
+records its `text_provenance` and the excerpt repeats it in front matter, so a full posting
+behind a case declared `excerpt` fails rather than quietly upgrading the claim. The offline
+baseline is unaffected — it never reads the text.
+
 ### Check GH Actions queue delay trend
 ```bash
 gh run list --limit 10 --workflow=daily_run.yml --json startedAt,createdAt | python scripts/check_run_delays.py
