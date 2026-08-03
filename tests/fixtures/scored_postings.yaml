@@ -19,7 +19,8 @@
 #   * metadata-only (all fourteen) — drives the offline baseline. The assertion is
 #     `band(tool_score) == expected_band` against the score the tool *recorded*, so it
 #     needs no posting text, no network and no API key. This is what runs in CI.
-#   * live-rescorable (`live_rescorable: true`) — the five the maintainer holds text for.
+#   * live-rescorable (`live_rescorable: true`) — five cases. Four hold excerpt text today;
+#     #3028920 is waiting on its full posting and skips until it lands.
 #     `JOBSCOUT_LIVE_EVAL=1 pytest tests/test_scored_postings.py` re-scores those
 #     through the real evaluator and asserts the same bands against a fresh draw.
 #     This is the mode Wave C measures its calibration changes with — subject to the
@@ -74,6 +75,41 @@
 # until someone re-records `tool_score` and flips `baseline` to `pass`. Do not fix a
 # score by editing `expected_band` — the band is the human's judgement, not the tool's.
 #
+# `pass_with_known_defect` is the other marking, and it is NOT a ratchet. Those two
+# assertions are xfailed *non-strictly* with `BAND_BLIND_REASON`, so they report XPASS:
+# the assertion runs, passes, and decides nothing, because the defect does not move
+# magnitude. Do not "fix" the XPASS by removing the marker — that would restore a green
+# tick that means nothing. It comes off when #97 and #98 add assertions that can see the
+# defect, and not before.
+#
+# COVERAGE IS PARTIAL — a green suite is not full coverage
+# § 6 lists fourteen cases and this manifest carries all fourteen, but only five hold
+# posting text, and one of those five is still waiting for it. Everything else is a
+# metadata-only row driving the offline baseline. Outstanding, and who holds each:
+#
+#   #3028920 full text (the Skills block)         maintainer — retrieval
+#   DSGVO-RAG / MCP-Wissensserver (7.5, apply)    maintainer — retrieval
+#   iBSC Senior AI Platform Eng. (7, apply)       maintainer — retrieval
+#   Hays 886891/1-en (8, apply)                   maintainer — from materials kept 27 Jul;
+#                                                 the provider closed the posting
+#   #3008147, #3003311, #3027041                  maintainer — retrieval
+#   #3028352, Stuttgart Python cut, #3027789      maintainer — retrieval
+#
+# NOT SUFFICIENT TO VALIDATE C3 (#103)
+# Every case here is an over-scoring failure or a same-band defect. At least two
+# `apply`-band positive controls must be *scorable* before C3's rebalancing is validated
+# against this corpus — otherwise a scorer that scores everything low passes it. Three
+# such rows exist (Hays, DSGVO-RAG, iBSC) and none of them has text or a recorded tool
+# score, so today the count of usable positive controls is zero. This is an acceptance
+# criterion on #96, not a footnote.
+#
+# WHY #3030519 IS NOT HERE
+# It is not a § 6 case and it never reached the evaluator — published 31.07 15:40, inside
+# the ingestion window, dropped before scoring — so no correct `tool_score` exists for it
+# and any value in that column would be invented. It belongs to #107 (drop observability),
+# where the drop reason would be observable. Reference for that issue: human **3.5**, band
+# `hard_skip`. No posting text is held. Do not add it back as a case here.
+#
 # PROVENANCE: § 6 of the handoff, which lives on branch `docs-scoring-handoff-verification`
 # and is not merged to main at the time of writing. Tool scores are § 6's, transcribed
 # verbatim, including where a digest disagrees (see #3025628's note).
@@ -117,6 +153,12 @@ cases:
       public-sector body is load-bearing for the ownership case — and the
       "Englisch (C1) oder Deutsch (C1)" clause verbatim, since D5 is about how the
       disjunction is read. Contact persons out.
+    excerpt_must_omit: >-
+      The "mehrsprachige Backend-Entwicklung in Python, Node.js, Go und
+      JavaScript/TypeScript" bullet. It is an independent hard blocker and a large part
+      of why the human score is 4 — but neither C1 nor B2 reads it, and including it lets
+      the scorer reach `hard_skip` by firing the stack rule while both named rules stay
+      broken. A fixture that passes for the wrong reason is worse than a missing one.
     notes: >-
       Two defects on one posting. D2: platform-ownership language named in the model's
       own prose and then not penalised — #101 finds the `ownership` deprioritise entry
@@ -138,6 +180,22 @@ cases:
     issues: [99, 103]
     live_rescorable: true
     text_provenance: excerpt
+    excerpt_must_keep: >-
+      BOTH the Location and the Duration line. The onsite week is disqualifying because
+      it is more than 10% of a two-month term; Location alone is a weaker test than the
+      posting was. This fixture plus one #95 trace assertion is B4's entire test surface.
+    excerpt_must_omit: >-
+      Nothing beyond the Project Details block — the rule reads prose, and padding it
+      restores the ~800 words of noise the excerpt is not claiming to reproduce.
+    card_metadata_note: >-
+      The card rendered this posting as `100% remote / fulltime` while the body states
+      the onsite week, and the front matter carries `remote_percentage: 100` so the row
+      records that. It does NOT reproduce the divergence inside the evaluator, and it
+      cannot: `build_prompt` (prompt.py:126-129) sends title, company, location and
+      description only — no percentage. The model has never seen the card. So the
+      divergence is real at the filter (which passed the row on a true metadata field)
+      and invisible at the evaluator, which sees prose alone. That is not a gap in this
+      fixture; it is why § 9 calls the -3 prose rule the sole detector for the class.
     notes: >-
       D3: the platform card renders `100% Remote` from `remoteInPercent`, so the metadata
       filter passed it correctly; the disqualifying fact ("100% remote after an initial
@@ -210,6 +268,15 @@ cases:
     issues: [97]
     live_rescorable: true
     text_provenance: excerpt
+    excerpt_must_keep: >-
+      The MCP Client Integration line — it is the ONE true gap. Without it the fixture
+      cannot tell "stopped inventing gaps" from "stopped emitting gaps at all", and #97's
+      assertion is on the contents of `gaps`: one entry, naming MCP.
+    sequencing_constraint: >-
+      Record this baseline BEFORE #100 lands. If #100 adds `React` / `TypeScript` to
+      `working_knowledge`, this fixture's expected `gaps` changes — and a baseline that
+      moves on a config change rather than a code change loses the attribution that makes
+      it worth having.
     sub_band_defect: >-
       Three of four stated `gaps` were false — skills present in the CV reported as
       absent. The defect is in the `gaps` field, not in the number: 6 and the human's
@@ -229,7 +296,14 @@ cases:
     rules: [B2]
     issues: [98]
     live_rescorable: true
-    text_provenance: excerpt
+    # `full`, not `excerpt`, and this is the one case where that is not negotiable:
+    # D4 fires on an ABSENCE — German inferred from the location, relabelled "declared",
+    # and penalised on a posting that declares no German requirement. An excerpt cannot
+    # demonstrate an absence. A scorer handed two paragraphs finds no declared
+    # requirement because it was handed two paragraphs, so an excerpt would manufacture
+    # the pass. Text not yet retrieved; the row stays and the live test skips until it
+    # lands. Do not substitute an excerpt.
+    text_provenance: full
     excerpt_must_keep: >-
       The real company and the real location, unanonymised. They are not context here,
       they are the input under test: the penalty fired on German inferred from exactly
@@ -260,9 +334,18 @@ cases:
     issues: []
     live_rescorable: true
     text_provenance: excerpt
+    card_metadata_note: >-
+      `20 % Auslastung` is card metadata, not prose, and it is NOT inferable from the
+      body. It also cannot reach the fixture today: `JobListing` (models.py) has no
+      workload field at all — not the adapter, not the model, not the prompt. If the
+      Wave D `Auslastung` dimension is to be tested here, that is a `JobListing` change
+      and belongs to a new issue, not to this fixture.
     notes: >-
-      Wave D is unfiled — the handoff says discuss scope before building. This case is
-      the evidence that discussion will need.
+      Crosses `apply` -> `marginal`, so it asserts normally and is a genuine baseline
+      failure. But the rule it exercises is Wave D2, which is UNFILED and UNSCOPED —
+      nothing in Waves A-C will move it. Record it; do not treat it as a target and do
+      not fix it in passing. Wave D is where the scope discussion happens, and this case
+      is the evidence that discussion will need.
 
   # --- controls: no recorded tool score ---------------------------------------
   # § 6 leaves the Tool column empty for these six. Four are not freelancermap rows

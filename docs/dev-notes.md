@@ -102,6 +102,12 @@ Live re-scoring calls Haiku once per posting and is opt-in:
 JOBSCOUT_LIVE_EVAL=1 pytest tests/test_scored_postings.py -q   # needs ANTHROPIC_API_KEY
 ```
 
+Set `REEVAL_BELOW=0` on any baseline or comparison run of the **pipeline** too —
+`REEVAL_BELOW=0 python -m jobscout.run` — not just in the harness, which pins it already.
+Unpinned, the max-of-two draw issues a second evaluation for anything under 4 and keeps the
+higher, which inflates the bottom of the distribution and confounds exactly the `hard_skip`
+rows a before/after comparison is looking at.
+
 It skips any case whose posting text is missing. That text is **gitignored** —
 `tests/fixtures/scored_postings/<id>.md`, third-party posting content that does not go in
 a public repo, guarded by `tests/test_repo_invariants.py`. On a fresh clone the directory

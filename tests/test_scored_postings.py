@@ -76,6 +76,13 @@ HARNESS_REEVAL_BELOW = 0
 
 _LIVE_ENV_VAR = "JOBSCOUT_LIVE_EVAL"
 
+# Verbatim and shared, so `grep` finds every assertion a band cannot decide — here and
+# in whatever #97 and #98 add. Non-strict on purpose: these two assertions *pass* today
+# and would pass with D1 and D4 unfixed, which is the whole point. Marking them xfail
+# says "this assertion cannot decide this case"; strict would demand they fail, which
+# they do not and should not. They report as XPASS, and XPASS is not an error here.
+BAND_BLIND_REASON = "band assertion cannot detect this defect; needs score_trace (#95)"
+
 # § 6 lists fourteen cases. Pinned as a number so a dropped row is a failure rather
 # than a smaller parametrisation nobody notices.
 _EXPECTED_CASE_COUNT = 14
@@ -136,6 +143,8 @@ def _recorded_cases() -> list[dict]:
         if case["tool_score"] is None:
             continue
         marks = []
+        if case["baseline"] == "pass_with_known_defect":
+            marks.append(pytest.mark.xfail(reason=BAND_BLIND_REASON))
         if case["baseline"] == "fail":
             marks.append(
                 pytest.mark.xfail(
@@ -280,9 +289,13 @@ class TestRecordedBaseline:
         """D1 (#3004625) and D4 (#3028920) are confirmed defects that pass at band level.
 
         Both move the score by less than a band, so no band assertion can ever catch
-        them. Asserting that explicitly stops a green run from reading as "all eight
-        § 1 defects are covered" — they are not, and #97 and #98 are where the other
-        two are caught, against the `gaps` field and the trace.
+        them — D1 is a defect in the *contents* of `gaps`, D4 in the *provenance label*
+        on a language penalty, and neither moves magnitude. Their band assertions carry
+        `BAND_BLIND_REASON` and report as XPASS, which is the honest signal: the
+        assertion runs, passes, and decides nothing. Asserting that state explicitly
+        stops a green run from reading as "all eight § 1 defects are covered" — they are
+        not. The real assertions land with #97 (`gaps` contents) and #98 (rule evidence
+        provenance).
         """
         sub_band = _cases_with("pass_with_known_defect")
         assert {c["id"] for c in sub_band} == {"3004625", "3028920"}

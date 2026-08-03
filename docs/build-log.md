@@ -1400,3 +1400,69 @@ score and a band, and is then one row.
 
 Suite: 395 → 423 collected — 16 passed, 6 xfailed and 5 skipped from the new module, plus
 one new invariant. The five skips are the live cases, which never run in CI.
+
+---
+
+## Feature #96 — 2026-08-03 — the brief's corrections, and five fixtures land
+
+`docs/issue_96_agent_brief.md` (untracked, maintainer-supplied) settled the manifest
+corrections and delivered posting text for five of the fourteen cases. Applied as written;
+four claims verified against the repo first, per the brief's own standing constraint.
+
+**#3030519 was never in the manifest**, so there was nothing to remove — it entered this
+session as a sixth text candidate and was already excluded from the corpus for the reason
+the brief gives independently: not a § 6 case, and it never reached the evaluator
+(published 31.07 15:40, inside the ingestion window, dropped before scoring), so no correct
+`tool_score` exists for it. The manifest now records *why* it is absent, with the human 3.5
+/ `hard_skip` reference for **#107**, so it does not get re-added by the next reader.
+
+**The two same-band cases are xfailed non-strictly.** #3004625 (6 / 6.5) and #3028920
+(5 / 6) both land tool and human in `marginal`, so the band assertion passes today and
+would pass with D1 and D4 unfixed — D1 is a defect in the *contents* of `gaps`, D4 in the
+*provenance label* on a language penalty, and neither moves magnitude. Both carry
+`reason="band assertion cannot detect this defect; needs score_trace (#95)"` verbatim, as a
+shared constant so it stays greppable. They report **XPASS**, which is the honest signal:
+the assertion runs, passes, and decides nothing. `xfail_strict` is unset in
+`pyproject.toml`, checked, so XPASS does not fail the suite — which is the intended
+behaviour here and the opposite of the strict ratchet on the six real failures.
+
+**#3028920 is `provenance: full`, not `excerpt`** — the one case where excerpting is not
+merely lossy but invalidating. D4 fires on an *absence*: German inferred from location,
+relabelled "declared", penalised on a posting that declares no German requirement. A scorer
+handed two paragraphs finds no declared requirement *because* it was handed two paragraphs,
+so an excerpt would manufacture the pass. The row stays, the fixture body is absent, and
+the live test skips until the full text lands. The recovered prose in the brief was
+deliberately not committed as the fixture, as instructed.
+
+**Three findings from verification, none of which refute the brief:**
+
+- **The card-vs-body divergence cannot be reproduced inside the evaluator, and this is not
+  a gap in the fixture.** `build_prompt` (`prompt.py:126-129`) sends title, company,
+  location and description — no percentage. The model has never seen the card. #3025628's
+  front matter carries `remote_percentage: 100` so the row records the card state, but the
+  divergence is real at the *filter* (which passed the row on a metadata field that was
+  true) and invisible at the *evaluator*, which sees prose alone. That is precisely why § 9
+  calls the −3 prose rule the sole detector for the class.
+- **`20 % Auslastung` cannot reach the fixture at all.** `JobListing` has no workload field
+  — not in the model, not in the adapter, not in the prompt. Testing the Wave D
+  `Auslastung` dimension is a `JobListing` change and belongs to its own issue, not to
+  #2999393's row. Recorded on the case.
+- **Two fixtures have reconstructed titles.** #3018325 and #2999393 came without a
+  headline, and the title reaches the model. Both files carry a `title_provenance` line
+  saying so; #3025628's title is verbatim from `digests/2026-07-23.md` and #3004625's is
+  the first line of the supplied excerpt.
+
+**Coverage is marked partial in the manifest**, with the outstanding items and who holds
+each, so a green suite cannot read as full coverage. The **C3 sufficiency gate** went onto
+#96's acceptance criteria rather than staying a side note: every case in the corpus is an
+over-scoring failure or a same-band defect, so at least two `apply`-band positive controls
+must be *scorable* before C3's rebalancing is validated against it — three such rows exist
+and none has text or a recorded score, so the usable count is zero today.
+
+`REEVAL_BELOW=0` is now documented for pipeline comparison runs in dev-notes, not just
+pinned in the harness — the max-of-two draw inflates the bottom of the distribution, which
+is exactly where the `hard_skip` rows a before/after run is watching live.
+
+Suite: 425 collected — 412 passed, 6 xfailed, 2 xpassed, 5 skipped. The four excerpt files
+load and parse (verified against the loader directly, since a live run needs a key); the
+fifth skips pending text.
