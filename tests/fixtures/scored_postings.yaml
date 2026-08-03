@@ -22,7 +22,7 @@
 #   * NEVER a named individual, in this file or anywhere else in the repo.
 #   * A short clause MAY be quoted verbatim where the rule under test turns on its
 #     exact wording and a paraphrase would destroy the thing being tested — D5 is
-#     about how `Englisch (C1) oder Deutsch (C1)` is parsed, so naming that clause
+#     about how `Englisch (C1) oder ggf. auch Deutsch (C1)` is parsed, so naming that clause
 #     IS the case definition. Quote the clause, not the sentence around it.
 #   * Everything else — skills bullets, responsibilities, boilerplate — gets
 #     paraphrased. If a paraphrase still identifies the clause for whoever is
@@ -166,7 +166,7 @@ cases:
     excerpt_must_keep: >-
       The real company and the öffentlicher-Auftraggeber framing — the client being a
       public-sector body is load-bearing for the ownership case — and the
-      "Englisch (C1) oder Deutsch (C1)" clause verbatim, since D5 is about how the
+      "Englisch (C1) oder ggf. auch Deutsch (C1)" clause verbatim, since D5 is about how the
       disjunction is read. Contact persons out.
     excerpt_must_omit: >-
       The multi-language backend bullet (the one listing Python, Node.js, Go and
@@ -178,7 +178,7 @@ cases:
       Two defects on one posting. D2: platform-ownership language named in the model's
       own prose and then not penalised — #101 finds the `ownership` deprioritise entry
       is not merely unweighted but contradicted by a +1 `end-to-end ownership` boost, so
-      a fix has to move both. D5: "Englisch (C1) oder Deutsch (C1)" scored as a German
+      a fix has to move both. D5: "Englisch (C1) oder ggf. auch Deutsch (C1)" scored as a German
       requirement, which is the disjunction carve-out #98 adds.
 
   - id: "3025628"
@@ -213,8 +213,9 @@ cases:
       fixture; it is why § 9 calls the -3 prose rule the sole detector for the class.
     notes: >-
       D3: the platform card renders `100% Remote` from `remoteInPercent`, so the metadata
-      filter passed it correctly; the disqualifying fact ("100% remote after an initial
-      1-week onboarding onsite in Greater Frankfurt") exists only in the prose. That makes
+      filter passed it correctly; the disqualifying fact — the body qualifies the remote
+      arrangement with an initial onboarding week onsite in the Frankfurt area, against a
+      two-month term — exists only in the prose. That makes
       the `REDUCE by 3` rule the sole detector for the whole class, and it did not fire —
       the model called it "a minor friction". #99 asserts `fired: true` with `delta: 0`
       is an error once #95's trace exists. Also the closest thing the corpus has to a
