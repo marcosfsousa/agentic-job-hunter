@@ -1,0 +1,13 @@
+# Revisions to skip when running `git blame`. GitHub honours this file
+# automatically; locally, enable it once with:
+#
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Only ever add commits that change formatting and nothing else. Each entry
+# should be verifiably content-nil, so that skipping it cannot hide authorship
+# of a real change.
+
+# chore: normalise line endings repo-wide via .gitattributes
+# 3234 lines of CRLF -> LF across five files; every blob byte-identical to its
+# predecessor once CR is stripped.
+11147de484b97a2b76d4aaaa81c4b7291f795792
