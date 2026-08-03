@@ -436,8 +436,17 @@ bulk.
 **No key is derived from a posting's identity**, and that is the rule rather than "no
 company names" — it holds without a judgement call each time a row is added. It is why
 `case13` is a case number despite naming only a city: a location next to a score is
-mildly identifying on its own. #96's manifest adopts these same fourteen keys in #111,
-which supersedes #115.
+mildly identifying on its own. #96's manifest does not use these keys yet — #111 merged
+before the scheme was settled — so aligning it is follow-up work, and #115 is absorbed
+into that.
+
+**What this removes, and what it does not.** It removes identifiers from the current
+state of this document, and from the fixture manifest once the follow-up lands. It does
+not remove them from history: earlier commits retain them, and GitHub keeps unreachable
+objects retrievable by SHA even after a branch is deleted. What it buys is bounded and
+real — code search indexes the default branch at HEAD, not history, so a company
+searching its own name does not land on an assessment of it. Reaching the old values
+means deliberately reading commit diffs in a repo you already care about.
 
 The three `apply` rows are the positive controls #96's C3 sufficiency gate depends on.
 **Write that gate against `band: apply`, not against the labels** — the band is already
