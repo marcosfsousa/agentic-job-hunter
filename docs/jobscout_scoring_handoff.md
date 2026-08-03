@@ -419,15 +419,21 @@ Band targets, with the rule each case exercises. Cases 1–8 are current failure
 | #3004625 | 6 | 6.5 | marginal | false gaps (B1) |
 | #3028920 | 5 | 6 | marginal | inferred vs. declared language (B2) |
 | #2999393 | 7 | 6.5 | marginal | non-engineering deliverable (Wave D2) |
-| ref. 886891/1-en | — | 8 | apply | zero-blocker positive control |
-| DSGVO-RAG / MCP-Wissensserver | — | 7.5 | apply | direct client, Werkvertrag shape |
-| Senior AI Platform Eng. | — | 7 | apply | thin posting, no language gate |
+| `ref-886891-1-en` | — | 8 | apply | zero-blocker positive control |
+| `dsgvo-rag-mcp-wissensserver` | — | 7.5 | apply | direct client, Werkvertrag shape |
+| `senior-ai-platform-engineer` | — | 7 | apply | thin posting, no language gate |
 | #3028352 | — | 6.5 | marginal | strong content vs. structural gate |
-| Stuttgart Python cut | — | 6.5 | marginal | sibling-posting comparison |
+| `stuttgart-python-cut` | — | 6.5 | marginal | sibling-posting comparison |
 | #3027789 | — | 6 | marginal | strong AI content, weak profile match |
 
-Postings are identified by ID only. The company each ID refers to, and the full posting
-text, are in the private evaluation log; extract per fixture rather than in bulk.
+**Every row has a stable identifier, and it is the key #96's manifest uses.** Eight cases
+key on their platform posting ID; the six the tool never scored have no such ID and key
+on the slug shown instead. The company each row refers to, and the full posting
+text, are in the private evaluation log — extract per fixture rather than in bulk.
+
+The three `apply` rows are the positive controls #96's C3 sufficiency gate depends on, so
+they have to stay citable by name: `ref-886891-1-en`, `dsgvo-rag-mcp-wissensserver`,
+`senior-ai-platform-engineer`.
 
 ---
 
@@ -459,10 +465,21 @@ edits.
 
 ---
 
-## 8. *(section removed before this document was committed)*
+## 8. On the private evaluation log
 
-It concerned a private, uncommitted file and is not needed to work any issue. The
-standing rule it proposed lives in CLAUDE.md § "Working a tracked issue".
+The original section argued against feeding the log to the agent, and made that argument
+by describing what the file holds. That description was removed before this document was
+committed, this repo being public. What it concluded survives, and is what #96 and its
+manifest cite this section for:
+
+- **The log is the source; this handoff is the interface.** It stays out of the repo
+  entirely — the same rule `data/jobscout.db` lives under.
+- **One narrow exception: fixture extraction (A2 / #96).** Pull posting text and human
+  scores per case, as *data*, never in bulk. If an issue's reasoning is unclear, quote
+  the one relevant note inline in that issue.
+- **The standing rule.** A finding from the log becomes an issue only when it can be
+  stated as a reproducible behaviour with a posting ID attached. Everything else stays
+  market intelligence. Also carried in CLAUDE.md § "Working a tracked issue".
 
 Section numbering is preserved deliberately — §§ 9 and 10 are cited by number from
 issue #105 and from individual issue bodies.
