@@ -6,6 +6,9 @@ public repository is not ours to do. That rule has no code seam — restore the 
 whitelist and every other test in the suite still passes — so it needs a mechanical
 tripwire instead. Its failure mode is legal, not functional.
 
+`tests/fixtures/scored_postings/` (#96) is the second instance of exactly that rule, which
+is why the guard below is written as a second case rather than as a variation.
+
 The import invariant below is here for a related reason: it is the only test that fails
 *reliably* when the suite imports the wrong tree's source. Other tests may or may not
 notice, depending entirely on how the two trees happen to differ at that moment — which
@@ -40,6 +43,26 @@ def test_database_is_not_tracked():
         "the full description of every ingested listing. Untrack it with "
         "`git rm --cached data/jobscout.db` (--cached, or you delete the local dedup "
         "state) and check that .gitignore does not whitelist it out of the `data/*` rule."
+    )
+
+
+def test_no_scored_posting_text_is_tracked():
+    """The A2 corpus's posting text (#96) must stay local, like the database above.
+
+    Same class of rule, one degree worse: these are third-party copyrighted postings
+    naming real contact persons, in a public repo linked from a CV. The committed half
+    is `tests/fixtures/scored_postings.yaml` — scores, bands and the rule each case
+    exercises, no posting text — and it deliberately sits *outside* the ignored
+    directory so no `!` negation is needed to keep it visible.
+    """
+    tracked = _tracked("tests/fixtures/scored_postings")
+    assert tracked == "", (
+        "posting text under tests/fixtures/scored_postings/ is tracked by git:\n"
+        f"{tracked}\n"
+        "It must never be committed. Untrack it with `git rm --cached -r "
+        "tests/fixtures/scored_postings` and check that .gitignore still carries the "
+        "whole-directory rule for that path. The manifest lives at "
+        "tests/fixtures/scored_postings.yaml and is unaffected."
     )
 
 

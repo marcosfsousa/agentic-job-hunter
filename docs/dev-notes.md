@@ -90,6 +90,28 @@ gh run list --limit 5 --workflow=daily_run.yml
 gh run view <RUN_ID> --log | awk -F'\t' '$2=="Run pipeline" {print $3}' | grep "jobscout\."
 ```
 
+### Re-score the hand-scored corpus (#96)
+
+`pytest` alone runs the corpus **offline**, from the recorded tool scores in
+`tests/fixtures/scored_postings.yaml` — no network, no API key. That is the mode CI runs,
+and the mode that reports the six recorded baseline failures as `xfailed`.
+
+Live re-scoring calls Haiku once per posting and is opt-in:
+
+```bash
+JOBSCOUT_LIVE_EVAL=1 pytest tests/test_scored_postings.py -q   # needs ANTHROPIC_API_KEY
+```
+
+It skips any case whose posting text is missing. That text is **gitignored** —
+`tests/fixtures/scored_postings/<id>.md`, third-party posting content that does not go in
+a public repo, guarded by `tests/test_repo_invariants.py`. On a fresh clone the directory
+does not exist and every live case skips with that reason; the format for re-creating it
+is in the manifest's header comment.
+
+Run this before and after a `SYSTEM_PROMPT` change — the five `live_rescorable` cases are
+real listings hand-scored against the real `profile.yaml`, which is exactly what CLAUDE.md's
+"test with at least 5 real job listings" gate is asking for.
+
 ### Check GH Actions queue delay trend
 ```bash
 gh run list --limit 10 --workflow=daily_run.yml --json startedAt,createdAt | python scripts/check_run_delays.py

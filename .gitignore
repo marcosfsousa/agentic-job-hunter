@@ -11,6 +11,16 @@ data/*
 !data/feedback.yaml
 digests/
 
+# The A2 regression corpus's posting text (#96). Same rule as the database above,
+# and for the same reason with one addition: these are third-party copyrighted
+# postings naming real contact persons, and this repo is public. The committed half
+# is tests/fixtures/scored_postings.yaml — the manifest, which carries scores, bands
+# and the rule each case exercises, and no posting text. Kept as a whole-directory
+# rule with no `!` exception: a negation here is one careless pattern away from
+# whitelisting the text back in, which is why the manifest sits outside the directory
+# rather than inside it. Enforced by tests/test_repo_invariants.py.
+tests/fixtures/scored_postings/
+
 # Python
 __pycache__/
 *.py[cod]

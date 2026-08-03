@@ -1296,3 +1296,73 @@ a deferred nit on #82 (#83).
 Suite: 389 → 395. (Authored as 387 → 393 against the pre-#85 base; this branch was rebased
 onto `main` after #85 and #88 landed, and #88's two `test_config.py` additions moved the
 floor. The +6 is unchanged — it is the six tests listed above.)
+
+---
+
+## Feature #96 — 2026-08-03 — the A2 regression corpus, split manifest / local text
+
+Wave A's second half. Nothing in the suite asserted anything about *scoring quality*
+before this: `test_evaluation.py` mocks Haiku and checks plumbing, so all eight defects in
+§ 1 of the scoring handoff were found by hand-reading a digest, twelve days after the first
+one shipped.
+
+**The corpus could not be built the way the issue describes it.** #96 asks for
+`tests/fixtures/scored_postings/` holding "posting text, human score, and the specific rule
+each case exercises". The text cannot be committed — this repo is public and linked from a
+CV, and the postings are third-party copyrighted text naming real contact persons, which is
+`data/jobscout.db`'s rule with one degree added. Split accordingly, by the maintainer's
+call:
+
+- `tests/fixtures/scored_postings.yaml` — **committed.** All fourteen § 6 cases: id, human
+  score, band, the rule each exercises, the recorded tool score, and the issue that fixes
+  it. No posting text.
+- `tests/fixtures/scored_postings/` — **gitignored**, local only. Holds the minimal excerpt
+  for each of the five cases marked `live_rescorable`, once the maintainer drops it in; on a
+  fresh clone it does not exist and every live case skips saying so. A rule with no `!`
+  exception, which is why the manifest sits *outside* the directory: a negation is one
+  careless pattern away from whitelisting the text back in. `test_repo_invariants.py` gets a
+  second tripwire, proven to fire by force-adding a probe file.
+
+**The offline mode asserts against the record, not against the model.** `band(recorded tool
+score) == expected band` needs no network, no API key and no posting text, which is what
+lets it run in CI at all. Live re-scoring (`JOBSCOUT_LIVE_EVAL=1`, one real call per case,
+skips on missing text) is what *measures*; the offline mode records what was measured. Wave
+C runs the first and updates the second.
+
+**Eight failures, six of them band-visible.** #96 says "the eight current failures are
+recorded as an expected baseline", and band-level assertions — which the same issue
+mandates — see six. D1 (#3004625, tool 6 / human 6.5) and D4 (#3028920, tool 5 / human 6)
+move the score by less than a band, so no band assertion can ever catch them. They are
+recorded as `pass_with_known_defect` with the defect stated, and a test asserts that state
+explicitly, so a green run cannot read as "all eight are covered" — #97 and #98 catch those
+two against the `gaps` field and the trace instead.
+
+**`baseline: fail` is a ratchet.** The six xfail *strictly*, so a Wave C fix turns the XPASS
+red until someone re-records the score and flips the flag. A silent improvement and a silent
+regression are equally impossible. Verified by temporarily editing #3003311's recorded score
+into its band: both the strict XPASS and the explicit `test_every_baseline_failure_really_
+does_miss_its_band` fired, each naming the row.
+
+**`reeval_below` is pinned to 0**, per § 9's unlisted constraint: production re-evaluates
+anything below 4 and keeps the higher of two draws, and six of the eight cases target
+`hard_skip`, which sits inside that range. Unpinned they are scored by max-of-two and the
+band assertions flake on the second draw. Pinned twice — as a constant, and behaviourally
+against the real `evaluate_jobs` with a mocked client, because asserting the constant only
+proves the constant.
+
+**One discrepancy recorded rather than reconciled.** `digests/2026-07-23.md` scores
+#3025628 at 5/10 where § 6 says 6. The manifest transcribes § 6 and notes the disagreement;
+both are `marginal`, so the baseline verdict is identical either way, and max-of-two is one
+candidate explanation. Same treatment for the digest scores that exist for two of the six
+`unrecorded` controls — leads for the next re-recording, deliberately not adopted, since
+nothing establishes the human score was assigned to that run's posting.
+
+**Not done, and why.** Nine of the fourteen have no local posting text, so they are
+metadata-only and cannot be live re-scored. Synthesising text was considered and rejected:
+it severs the human score from what it was assigned to, and a synthetic fixture that passes
+tells you nothing. #3030519 — a fifteenth case the maintainer is supplying, covering D6,
+which the § 6 set has no dedicated case for — is not in the manifest yet; it needs a human
+score and a band, and is then one row.
+
+Suite: 395 → 423 collected — 16 passed, 6 xfailed and 5 skipped from the new module, plus
+one new invariant. The five skips are the live cases, which never run in CI.
