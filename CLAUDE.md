@@ -52,10 +52,16 @@ While working:
 - `Acceptance criteria` bound the work. Nothing beyond them ships.
 
 Validation for scoring changes:
-- If `tests/fixtures/scored_postings/` exists, run it and comment the
-  band-accuracy result before and after on the issue. **A change that
-  moves scores without moving band accuracy is not an improvement.**
-- Until it exists, the ≥5-listing validation gate below applies.
+- If `tests/fixtures/scored_postings.yaml` exists, run
+  `pytest tests/test_scored_postings.py` and comment the band-accuracy
+  result before and after on the issue. **A change that moves scores
+  without moving band accuracy is not an improvement.**
+- **Key this on the manifest, not on `tests/fixtures/scored_postings/`.**
+  That directory holds the posting excerpts, is gitignored by design, and
+  exists only on the maintainer's machine — a gate keyed to it would never
+  fire in CI, in a fresh clone, or for a cloud agent, which is every case
+  the gate exists for.
+- Until the manifest exists, the ≥5-listing validation gate below applies.
   Once it exists, the fixture set supersedes that gate for any change
   to `SYSTEM_PROMPT`, `profile.yaml`, or the filter predicates.
 

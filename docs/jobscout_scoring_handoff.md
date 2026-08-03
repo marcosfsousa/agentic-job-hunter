@@ -426,10 +426,16 @@ Band targets, with the rule each case exercises. Cases 1–8 are current failure
 | `stuttgart-python-cut` | — | 6.5 | marginal | sibling-posting comparison |
 | #3027789 | — | 6 | marginal | strong AI content, weak profile match |
 
-**Every row has a stable identifier, and it is the key #96's manifest uses.** Eight cases
-key on their platform posting ID; the six the tool never scored have no such ID and key
-on the slug shown instead. The company each row refers to, and the full posting
-text, are in the private evaluation log — extract per fixture rather than in bulk.
+**Every row has a stable identifier.** Eight cases key on their platform posting ID; the
+six the tool never scored have no such ID and key on the slug shown instead. The company
+each row refers to, and the full posting text, are in the private evaluation log —
+extract per fixture rather than in bulk.
+
+Twelve of the fourteen keys match #96's manifest exactly. **Two deliberately do not** —
+the manifest's spelling of them embeds the company name, which is the thing this table's
+redaction removes, so the neutral form is used here instead. #115 carries both spellings
+and proposes the manifest adopt these. Until it does, those two rows do not join across
+the two documents, and both are `apply` positive controls.
 
 The three `apply` rows are the positive controls #96's C3 sufficiency gate depends on, so
 they have to stay citable by name: `ref-886891-1-en`, `dsgvo-rag-mcp-wissensserver`,
@@ -490,6 +496,13 @@ issue #105 and from individual issue bodies.
 
 **Date:** 2026-08-03 · **Ref:** `main` @ `5a95868` · **Scope:** verification only, no
 implementation.
+
+> ⚠️ **A snapshot, not a live record — and it is already behind.** A1 (#95) landed after
+> this pass, via PR #109, merged to `main` at `2a021aa`. The evaluator and the prompt are
+> exactly what it changed, so `file:line` references below — into `evaluator.py` and
+> `prompt.py` above all — have moved, and some no longer resolve. **Re-read the file
+> before acting on any coordinate here.** The findings stand; the coordinates do not,
+> and CLAUDE.md's "read § 9 before writing code" means an agent will meet them cold.
 
 Every VERIFY block below is answered against the code. Line references are to `main` at
 the commit above. Nothing in Wave A/B/C was implemented, including A3 — see A3.
@@ -957,12 +970,12 @@ the open decisions.
 | A1 | [#95](https://github.com/marcosfsousa/agentic-job-hunter/issues/95) — Emit and verify score arithmetic | `wave-a` `size-m` | — |
 | A2 | [#96](https://github.com/marcosfsousa/agentic-job-hunter/issues/96) — Regression fixture set from hand-scored postings | `wave-a` `size-m` | — |
 | A3 | **not filed — REFUTED**, see § 2 | | |
-| B1 | [#97](https://github.com/marcosfsousa/agentic-job-hunter/issues/97) — Ground and cap the gaps field | `wave-b` `size-s` `blocked` | #95 |
-| B2 | [#98](https://github.com/marcosfsousa/agentic-job-hunter/issues/98) — German clause: disjunction carve-out | `wave-b` `size-s` `blocked` | #95 |
+| B1 | [#97](https://github.com/marcosfsousa/agentic-job-hunter/issues/97) — Ground and cap the gaps field | `wave-b` `size-s` | — (#95 landed) |
+| B2 | [#98](https://github.com/marcosfsousa/agentic-job-hunter/issues/98) — German clause: disjunction carve-out | `wave-b` `size-s` | — (#95 landed) |
 | B3 | [#106](https://github.com/marcosfsousa/agentic-job-hunter/issues/106) — ANÜ exclusive-drop classifier | `wave-b` `size-s` | — |
 | B6 | [#107](https://github.com/marcosfsousa/agentic-job-hunter/issues/107) — Drop observability: surface hard-filter drops | `wave-b` `size-m` | — |
-| B4 | [#99](https://github.com/marcosfsousa/agentic-job-hunter/issues/99) — Remote prose backstop: fixture and trace assertion | `wave-b` `size-xs` `blocked` | #95, #96 |
-| B5 | [#100](https://github.com/marcosfsousa/agentic-job-hunter/issues/100) — `profile.yaml` data corrections | `wave-b` `size-s` `blocked` | #95 |
+| B4 | [#99](https://github.com/marcosfsousa/agentic-job-hunter/issues/99) — Remote prose backstop: fixture and trace assertion | `wave-b` `size-xs` `blocked` | #96 |
+| B5 | [#100](https://github.com/marcosfsousa/agentic-job-hunter/issues/100) — `profile.yaml` data corrections | `wave-b` `size-s` | — (#95 landed) |
 | C1 | [#101](https://github.com/marcosfsousa/agentic-job-hunter/issues/101) — Band the unweighted `deprioritise` entries | `wave-c` `size-m` `blocked` | #96 |
 | C2 | [#102](https://github.com/marcosfsousa/agentic-job-hunter/issues/102) — Anchor step 1 on task verbs, not on mentions | `wave-c` `size-m` `blocked` | #101 |
 | C3 | [#103](https://github.com/marcosfsousa/agentic-job-hunter/issues/103) — Rebalance boosts against penalties | `wave-c` `size-m` `blocked` | #102 |
