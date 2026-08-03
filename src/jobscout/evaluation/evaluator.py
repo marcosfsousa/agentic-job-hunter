@@ -27,16 +27,16 @@ logger = logging.getLogger(__name__)
 #
 #   512   0/25 parseable, 25/25 truncated at the ceiling
 #   1536  16/25 parseable, 10/25 truncated
-#   2560  24/25 parseable, 0/25 truncated, output tokens 867/1101/1666 (min/mean/max)
+#   2560  25/25 parseable, 0/25 truncated, output tokens 818/1059/1294 (min/mean/max)
 #
-# So 0/25 at 512 vs 24/25 at 2560 - the same shape as the 6/25-vs-24/25 result that
-# set the previous value, and 24/25 is the rate the pre-trace prompt achieved at 512.
-# The headroom over the 1666 observed maximum is deliberate: the trace's length scales
-# with how many rules fire, and the pool that measured 1666 is one day's listings.
+# So 0/25 at 512 vs 25/25 at 2560 - the same shape as the 6/25-vs-24/25 result that set
+# the previous value, and it clears the 24/25 the pre-trace prompt managed at 512.
 #
-# The single residual failure is not truncation - it is one listing whose adjustment
-# object transposed `fired` and `delta` (`"fired": -3`). It fails loudly and sorts
-# last, as before; it does not crash.
+# The headroom over the 1294 observed maximum is deliberate and is not slack. An
+# earlier arm of the same prompt - differing only in a duplicated `score_trace` bullet
+# since removed - measured 24/25 with a 1666-token maximum, so ~370 tokens of spread
+# sits between two near-identical prompts on one pool. Trace length scales with how
+# many rules fire, and this is one day's listings.
 MAX_OUTPUT_TOKENS = 2560
 
 

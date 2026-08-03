@@ -1326,12 +1326,20 @@ the issue put that out of scope and it was not needed.
 ### The measurement — one live freelancermap pool of 25, cached, same listings for every arm
 
 ```
-                         parsed  trunc  arith-clean   mean   >=5   out-tok max
-OLD (no trace, 512)      23/25     3        n/a       4.78    13    512 (capped)
-trace-last, 1536         18/25     7      1/16 ( 6%)  5.44    13   1536 (capped)
-trace-first, 2560        17/25     0     14/17 (82%)  4.12     8   2047
-final (+total, +floor)   24/25     0     22/24 (92%)  3.46     7   1666
+                          parsed  trunc  arith-clean   mean   >=5   out-tok max
+OLD (no trace, 512)       23/25     3        n/a       4.78    13    512 (capped)
+trace-last, 1536          18/25     7      1/16 ( 6%)  5.44    13   1536 (capped)
+trace-first, 2560         17/25     0     14/17 (82%)  4.12     8   2047
++total, +floor            24/25     0     22/24 (92%)  3.46     7   1666
+SHIPPED (dup bullet gone) 25/25     0     22/25 (88%)  3.40     6   1294
 ```
+
+The last row is the prompt as merged. The row above it is the same prompt carrying a
+duplicated `score_trace` bullet, which `/simplify` found and removed — the field was
+specified twice, and the stale copy sat *last* in a list relabelled "IN THIS ORDER",
+handing the model two orderings for the one field whose position this whole result
+turns on. Removing it took parseability to 25/25 and cut the output maximum by ~370
+tokens. Re-measured rather than assumed: an unmeasured prompt edit is not finished.
 
 **Three findings the issue did not anticipate, in the order they surfaced.**
 
@@ -1376,36 +1384,51 @@ Run at 25 listings, as a controlled before/after: same cached pool, same ranking
 only the prompt and `max_tokens` differing. Against the five §1 postings the handoff hand-scored:
 
 ```
-posting   human  OLD  NEW    human band   OLD band     NEW band
-3004625     6.5    8    7    marginal     apply        apply
-3018325       4    7    5    hard_skip    apply        marginal
-3025628       3    6    4    hard_skip    marginal     hard_skip   NEW ok
-3028920       6    5    8    marginal     marginal     apply       OLD ok, NEW regressed
-3003311     1.5    5    3    hard_skip    marginal     hard_skip   NEW ok
+posting   human  OLD  run1  run2    human band   OLD band    run1        run2
+3004625     6.5    8     7     9    marginal     apply       apply       apply
+3018325       4    7     5     5    hard_skip    apply       marginal    marginal
+3025628       3    6     4     4    hard_skip    marginal    hard_skip   hard_skip
+3028920       6    5     8     7    marginal     marginal    apply       apply
+3003311     1.5    5     4     4    hard_skip    marginal    hard_skip   hard_skip
 
-band accuracy   OLD 1/5   NEW 2/5
-mean abs error  OLD 2.40  NEW 1.20
+band accuracy   OLD 1/5   run1 2/5   run2 2/5
+mean abs error  OLD 2.40  run1 1.20  run2 1.60
 ```
 
 Band accuracy moves, which is the bar CLAUDE.md sets — *"a change that moves scores without
-moving band accuracy is not an improvement"*. **D4 (#3028920) regressed**, 5 → 8 against a human
-6, and is recorded rather than averaged away.
+moving band accuracy is not an improvement"*. **D4 (#3028920) regressed**, 5 → 8/7 against a
+human 6, and is recorded rather than averaged away.
+
+**Two runs are shown because the second one revealed how noisy a single draw is, and that
+caveat is load-bearing.** `run1` and `run2` are the same prompt over the same cached pool,
+differing only by the duplicated-bullet removal: they **disagree on 8 of 24 listings, with a
+maximum swing of 4 points**. So the direction is consistent — band accuracy 1/5 → 2/5 and MAE
+down in both runs — but the *magnitude* (1.20 vs 1.60) is inside the sampling noise, and five
+labelled postings cannot resolve it. Quoting a single MAE figure as if it were precise would
+overstate what was measured.
+
+That variance is a finding in its own right and a direct input to **A2/#96**: a fixture suite
+asserting single-draw scores would flake badly at this spread. It is a second, independent
+reason for the handoff's *"assert on band, not exact score"* — and it compounds with the
+`reeval_below` max-of-two-draws interaction filed as #108.
 
 **This is a real behavioural change, and no version of A1 was behaviour-neutral.** Trace-last
-moved the pool mean *up* 4.78 → 5.44 while leaving the check firing on 94% of rows; trace-first
-moves it *down* to 3.46 with the check clean on 92%. The distribution also decompresses
-(`8x2 7x2 6x1 5x2 4x5 3x2 2x1 1x9` against a bunched `5x7 3x7`), which is D6 — several hard
-blockers scoring the same as one soft mismatch — beginning to resolve. Fewer rows clear
-`email_min_score: 5`: 7 of 24 against 13 of 23. That is the rubric applied as written, and it is
+moved the pool mean *up* 4.78 → 5.44 while leaving the check firing on 94% of rows; the shipped
+prompt moves it *down* to 3.40 with the check clean on 22 of 25. The distribution also
+decompresses (`9x1 8x1 7x1 6x1 5x2 4x7 3x1 2x3 1x8` against a bunched `5x7 3x7`), which is D6 —
+several hard blockers scoring the same as one soft mismatch — beginning to resolve. Fewer rows
+clear `email_min_score: 5`: **6 of 25 against 13 of 23**. That is the rubric applied as written, and it is
 the measurement C1/C2/C3 were waiting on; `email_min_score` is deliberately **not** touched here.
 
-**Residual, not fixed:** one listing of 25 transposed `fired` and `delta` (`"fired": -3`) and
-fails validation. It fails loudly and sorts last, as parse failures already did. Out of scope to
-paper over — coercing that would hide a real malformation.
+**The residual failure cleared.** The `+total, +floor` arm had one listing of 25 transposing
+`fired` and `delta` (`"fired": -3`); on the shipped prompt all 25 parse. Recorded rather than
+celebrated — one pool on one day, and the transposition is the kind of malformation that will
+recur. It fails loudly and sorts last if it does, as parse failures already did; coercing it
+would hide a real malformation.
 
 **Discovered, filed separately, not fixed here:** `reeval_below: 4` re-evaluates anything below
-4 and keeps the *higher* of two draws. With the arithmetic now applied faithfully, nine of 24
-listings score 1, so re-evaluation fires on roughly half the pool and systematically inflates
+4 and keeps the *higher* of two draws. With the arithmetic now applied faithfully, eight of 25
+listings score 1 and twelve score below 4, so re-evaluation fires on roughly half the pool and systematically inflates
 exactly the band the trace just corrected. `reeval_below` is explicitly out of #95's scope.
 
-Suite: 395 → 425.
+Suite: 395 → 424 (`/simplify` removed one test already owned by `test_models.py`).
