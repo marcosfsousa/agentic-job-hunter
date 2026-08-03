@@ -389,6 +389,16 @@ def _live_cases() -> list:
     return params
 
 
+# Required in every excerpt's front matter, and deliberately not defaulted.
+# `build_prompt` puts title, company and location in the request (prompt.py:126-128),
+# so an absent company would be scored as "unknown" — and for #3028920 that is the
+# input under test, not decoration: the German penalty fired on language inferred from
+# the company and the location, which is the inference the rule carves out. A default
+# there would silently anonymise the signal and leave a case that passes without
+# testing anything. Fail instead.
+_REQUIRED_FRONT_MATTER = ("title", "company", "location")
+
+
 def _read_posting(case: dict) -> tuple[dict, str]:
     """Parse `<id>.md`: YAML front matter between `---` fences, then the excerpt."""
     path = _POSTING_TEXT_DIR / f"{case['id']}.md"
@@ -401,8 +411,18 @@ def _read_posting(case: dict) -> tuple[dict, str]:
     text = path.read_text(encoding="utf-8")
     if not text.startswith("---"):
         pytest.fail(f"{path} has no YAML front matter — see the manifest header format")
-    _, front_matter, body = text.split("---", 2)
-    return yaml.safe_load(front_matter) or {}, body.strip()
+    _, front_matter_text, body = text.split("---", 2)
+    front_matter = yaml.safe_load(front_matter_text) or {}
+
+    missing = [k for k in _REQUIRED_FRONT_MATTER if not str(front_matter.get(k, "")).strip()]
+    if missing:
+        pytest.fail(
+            f"{path} is missing required front matter: {', '.join(missing)}. "
+            "Keep the company and the location unanonymised — they reach the model and "
+            f"for some cases they are the signal. See `excerpt_must_keep` on this case "
+            "in the manifest."
+        )
+    return front_matter, body.strip()
 
 
 @pytest.mark.skipif(
@@ -441,10 +461,10 @@ class TestLiveRescoring:
         listing = JobListing(
             id=case["id"],
             source="freelancermap",
-            title=front_matter.get("title", case["label"]),
-            company=front_matter.get("company", "unknown"),
+            title=front_matter["title"],
+            company=front_matter["company"],
             description=body,
-            location=front_matter.get("location", "Deutschland"),
+            location=front_matter["location"],
             url=front_matter.get("url", ""),
             posted_date=None,
             fetched_at=datetime.now(),

@@ -28,14 +28,29 @@
 #
 #     ---
 #     title: AI Business Analyst (m/w/d)
-#     company: Example GmbH
+#     company: <the real one — see below>
 #     location: Frankfurt, Deutschland
 #     url: https://www.freelancermap.de/projekt/...
 #     remote_percentage: 100        # optional; omit if the posting states none
 #     ---
-#     Only the clauses the case exercises — the onsite-onboarding sentence, the
-#     Projektsprache line, the ownership paragraph. Minimal excerpt, not the whole
-#     posting, and no contact names.
+#     Only the clauses the case's `exercises` field names. Nothing else.
+#
+# WHAT TO KEEP, WHAT TO STRIP
+#   * KEEP the company and the location, unanonymised. `build_prompt` puts both in the
+#     request (`prompt.py:126-127`), and for two cases the company identity IS the
+#     signal under test: #3028920's German penalty fired on language inferred from the
+#     company and the location — the exact input the rule is supposed to exempt — and
+#     #3018325 turns on the client being an öffentlicher Auftraggeber. Anonymise either
+#     and the case stops exercising its rule while still looking like it does, which is
+#     worse than not having it.
+#   * STRIP named individuals — contact persons, recruiter names, signatures. That is
+#     the real privacy exposure in a posting, and no scoring rule reads them.
+#   * EXCERPT TO THE RULE, NOT TO THE SCORE. Pull the clauses the named rule reads and
+#     stop. Do not add surrounding paragraphs so the file "reads naturally" — that is
+#     exactly how an excerpt drifts back into a full posting, which is the thing this
+#     split exists to prevent. A fixture is allowed to read like a fragment.
+#     The corollary: the live score is not expected to reproduce the score the full
+#     posting got. The band is what is asserted, and the band is what the rule moves.
 #
 # UPDATING AFTER A FIX LANDS
 # `baseline: fail` is a ratchet. The band test xfails those cases *strictly*, so once
@@ -80,6 +95,11 @@ cases:
     rules: [C1, B2]
     issues: [101, 98]
     live_rescorable: true
+    excerpt_must_keep: >-
+      The real company and the öffentlicher-Auftraggeber framing — the client being a
+      public-sector body is load-bearing for the ownership case — and the
+      "Englisch (C1) oder Deutsch (C1)" clause verbatim, since D5 is about how the
+      disjunction is read. Contact persons out.
     notes: >-
       Two defects on one posting. D2: platform-ownership language named in the model's
       own prose and then not penalised — #101 finds the `ownership` deprioritise entry
@@ -187,6 +207,13 @@ cases:
     rules: [B2]
     issues: [98]
     live_rescorable: true
+    excerpt_must_keep: >-
+      The real company and the real location, unanonymised. They are not context here,
+      they are the input under test: the penalty fired on German inferred from exactly
+      those two fields, which is the inference the rule carves out. An anonymised
+      excerpt cannot fire the defect and would read as a passing case. Contact persons
+      out. Note this case may need NO language clause in the body at all — if the
+      posting states one, the inference is not what is being tested.
     sub_band_defect: >-
       German was inferred from the location and then relabelled "declared" and penalised —
       an adherence failure against a rule that already carves out location-inferred German.

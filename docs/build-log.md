@@ -1323,6 +1323,21 @@ call:
   careless pattern away from whitelisting the text back in. `test_repo_invariants.py` gets a
   second tripwire, proven to fire by force-adding a probe file.
 
+**The excerpting rule, corrected during the session.** The first version of the format
+said to drop company names — wrong, and wrong in the way that leaves a fixture looking
+healthy. `build_prompt` puts title, company and location in the request
+(`prompt.py:126-128`), and for two cases the identity *is* the input under test: D4
+(#3028920) fired the German penalty on language inferred from the company and the
+location, which is the inference the rule carves out, and #3018325 turns on the client
+being an öffentlicher Auftraggeber. Anonymise either and the case stops exercising its
+rule while still passing. So: keep company and location unanonymised, strip named
+individuals — the real privacy exposure, and nothing in the rubric reads them — and
+excerpt to the *rule*, not to the score, without surrounding paragraphs added so the file
+reads naturally. That last one is how an excerpt drifts back into a full posting. The
+front-matter loader enforces the first half: title, company and location are required and
+deliberately not defaulted, because a defaulted `company: unknown` would anonymise the
+signal silently.
+
 **The offline mode asserts against the record, not against the model.** `band(recorded tool
 score) == expected band` needs no network, no API key and no posting text, which is what
 lets it run in CI at all. Live re-scoring (`JOBSCOUT_LIVE_EVAL=1`, one real call per case,
