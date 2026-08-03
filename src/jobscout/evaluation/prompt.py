@@ -4,6 +4,16 @@ import re
 
 from jobscout.models import JobListing, UserProfile
 
+# The rubric's own bounds on the final score: step 3 below says "Cap at 9", and
+# anything under 1 is off the scale `match_score` is declared on. They live here, next
+# to the rubric that states them, and are interpolated into the trace spec rather than
+# written into it — `check_score_trace` imports the same two names to clamp against.
+# Stated in prose in one file and re-typed in the other, a moved cap would have the
+# model bounding at one number while Python clamps at another, and the check would
+# then flag correct rows. That is the same drift `RULE_IDS` below exists to prevent.
+SCORE_FLOOR = 1
+SCORE_CAP = 9
+
 # The rubric. Every boost and penalty carries a `[rule_id]` tag, which is the only
 # structure added: `RULE_IDS` below is read back out of these tags, so the id list the
 # model is handed in the trace section cannot drift from the rules themselves. That is
@@ -24,8 +34,6 @@ prefer skills from the strong list. Only include a skill the job explicitly call
 - gaps: list of strings — skills or requirements the job needs that the profile lacks
 - explanation: one or two sentences summarising the fit and calling out any \
 score-affecting factors
-- score_trace: an object showing how you arrived at match_score — required, and \
-specified under "Score trace" below
 
 Scoring — use this process:
 1. Start at 6 if the role has reasonable skill overlap with the candidate profile \
@@ -105,10 +113,15 @@ sub-100%-remote signal in the prose, with no gradation by how much on-site time.
 A 6–7 means worth applying despite some gaps. Below 5 means poor fit.
 """
 
-# Every `[rule_id]` tag in the rubric above, in the order the rubric applies them,
-# de-duplicated. The model is handed this list rather than a hand-written copy so a
-# rule added, renamed or removed above cannot leave the trace spec naming the old set.
-RULE_IDS: tuple[str, ...] = tuple(dict.fromkeys(re.findall(r"\[([a-z][a-z0-9_]*)\]", _RUBRIC)))
+# Every `[rule_id]` tag in the rubric above, in the order the rubric applies them. The
+# model is handed this list rather than a hand-written copy so a rule added, renamed or
+# removed above cannot leave the trace spec naming the old set.
+#
+# Deliberately not de-duplicated: a repeated tag means two rules share an id, so one of
+# them is untraceable and the trace has an ambiguous entry. Collapsing that silently
+# would hide it — and would also make the uniqueness assertion in the tests
+# tautological, which is coverage that reads as a guard and is not one.
+RULE_IDS: tuple[str, ...] = tuple(re.findall(r"\[([a-z][a-z0-9_]*)\]", _RUBRIC))
 
 # The trace request. Kept in its own literal purely so RULE_IDS can be interpolated —
 # the rubric above is unchanged in wording and magnitude, which #95 requires (rewording
@@ -128,7 +141,8 @@ close paraphrase from the listing that made the rule fire. Entries with \
 "fired": false carry "evidence": null.
 - "total": start plus every "delta", added up. Write it as ONE integer that you have \
 already worked out — never as an expression like 6 + 1 - 2, which is not valid JSON.
-- match_score is "total" bounded into 1–9: below 1 report 1, above 9 report 9 (the \
+- match_score is "total" bounded into {SCORE_FLOOR}–{SCORE_CAP}: below {SCORE_FLOOR} \
+report {SCORE_FLOOR}, above {SCORE_CAP} report {SCORE_CAP} (the \
 step 3 cap), otherwise report "total" itself. Write score_trace FIRST, then read \
 match_score off it. Do not decide a score and then write a trace beside it — if the \
 total looks too low or too high to you, the rule to revisit is one of the deltas \

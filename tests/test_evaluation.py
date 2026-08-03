@@ -13,8 +13,14 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from jobscout.delivery.formatter import format_digest
-from jobscout.evaluation.evaluator import SCORE_CAP, SCORE_FLOOR, check_score_trace, evaluate_jobs
-from jobscout.evaluation.prompt import RULE_IDS, SYSTEM_PROMPT, build_prompt
+from jobscout.evaluation.evaluator import check_score_trace, evaluate_jobs
+from jobscout.evaluation.prompt import (
+    RULE_IDS,
+    SCORE_CAP,
+    SCORE_FLOOR,
+    SYSTEM_PROMPT,
+    build_prompt,
+)
 from jobscout.models import (
     DealbreakersConfig,
     EvaluationResult,
@@ -86,6 +92,16 @@ def _trace(start: int, fired: dict[str, int] | None = None) -> dict:
         ],
         "total": start + sum(fired.values()),
     }
+
+
+def _adj(trace: dict, rule_id: str) -> dict:
+    """The adjustment entry for `rule_id`, so a test can bend one rule out of shape.
+
+    `next` rather than a scan-and-skip loop deliberately: a renamed or mistyped id
+    raises here, instead of leaving the trace untouched and the test asserting against
+    a shape it never actually built.
+    """
+    return next(a for a in trace["adjustments"] if a["rule_id"] == rule_id)
 
 
 def _mock_client(response_payload: dict | None = None, raise_exc: Exception | None = None):
@@ -386,18 +402,10 @@ class TestScoreTraceSurvivesValidation:
         assert results[0].evaluation.score_trace is not None
         assert results[0].trace_warnings == ()
 
-    def test_an_unrecognised_extra_field_is_still_ignored(self):
-        """Adding score_trace must not turn EvaluationResult strict — it validates
-        Haiku's JSON, and a provider adding a response field must not break the run."""
-        evaluation = EvaluationResult.model_validate({
-            "match_score": 7,
-            "matching_skills": [],
-            "gaps": [],
-            "explanation": "x",
-            "some_future_field": 1,
-        })
-
-        assert evaluation.match_score == 7
+    # That adding score_trace did not turn EvaluationResult strict is covered by
+    # TestStrictnessIsScopedToTheProfile in tests/test_models.py, which owns that
+    # invariant for all three permissive models at once. A second copy here would
+    # split the story across two files and need two edits to change.
 
 
 class TestCheckScoreTrace:
@@ -463,9 +471,7 @@ class TestCheckScoreTrace:
     @pytest.mark.parametrize("evidence", [None, "", "   "])
     def test_fired_rule_without_evidence_is_reported(self, evidence):
         trace = _trace(6, {"penalty_remote": -3})
-        for adj in trace["adjustments"]:
-            if adj["rule_id"] == "penalty_remote":
-                adj["evidence"] = evidence
+        _adj(trace, "penalty_remote")["evidence"] = evidence
 
         problems = check_score_trace(_evaluation(3, trace))
 
@@ -476,9 +482,9 @@ class TestCheckScoreTrace:
         penalty as fired and then moves the score by zero. The arithmetic reconciles,
         so this is the only check that sees it."""
         trace = _trace(6)
-        for adj in trace["adjustments"]:
-            if adj["rule_id"] == "penalty_remote":
-                adj.update(fired=True, delta=0, evidence="two days a week in Munich")
+        _adj(trace, "penalty_remote").update(
+            fired=True, delta=0, evidence="two days a week in Munich"
+        )
 
         problems = check_score_trace(_evaluation(6, trace))
 
@@ -487,9 +493,7 @@ class TestCheckScoreTrace:
     def test_unfired_rule_contributing_a_delta_is_reported(self):
         """The mirror image: an adjustment with no rule behind it. Also sums correctly."""
         trace = _trace(6)
-        for adj in trace["adjustments"]:
-            if adj["rule_id"] == "penalty_remote":
-                adj["delta"] = -3
+        _adj(trace, "penalty_remote")["delta"] = -3
         trace["total"] = 3      # consistent with the deltas, to isolate the fired flag
 
         problems = check_score_trace(_evaluation(3, trace))
@@ -498,9 +502,7 @@ class TestCheckScoreTrace:
 
     def test_every_problem_is_reported_not_just_the_first(self):
         trace = _trace(6, {"penalty_remote": -3, "boost_core_stack": 1})
-        for adj in trace["adjustments"]:
-            if adj["rule_id"] == "boost_core_stack":
-                adj["evidence"] = None
+        _adj(trace, "boost_core_stack")["evidence"] = None
 
         problems = check_score_trace(_evaluation(9, trace))
 
@@ -520,18 +522,13 @@ class TestTraceCheckRunsOutsideTheSwallowingExcept:
 
     @staticmethod
     def _mismatched_client() -> MagicMock:
-        payload = {
+        return _mock_client({
             "match_score": 6,
             "matching_skills": ["LangChain"],
             "gaps": ["onsite presence"],
             "explanation": "Two days a week onsite in Munich.",
             "score_trace": _trace(6, {"penalty_remote": -3}),   # 6 - 3 = 3, not 6
-        }
-        client = MagicMock()
-        client.messages.create = AsyncMock(
-            return_value=SimpleNamespace(content=[SimpleNamespace(text=json.dumps(payload))])
-        )
-        return client
+        })
 
     async def test_failing_check_still_yields_a_row_in_the_digest(self, profile):
         results = await evaluate_jobs(

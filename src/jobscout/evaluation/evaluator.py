@@ -6,25 +6,38 @@ from dataclasses import replace
 
 import anthropic
 
-from jobscout.evaluation.prompt import SYSTEM_PROMPT, build_prompt
+from jobscout.evaluation.prompt import SCORE_CAP, SCORE_FLOOR, SYSTEM_PROMPT, build_prompt
 from jobscout.models import EvaluationResult, ScoredJob, UserProfile
 
 logger = logging.getLogger(__name__)
 
-# The rubric's own bounds on the final number, and the reason the check compares
-# against a bounded total rather than the bare sum. Step 3 of SYSTEM_PROMPT says
-# "Cap at 9", and match_score is declared 1-10 with anything below 5 called a poor
-# fit, so 1 is the floor Pydantic already enforces.
+# Output ceiling for one evaluation. Named rather than inline because what it has to
+# cover lives in another module: the response now carries one trace entry per entry in
+# prompt.RULE_IDS, and each firing entry adds an evidence quote, so adding a rule to
+# the rubric raises the floor this has to clear.
 #
-# The floor is the one that bites. A listing that starts at 2 and takes the remote
-# (-3) and ramp-up (-3) penalties sums to -4, which is exactly D6's shape - several
-# hard blockers at once. Comparing the raw sum there would flag a correctly scored
-# row on every run, and a check that cries wolf on its most important cases is a
-# check somebody switches off. The cap is unreachable by the rubric's own maxima
-# (start 6 plus three 1-pt boosts = 9) and is applied only because step 3 states it;
-# a trace summing above 9 means a boost was invented, which is worth flagging.
-SCORE_FLOOR = 1
-SCORE_CAP = 9
+# 512, not 256: the graded ramp-up-risk rubric (spec 4 / #29) makes Haiku write longer
+# reasoning and gaps lists, and at 256 the JSON was truncated mid-string on ~76% of a
+# live freelancermap pool (stop_reason=max_tokens), failing the parse. Measured 6/25
+# parseable at 256 vs 24/25 at 512. The residual overflow still fails loudly and sorts
+# last, it does not crash.
+#
+# 2560, not 512: #95's score_trace re-opened that failure - completely. Measured on one
+# live freelancermap pool of 25 (2026-08-03), same cached pool for every arm:
+#
+#   512   0/25 parseable, 25/25 truncated at the ceiling
+#   1536  16/25 parseable, 10/25 truncated
+#   2560  24/25 parseable, 0/25 truncated, output tokens 867/1101/1666 (min/mean/max)
+#
+# So 0/25 at 512 vs 24/25 at 2560 - the same shape as the 6/25-vs-24/25 result that
+# set the previous value, and 24/25 is the rate the pre-trace prompt achieved at 512.
+# The headroom over the 1666 observed maximum is deliberate: the trace's length scales
+# with how many rules fire, and the pool that measured 1666 is one day's listings.
+#
+# The single residual failure is not truncation - it is one listing whose adjustment
+# object transposed `fired` and `delta` (`"fired": -3`). It fails loudly and sorts
+# last, as before; it does not crash.
+MAX_OUTPUT_TOKENS = 2560
 
 
 async def evaluate_jobs(
@@ -145,6 +158,15 @@ def check_score_trace(evaluation: EvaluationResult) -> list[str]:
             f"reported total {trace.total} is not start {trace.start} plus the deltas ({total})"
         )
 
+    # Bounded, not the bare sum. The floor is the one that bites: a listing starting at
+    # 2 that takes the remote (-3) and ramp-up (-3) penalties sums to -4, which is
+    # exactly D6's shape - several hard blockers at once - and match_score cannot go
+    # there. Comparing the raw sum would flag a correctly scored row on every run, and a
+    # check that cries wolf on its most important cases is a check somebody switches
+    # off. The cap is unreachable by the rubric's own maxima (start 6 plus three 1-pt
+    # boosts = 9) and is applied only because step 3 states it; a trace summing above it
+    # means a boost was invented, which is worth flagging. Both bounds are the rubric's
+    # own, which is why they are imported from prompt.py rather than re-typed here.
     expected = min(max(total, SCORE_FLOOR), SCORE_CAP)
     if expected != evaluation.match_score:
         deltas = ", ".join(f"{a.rule_id}{a.delta:+d}" for a in trace.adjustments if a.delta)
@@ -199,33 +221,8 @@ async def _evaluate_one(
 ) -> ScoredJob:
     try:
         response = await client.messages.create(
-            # 512, not 256: the graded ramp-up-risk rubric (spec 4 / #29) makes Haiku
-            # write longer reasoning and gaps lists, and at 256 the JSON was truncated
-            # mid-string on ~76% of a live freelancermap pool (stop_reason=max_tokens),
-            # failing the parse. Measured 6/25 parseable at 256 vs 24/25 at 512. The
-            # residual overflow still fails loudly and sorts last, it does not crash.
-            #
-            # 2560, not 512: #95's score_trace adds twelve adjustment objects, and the
-            # fired ones carry an evidence quote each, which re-opened exactly the
-            # failure above - completely. Measured on one live freelancermap pool of 25
-            # (2026-08-03), same cached pool for every arm:
-            #
-            #   512   0/25 parseable, 25/25 truncated at the ceiling
-            #   1536  16/25 parseable, 10/25 truncated
-            #   2560  24/25 parseable, 0/25 truncated, output tokens 867/1101/1666
-            #         (min/mean/max)
-            #
-            # So 0/25 at 512 vs 24/25 at 2560 - the same shape as the 6/25-vs-24/25
-            # result above, and 24/25 is the same parseable rate the pre-trace prompt
-            # achieved at 512. The headroom over the 1666 observed maximum is
-            # deliberate: the trace's length scales with how many rules fire, and the
-            # pool that measured 1666 is one day's listings.
-            #
-            # The single residual failure is not truncation - it is one listing whose
-            # adjustment object transposed `fired` and `delta` (`"fired": -3`). It
-            # fails loudly and sorts last, as before; it does not crash.
             model=model,
-            max_tokens=2560,
+            max_tokens=MAX_OUTPUT_TOKENS,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": build_prompt(job.listing, profile)}],
         )
