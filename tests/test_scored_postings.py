@@ -127,6 +127,26 @@ def _case_id(case: dict) -> str:
     return f"{case['id']}-{case['label'].replace(' ', '-')}"
 
 
+# Every key a case may carry. The manifest records the score and the case's identity;
+# the posting itself lives only in the gitignored fixture directory. Adding a key here
+# is a deliberate act — see `test_the_manifest_carries_no_posting_text`.
+_ALLOWED_CASE_KEYS = frozenset({
+    # identity and the human's judgement
+    "id", "posting_id", "label", "human_score", "human_score_approximate",
+    "expected_band",
+    # what the tool did, and what that makes this case
+    "tool_score", "baseline", "defects", "sub_band_defect",
+    # what the case is for
+    "exercises", "rules", "issues", "sequencing_constraint",
+    # where the text is, and whether it can be re-scored
+    "text_provenance", "live_rescorable",
+    # why a case cannot be expressed yet (see #110)
+    "expressibility_gap",
+    # commentary on the tool's behaviour and on score provenance — never on the posting
+    "notes",
+})
+
+
 def _is_blank(value: object) -> bool:
     """Whether a YAML value counts as absent.
 
@@ -189,6 +209,28 @@ class TestCorpusIntegrity:
         for becomes a fixture nobody dares delete and nobody can act on."""
         unlabelled = [c["id"] for c in _CASES if _is_blank(c.get("exercises"))]
         assert unlabelled == []
+
+    def test_the_manifest_carries_no_posting_text(self):
+        """The manifest records the score, never the input that produced it.
+
+        Enforced structurally — on the set of keys, not by trying to detect prose,
+        because the failure this guards against does not look like posting text. It
+        looks like a helpful field called `excerpt_must_keep` describing what a body
+        should contain. A description is not a safe substitute for the clause either:
+        B2's test turns on the word `oder`, and a described disjunction is not a
+        disjunction, so a manifest that summarised it would read as though it
+        documented the case while testing nothing.
+
+        Anything a maintainer needs in order to *build* a body is a description of
+        that body, and lives beside the fixtures in the gitignored directory.
+        """
+        stray = sorted({k for c in _CASES for k in c} - _ALLOWED_CASE_KEYS)
+        assert stray == [], (
+            f"{stray} are not allowed in the manifest. If a field describes, quotes or "
+            f"summarises a posting body it belongs in {_POSTING_TEXT_DIR.name}/, which "
+            "is gitignored. If it records a tool output or case metadata, add it to "
+            "_ALLOWED_CASE_KEYS with a reason."
+        )
 
     def test_every_case_declares_a_known_band(self):
         assert {c["expected_band"] for c in _CASES} <= set(_BANDS)
@@ -475,8 +517,9 @@ def _read_posting(case: dict) -> tuple[dict, str]:
         pytest.fail(
             f"{path} is missing required front matter: {', '.join(missing)}. "
             "Keep the company and the location unanonymised — they reach the model and "
-            f"for some cases they are the signal. See `excerpt_must_keep` on this case "
-            "in the manifest."
+            f"for some cases they are the signal. Per-case guidance lives beside the "
+            f"fixtures in {_POSTING_TEXT_DIR.name}/HOW-TO-BUILD.local.md, not in the "
+            "manifest, which carries no posting text."
         )
 
     # The file states what it is, and the manifest states what it should be. Checked

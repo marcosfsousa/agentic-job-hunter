@@ -1,10 +1,10 @@
 # Hand-scored postings — the A2 regression corpus (#96).
 #
 # WHAT THIS IS
-# The fourteen labelled cases from docs/jobscout_scoring_handoff.md § 6: a posting,
-# the score a human gave it, the band that score falls in, and the specific scoring
-# rule the case exercises. Eight of them are the confirmed defects of § 1 (D1–D6);
-# six are controls the tool has never scored.
+# The fourteen labelled cases from docs/jobscout_scoring_handoff.md § 6: for each, the
+# id of a posting, the score a human gave it, the band that score falls in, and the
+# specific scoring rule the case exercises. Eight of them are the confirmed defects of
+# § 1 (D1–D6); six are controls the tool has never scored.
 #
 # WHY THE POSTING BODIES ARE NOT HERE
 # This repository is public and linked from a CV, and the postings are third-party
@@ -15,20 +15,28 @@
 # in tests/test_repo_invariants.py. `contract_evaluation_log.md`, the source the human
 # scores come from, stays out of the repo entirely (handoff § 8).
 #
-# WHAT THIS MANIFEST MAY QUOTE — state the rule precisely, because the file has to
-# obey it. The line is not "no posting text at all"; it is:
-#   * NO posting bodies, paragraphs, or anything approaching a reproduction of a
-#     posting. That is what the gitignore and the tripwire exist to stop.
-#   * NEVER a named individual, in this file or anywhere else in the repo.
-#   * A short clause MAY be quoted verbatim where the rule under test turns on its
-#     exact wording and a paraphrase would destroy the thing being tested — D5 is
-#     about how `Englisch (C1) oder ggf. auch Deutsch (C1)` is parsed, so naming that clause
-#     IS the case definition. Quote the clause, not the sentence around it.
-#   * Everything else — skills bullets, responsibilities, boilerplate — gets
-#     paraphrased. If a paraphrase still identifies the clause for whoever is
-#     building the local excerpt, the verbatim version was decoration.
-# Card metadata (`100% remote`, `20 % Auslastung`) is factual, not expressive, and is
-# quoted freely — several cases are *about* the card disagreeing with the body.
+# WHAT THIS MANIFEST CARRIES — and it is a short list
+# Per case: the id, the human score, the band, the rule it exercises, and the tool
+# score, plus the harness metadata that hangs off those. Nothing else.
+#
+# NO POSTING TEXT. Not a quoted clause, not a paraphrase, and not a description of
+# what a body contains. The last two are the ones worth spelling out, because they
+# look harmless: B2's test turns on the word `oder`, and a described disjunction is
+# not a disjunction. A manifest that summarised the clause would read as though it
+# documented the case while testing nothing — worse than the silence, because the
+# silence is honest about where the input lives.
+#
+# The verbatim clauses live in the gitignored fixture bodies under
+# `tests/fixtures/scored_postings/`, contact persons stripped. Guidance for
+# building those bodies lives there too (`HOW-TO-BUILD.local.md`, also gitignored),
+# because that guidance is itself a description of posting content.
+#
+# This is a rule about the committed file, not about the fixtures: the excerpts may
+# and must quote whatever their rule reads. It is the manifest that stays clean.
+#
+# Enforced, not merely stated: `test_the_manifest_carries_no_posting_text` allows only
+# a fixed set of per-case keys, so the field that would carry a description back in —
+# some helpful `excerpt_must_keep` — fails the suite rather than passing review.
 #
 # THE TWO SHAPES, AND WHAT EACH BUYS
 #   * metadata-only (all fourteen) — drives the offline baseline. The assertion is
@@ -44,14 +52,22 @@
 # EXCERPT FILE FORMAT — `tests/fixtures/scored_postings/<id>.md`, gitignored:
 #
 #     ---
-#     title: AI Business Analyst (m/w/d)
-#     company: <the real one — see below>
-#     location: Frankfurt, Deutschland
+#     title: <the real one>
+#     company: <the real one — unanonymised>
+#     location: <the real one — unanonymised>
 #     url: https://www.freelancermap.de/projekt/...
 #     remote_percentage: 100        # optional; omit if the posting states none
 #     provenance: excerpt           # required; must match the case's text_provenance
 #     ---
-#     Only the clauses the case's `exercises` field names. Nothing else.
+#     Only the clauses the case's rule reads. Nothing else.
+#
+# What to keep and what to strip is a description of posting content, so it lives
+# with the fixtures rather than here — `scored_postings/HOW-TO-BUILD.local.md`,
+# gitignored, per case. The two rules worth restating without any case attached:
+# keep the company and the location unanonymised (`build_prompt` sends both, and
+# for some cases the identity IS the signal under test), and strip named
+# individuals — contact persons, recruiter names, signatures — which are the real
+# privacy exposure and which no scoring rule reads.
 #
 # FIDELITY LIMIT — what a live re-score against an excerpt is and is not
 # An excerpt-scored fixture is NOT the conditions the human score was assigned under.
@@ -66,23 +82,6 @@
 # matter, and the harness fails if the two disagree.
 # The offline baseline is unaffected — it asserts against the recorded tool score, which
 # was produced from the full posting in a real run, and it never reads the text at all.
-#
-# WHAT TO KEEP, WHAT TO STRIP
-#   * KEEP the company and the location, unanonymised. `build_prompt` puts both in the
-#     request (`prompt.py:126-127`), and for two cases the company identity IS the
-#     signal under test: #3028920's German penalty fired on language inferred from the
-#     company and the location — the exact input the rule is supposed to exempt — and
-#     #3018325 turns on the client being an öffentlicher Auftraggeber. Anonymise either
-#     and the case stops exercising its rule while still looking like it does, which is
-#     worse than not having it.
-#   * STRIP named individuals — contact persons, recruiter names, signatures. That is
-#     the real privacy exposure in a posting, and no scoring rule reads them.
-#   * EXCERPT TO THE RULE, NOT TO THE SCORE. Pull the clauses the named rule reads and
-#     stop. Do not add surrounding paragraphs so the file "reads naturally" — that is
-#     exactly how an excerpt drifts back into a full posting, which is the thing this
-#     split exists to prevent. A fixture is allowed to read like a fragment.
-#     The corollary: the live score is not expected to reproduce the score the full
-#     posting got. The band is what is asserted, and the band is what the rule moves.
 #
 # UPDATING AFTER A FIX LANDS
 # `baseline: fail` is a ratchet. The band test xfails those cases *strictly*, so once
@@ -163,23 +162,14 @@ cases:
     issues: [101, 98]
     live_rescorable: true
     text_provenance: excerpt
-    excerpt_must_keep: >-
-      The real company and the öffentlicher-Auftraggeber framing — the client being a
-      public-sector body is load-bearing for the ownership case — and the
-      "Englisch (C1) oder ggf. auch Deutsch (C1)" clause verbatim, since D5 is about how the
-      disjunction is read. Contact persons out.
-    excerpt_must_omit: >-
-      The multi-language backend bullet (the one listing Python, Node.js, Go and
-      JavaScript/TypeScript). It is an independent hard blocker and a large part
-      of why the human score is 4 — but neither C1 nor B2 reads it, and including it lets
-      the scorer reach `hard_skip` by firing the stack rule while both named rules stay
-      broken. A fixture that passes for the wrong reason is worse than a missing one.
     notes: >-
-      Two defects on one posting. D2: platform-ownership language named in the model's
-      own prose and then not penalised — #101 finds the `ownership` deprioritise entry
-      is not merely unweighted but contradicted by a +1 `end-to-end ownership` boost, so
-      a fix has to move both. D5: "Englisch (C1) oder ggf. auch Deutsch (C1)" scored as a German
-      requirement, which is the disjunction carve-out #98 adds.
+      Two defects on one posting, both recorded against the tool's output rather than
+      the posting. D2: platform-ownership language named in the model's own prose and
+      then not penalised — #101 finds the `ownership` deprioritise entry is not merely
+      unweighted but contradicted by a +1 `end-to-end ownership` boost, so a fix has to
+      move both. D5: the posting's language clause scored as a German requirement, which
+      is the disjunction carve-out #98 adds. The clause itself is in the fixture body;
+      it is not restated here, because B2 turns on its exact wording.
 
   - id: "3025628"
     posting_id: "3025628"
@@ -195,29 +185,15 @@ cases:
     issues: [99, 103]
     live_rescorable: true
     text_provenance: excerpt
-    excerpt_must_keep: >-
-      BOTH the Location and the Duration line. The onsite week is disqualifying because
-      it is more than 10% of a two-month term; Location alone is a weaker test than the
-      posting was. This fixture plus one #95 trace assertion is B4's entire test surface.
-    excerpt_must_omit: >-
-      Nothing beyond the Project Details block — the rule reads prose, and padding it
-      restores the ~800 words of noise the excerpt is not claiming to reproduce.
-    card_metadata_note: >-
-      The card rendered this posting as `100% remote / fulltime` while the body states
-      the onsite week, and the front matter carries `remote_percentage: 100` so the row
-      records that. It does NOT reproduce the divergence inside the evaluator, and it
-      cannot: `build_prompt` (prompt.py:126-129) sends title, company, location and
-      description only — no percentage. The model has never seen the card. So the
-      divergence is real at the filter (which passed the row on a true metadata field)
-      and invisible at the evaluator, which sees prose alone. That is not a gap in this
-      fixture; it is why § 9 calls the -3 prose rule the sole detector for the class.
     notes: >-
-      D3: the platform card renders `100% Remote` from `remoteInPercent`, so the metadata
-      filter passed it correctly; the disqualifying fact — the body qualifies the remote
-      arrangement with an initial onboarding week onsite in the Frankfurt area, against a
-      two-month term — exists only in the prose. That makes
-      the `REDUCE by 3` rule the sole detector for the whole class, and it did not fire —
-      the model called it "a minor friction". #99 asserts `fired: true` with `delta: 0`
+      D3: the card metadata and the posting body disagree, and only the body carries the
+      disqualifying fact — what it says is in the fixture, not here. The metadata filter
+      passed the row correctly on a true card field, so the divergence is real at the
+      filter and invisible at the evaluator: `build_prompt` (prompt.py:126-129) sends
+      title, company, location and description only, so the model has never seen the
+      card. That is not a gap in this fixture — it is why § 9 calls the `REDUCE by 3`
+      prose rule the sole detector for the class. The rule did not fire; the model
+      returned a dismissive one-liner instead. #99 asserts `fired: true` with `delta: 0`
       is an error once #95's trace exists. Also the closest thing the corpus has to a
       dedicated D6 case: four stacked blockers still returned a 6.
       Score discrepancy, deliberately not reconciled — digests/2026-07-23.md records
@@ -284,10 +260,6 @@ cases:
     issues: [97]
     live_rescorable: true
     text_provenance: excerpt
-    excerpt_must_keep: >-
-      The MCP Client Integration line — it is the ONE true gap. Without it the fixture
-      cannot tell "stopped inventing gaps" from "stopped emitting gaps at all", and #97's
-      assertion is on the contents of `gaps`: one entry, naming MCP.
     sequencing_constraint: >-
       Record this baseline BEFORE #100 lands. If #100 adds `React` / `TypeScript` to
       `working_knowledge`, this fixture's expected `gaps` changes — and a baseline that
@@ -320,13 +292,6 @@ cases:
     # the pass. Text not yet retrieved; the row stays and the live test skips until it
     # lands. Do not substitute an excerpt.
     text_provenance: full
-    excerpt_must_keep: >-
-      The real company and the real location, unanonymised. They are not context here,
-      they are the input under test: the penalty fired on German inferred from exactly
-      those two fields, which is the inference the rule carves out. An anonymised
-      excerpt cannot fire the defect and would read as a passing case. Contact persons
-      out. Note this case may need NO language clause in the body at all — if the
-      posting states one, the inference is not what is being tested.
     sub_band_defect: >-
       German was inferred from the location and then relabelled "declared" and penalised —
       an adherence failure against a rule that already carves out location-inferred German.
@@ -350,13 +315,13 @@ cases:
     issues: []
     live_rescorable: true
     text_provenance: excerpt
-    card_metadata_note: >-
-      `20 % Auslastung` is card metadata, not prose, and it is NOT inferable from the
-      body. It also cannot reach the fixture today: `JobListing` (models.py) has no
-      workload field at all — not the adapter, not the model, not the prompt. If the
-      Wave D `Auslastung` dimension is to be tested here, that is a `JobListing` change
-      and belongs to a new issue, not to this fixture. Filed as **#110** (`discovered`),
-      scoped to making the value expressible and explicitly not to scoring it.
+    expressibility_gap: >-
+      The workload figure this case turns on is a card field, and it cannot reach the
+      fixture today: `JobListing` (models.py) has no workload field at all — not the
+      adapter, not the model, not the prompt. Testing the Wave D dimension here is a
+      `JobListing` change and belongs to a new issue, not to this fixture. Filed as
+      **#110** (`discovered`), scoped to making the value expressible and explicitly
+      not to scoring it.
     notes: >-
       Crosses `apply` -> `marginal`, so it asserts normally and is a genuine baseline
       failure. But the rule it exercises is Wave D2, which is UNFILED and UNSCOPED —
