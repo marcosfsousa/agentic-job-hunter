@@ -173,8 +173,15 @@ class EvaluationResult(BaseModel):
         Not hypothetical: the same measurement run that motivated `total` caught Haiku
         emitting `"total": 6 + 1 + 1 - 2 - 1 - 3`, an unevaluated expression. That
         particular shape fails the JSON parse a step earlier, but it is the same model
-        improvising inside the same object, and `fired`/`delta` transposed or
-        `adjustments` sent as an object parses fine and lands here.
+        improvising inside the same object, and shapes like `adjustments` sent as an
+        object keyed by rule_id parse as JSON and arrive here.
+
+        What arrives here is only what Pydantic *cannot* read, which is less than it
+        sounds: lax mode coerces freely, so a `fired`/`delta` transposition reaches this
+        path for a delta of ±2 or ±3 but not for 0 or 1, the only two ints that coerce
+        to bool. A transposed ±1 boost validates and is caught downstream as arithmetic
+        instead. So this handles the unreadable tail; `check_score_trace` handles the
+        readable-but-wrong body, and neither subsumes the other.
 
         The whole trace is dropped rather than the offending entry: a trace missing one
         adjustment still sums, so salvaging it would make `check_score_trace` reconcile

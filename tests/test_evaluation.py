@@ -622,9 +622,11 @@ class TestTraceCheckRunsOutsideTheSwallowingExcept:
         format_digest then filtered the unevaluated row out of the digest entirely."""
         trace = _trace(6, {"boost_core_stack": 1})
         # Keyed by rule_id instead of listed — the shape a model reaches for when it
-        # decides a per-rule list "is" a mapping. Note a fired/delta transposition is
-        # *not* this fault: Pydantic coerces bool and int to each other, so that one
-        # parses and is caught downstream as arithmetic instead.
+        # decides a per-rule list "is" a mapping. Chosen over a fired/delta
+        # transposition because that one is only sometimes this fault: lax mode coerces
+        # 0 and 1 to bool and nothing else, so a transposed ±1 boost validates and is
+        # caught downstream as arithmetic, while a transposed −3 penalty lands here.
+        # An input whose path depends on the delta would pin neither check.
         trace["adjustments"] = {a["rule_id"]: a for a in trace["adjustments"]}
         payload = {
             "match_score": 7,
