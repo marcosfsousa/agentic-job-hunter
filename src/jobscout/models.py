@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 # ---------------------------------------------------------------------------
 # Constrained string types
@@ -153,6 +153,52 @@ class EvaluationResult(BaseModel):
     # from the digest entirely. `check_score_trace` reports the absence instead, which
     # is what "keep the row, flag it" means.
     score_trace: ScoreTrace | None = None
+
+    # Why a *present* trace could not be read. Set only by the validator below, never
+    # by the model — see there for why the distinction from an absent trace is kept.
+    score_trace_error: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _tolerate_a_malformed_trace(cls, data: object) -> object:
+        """Degrade an unreadable `score_trace` to a flag instead of a validation error.
+
+        `score_trace: ScoreTrace | None` makes an *absent* trace survive, which is the
+        decision above — but a *present* one of the wrong shape still raises, and that
+        raise happens at `model_validate` inside `_evaluate_one`'s bare
+        `except Exception`, which returns the job unevaluated and lets `format_digest`
+        filter it out. So the one input the check exists to catch — a model that got
+        the trace wrong — is the one that deletes its own evidence.
+
+        Not hypothetical: the same measurement run that motivated `total` caught Haiku
+        emitting `"total": 6 + 1 + 1 - 2 - 1 - 3`, an unevaluated expression. That
+        particular shape fails the JSON parse a step earlier, but it is the same model
+        improvising inside the same object, and `fired`/`delta` transposed or
+        `adjustments` sent as an object parses fine and lands here.
+
+        The whole trace is dropped rather than the offending entry: a trace missing one
+        adjustment still sums, so salvaging it would make `check_score_trace` reconcile
+        confidently against arithmetic it can no longer see. Unreadable is reported as
+        unreadable.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        # The model has no business setting this, and would be believed if it did.
+        data = {k: v for k, v in data.items() if k != "score_trace_error"}
+
+        raw = data.get("score_trace")
+        if raw is None:
+            return data
+        try:
+            ScoreTrace.model_validate(raw)
+        except ValidationError as exc:
+            first = exc.errors()[0]
+            location = ".".join(str(part) for part in first["loc"]) or "score_trace"
+            more = f" (+{exc.error_count() - 1} more)" if exc.error_count() > 1 else ""
+            data["score_trace"] = None
+            data["score_trace_error"] = f"{location}: {first['msg']}{more}"
+        return data
 
 
 # ---------------------------------------------------------------------------

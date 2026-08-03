@@ -402,6 +402,48 @@ class TestScoreTraceSurvivesValidation:
         assert results[0].evaluation.score_trace is not None
         assert results[0].trace_warnings == ()
 
+    def test_a_malformed_trace_degrades_instead_of_raising(self):
+        """Optional covers an *absent* trace. A present one of the wrong shape would
+        still raise — inside the swallowing except, costing the row it was meant to
+        flag. It has to come back as a flag, not an exception."""
+        trace = _trace(6, {"boost_core_stack": 1})
+        _adj(trace, "boost_core_stack")["delta"] = "plus one"   # not an int
+
+        evaluation = _evaluation(7, trace)
+
+        assert evaluation.score_trace is None
+        assert evaluation.score_trace_error is not None
+        assert "delta" in evaluation.score_trace_error
+        assert any(
+            "could not be read" in w for w in check_score_trace(evaluation)
+        )
+
+    def test_a_malformed_trace_is_not_reported_as_a_missing_one(self):
+        """The two are different faults: nothing sent means the instruction was ignored,
+        an unreadable one means the model tried and got the shape wrong."""
+        absent = check_score_trace(_evaluation(7, None))
+        malformed = check_score_trace(_evaluation(7, {"start": "six"}))
+
+        assert absent != malformed
+        assert any("no score_trace returned" in w for w in absent)
+        assert not any("no score_trace returned" in w for w in malformed)
+
+    def test_the_model_cannot_set_the_error_field_itself(self):
+        """It is the validator's verdict on the response, not part of the response."""
+        payload = {
+            "match_score": 7,
+            "matching_skills": [],
+            "gaps": [],
+            "explanation": "x",
+            "score_trace": _trace(6, {"boost_core_stack": 1}),
+            "score_trace_error": "nothing to see here",
+        }
+
+        evaluation = EvaluationResult.model_validate(payload)
+
+        assert evaluation.score_trace is not None
+        assert evaluation.score_trace_error is None
+
     # That adding score_trace did not turn EvaluationResult strict is covered by
     # TestStrictnessIsScopedToTheProfile in tests/test_models.py, which owns that
     # invariant for all three permissive models at once. A second copy here would
@@ -572,6 +614,38 @@ class TestTraceCheckRunsOutsideTheSwallowingExcept:
 
         assert results[0].llm_score == pytest.approx(0.7)
         assert any("no score_trace" in w for w in results[0].trace_warnings)
+
+    async def test_malformed_trace_flags_rather_than_drops(self, profile):
+        """The one input the check exists to catch is a model that got the trace wrong,
+        and until the validator tolerated it that was the one input that deleted its own
+        evidence: a wrong-shaped trace raised at model_validate, inside the except, and
+        format_digest then filtered the unevaluated row out of the digest entirely."""
+        trace = _trace(6, {"boost_core_stack": 1})
+        # Keyed by rule_id instead of listed — the shape a model reaches for when it
+        # decides a per-rule list "is" a mapping. Note a fired/delta transposition is
+        # *not* this fault: Pydantic coerces bool and int to each other, so that one
+        # parses and is caught downstream as arithmetic instead.
+        trace["adjustments"] = {a["rule_id"]: a for a in trace["adjustments"]}
+        payload = {
+            "match_score": 7,
+            "matching_skills": [],
+            "gaps": [],
+            "explanation": "Shape is wrong.",
+            "score_trace": trace,
+        }
+
+        results = await evaluate_jobs(
+            [_make_scored_job("bad-shape-1")], profile, _mock_client(payload),
+            model="mock-model", top_n=25, reeval_below=0,
+        )
+
+        assert results[0].evaluation is not None                  # not swallowed
+        assert results[0].llm_score == pytest.approx(0.7)
+        assert any("could not be read" in w for w in results[0].trace_warnings)
+
+        digest = format_digest(results)
+        assert "bad-shape-1" in digest
+        assert "**UNVERIFIED SCORE:**" in digest
 
     async def test_a_failed_evaluation_is_not_also_flagged(self, profile):
         """Nothing came back to check, and _evaluate_one has already logged it. A second

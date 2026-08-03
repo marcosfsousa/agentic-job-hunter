@@ -142,6 +142,15 @@ def check_score_trace(evaluation: EvaluationResult) -> list[str]:
     """
     trace = evaluation.score_trace
     if trace is None:
+        # Two different faults, and worth telling apart in the log: nothing was sent,
+        # versus something was sent that could not be read. The second says the model
+        # tried and got the shape wrong, which is a prompt problem; the first says it
+        # ignored the instruction outright.
+        if evaluation.score_trace_error:
+            return [
+                f"score_trace was returned but could not be read "
+                f"({evaluation.score_trace_error}), so the score is unverifiable"
+            ]
         return ["no score_trace returned, so the score is unverifiable"]
 
     problems: list[str] = []
