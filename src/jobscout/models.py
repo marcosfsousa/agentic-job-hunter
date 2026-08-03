@@ -102,11 +102,57 @@ class JobListing:
 # LLM evaluation result — validated from Claude Haiku JSON output
 # ---------------------------------------------------------------------------
 
+class ScoreAdjustment(BaseModel):
+    """One rubric rule's contribution to `match_score`, as the model reports it.
+
+    `delta` is signed — positive for a BOOST, negative for a REDUCE, 0 when the rule
+    did not fire — so the whole list sums. `evidence` is required by
+    `check_score_trace` whenever `fired` is true, but is not required *here*: an
+    entry missing it must survive validation to be flagged, because a validation
+    error would take the row out of the digest instead (#95).
+    """
+
+    rule_id: str
+    fired: bool
+    delta: int
+    evidence: str | None = None
+
+
+class ScoreTrace(BaseModel):
+    """The arithmetic behind `match_score`: a starting point plus signed adjustments.
+
+    Exists so non-adherence is checkable in Python. D2/D3/D4 were all cases where the
+    model named a rule in its own summary and then did not apply it to the score, and
+    nothing could see that because the score arrived as a bare integer (#95).
+    """
+
+    start: int
+    adjustments: list[ScoreAdjustment] = Field(default_factory=list)
+
+    # The model's own sum. Optional because it is a cross-check, not the source of
+    # truth - `check_score_trace` recomputes the sum either way and only uses this to
+    # tell "cannot add up" apart from "ignored its own total".
+    #
+    # It exists because the model wrote it whether or not it was asked. Told to sum
+    # the deltas and given nowhere to put the answer, Haiku emitted a `"total"` key
+    # holding `6 + 1 + 1 - 2 - 1 - 3` - an arithmetic expression, which is not valid
+    # JSON and failed the parse on 6 of 25 live listings. Asking for the field, as one
+    # already-evaluated integer, is what makes those responses parse (#95).
+    total: int | None = None
+
+
 class EvaluationResult(BaseModel):
     match_score: int = Field(ge=1, le=10)
     matching_skills: list[str]
     gaps: list[str]
     explanation: str
+
+    # Optional, and that is a decision rather than laxity. SYSTEM_PROMPT asks for the
+    # trace on every response, so an absent one is a fault — but making it required
+    # would raise inside `_evaluate_one`'s `except Exception`, which drops the row
+    # from the digest entirely. `check_score_trace` reports the absence instead, which
+    # is what "keep the row, flag it" means.
+    score_trace: ScoreTrace | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +166,13 @@ class ScoredJob:
     llm_score: float | None = None        # None until LLM evaluation runs
     final_score: float | None = None      # == llm_score; the reranker orders, the retriever only picks
     evaluation: EvaluationResult | None = None
+
+    # Reasons `check_score_trace` gave for not trusting this row's arithmetic. Empty
+    # is the healthy case. A tuple, not a list, because ScoredJob is frozen and the
+    # flag should be as immutable as the score it qualifies. The row stays in the
+    # digest either way — the digest renders this so a mismatch is visible where the
+    # score is read, not only in the run log.
+    trace_warnings: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------

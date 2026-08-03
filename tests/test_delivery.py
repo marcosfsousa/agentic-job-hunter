@@ -32,6 +32,7 @@ def _make_scored_job(
     remote_percentage: int | None = 50,
     match_score: int = 8,
     embedding_score: float = 0.6,
+    trace_warnings: tuple[str, ...] = (),
 ) -> ScoredJob:
     listing = JobListing(
         id=id,
@@ -59,6 +60,7 @@ def _make_scored_job(
             llm_score=match_score / 10,
             final_score=match_score / 10,   # final_score == llm_score, no blend
             evaluation=evaluation,
+            trace_warnings=trace_warnings,
         )
     return ScoredJob(listing=listing, embedding_score=embedding_score)
 
@@ -180,6 +182,25 @@ class TestFormatDigest:
         retriever's confidence, worth seeing on the first live runs of a swapped model."""
         result = format_digest([_make_scored_job(embedding_score=0.512)], run_date=_RUN_DATE)
         assert "**Embedding:** 0.512" in result
+
+    def test_trace_warnings_render_as_a_flag_on_the_row(self):
+        """#95's "keep the row, flag it": a score whose own trace does not add up is
+        still delivered, and says so where the score is read."""
+        job = _make_scored_job(
+            "flagged-1",
+            trace_warnings=("arithmetic mismatch: start 6 gives 4, but match_score is 8",),
+        )
+        result = format_digest([job], run_date=_RUN_DATE)
+
+        assert "**UNVERIFIED SCORE:**" in result
+        assert "but match_score is 8" in result
+        # Flagged, not dropped, and not degraded — everything else about the row renders.
+        assert "**Score:** 8/10" in result
+        assert "[Apply](https://example.com/job/flagged-1)" in result
+
+    def test_no_flag_line_when_the_trace_reconciles(self):
+        result = format_digest([_make_scored_job()], run_date=_RUN_DATE)
+        assert "UNVERIFIED SCORE" not in result
 
 
 # ---------------------------------------------------------------------------

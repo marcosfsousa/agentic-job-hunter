@@ -5,16 +5,19 @@ No real API calls — Haiku responses are mocked via unittest.mock.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from jobscout.evaluation.evaluator import evaluate_jobs
-from jobscout.evaluation.prompt import SYSTEM_PROMPT, build_prompt
+from jobscout.delivery.formatter import format_digest
+from jobscout.evaluation.evaluator import SCORE_CAP, SCORE_FLOOR, check_score_trace, evaluate_jobs
+from jobscout.evaluation.prompt import RULE_IDS, SYSTEM_PROMPT, build_prompt
 from jobscout.models import (
     DealbreakersConfig,
+    EvaluationResult,
     JobListing,
     LocationConfig,
     RateConfig,
@@ -61,6 +64,30 @@ def _make_scored_job(id: str, embedding_score: float = 0.8) -> ScoredJob:
     return ScoredJob(listing=listing, embedding_score=embedding_score)
 
 
+def _trace(start: int, fired: dict[str, int] | None = None) -> dict:
+    """Build a score_trace in the shape SYSTEM_PROMPT asks for.
+
+    `fired` maps rule_id to a signed non-zero delta; every other rule in RULE_IDS is
+    emitted as a non-firing entry, because the prompt asks for one entry per rule
+    whether or not it fired. Evidence is filled in for the firing entries only, which
+    is what `check_score_trace` requires.
+    """
+    fired = fired or {}
+    return {
+        "start": start,
+        "adjustments": [
+            {
+                "rule_id": rule_id,
+                "fired": rule_id in fired,
+                "delta": fired.get(rule_id, 0),
+                "evidence": f"listing states the {rule_id} cue" if rule_id in fired else None,
+            }
+            for rule_id in RULE_IDS
+        ],
+        "total": start + sum(fired.values()),
+    }
+
+
 def _mock_client(response_payload: dict | None = None, raise_exc: Exception | None = None):
     """Return a mock AsyncAnthropic client.
 
@@ -76,6 +103,10 @@ def _mock_client(response_payload: dict | None = None, raise_exc: Exception | No
             "matching_skills": ["LangChain", "PyTorch"],
             "gaps": ["MLOps"],
             "explanation": "Strong match on core LLM skills.",
+            # 6 + 1 + 1 == 8. The default response is the healthy one, so the default
+            # trace has to reconcile — otherwise every test using it drags a warning
+            # along and the flag stops meaning anything (#95).
+            "score_trace": _trace(6, {"boost_core_stack": 1, "boost_llm_ownership": 1}),
         }
         message = SimpleNamespace(content=[SimpleNamespace(text=json.dumps(payload))])
         client.messages.create = AsyncMock(return_value=message)
@@ -315,6 +346,282 @@ class TestSortOrder:
 
 
 # ---------------------------------------------------------------------------
+# score_trace — the arithmetic check (#95)
+# ---------------------------------------------------------------------------
+
+def _evaluation(match_score: int, trace: dict | None) -> EvaluationResult:
+    """An EvaluationResult built the way the evaluator builds one: from model JSON."""
+    payload = {
+        "match_score": match_score,
+        "matching_skills": [],
+        "gaps": [],
+        "explanation": "x",
+    }
+    if trace is not None:
+        payload["score_trace"] = trace
+    return EvaluationResult.model_validate(payload)
+
+
+class TestScoreTraceSurvivesValidation:
+    """EvaluationResult does not inherit _StrictProfileModel, so Pydantic's default
+    extra="ignore" applied and a score_trace the model returned was silently dropped
+    on the floor. The field has to exist for anything downstream to check it."""
+
+    def test_trace_is_parsed_rather_than_discarded(self):
+        evaluation = _evaluation(8, _trace(6, {"boost_core_stack": 1, "boost_llm_ownership": 1}))
+
+        assert evaluation.score_trace is not None
+        assert evaluation.score_trace.start == 6
+        assert [a.rule_id for a in evaluation.score_trace.adjustments] == list(RULE_IDS)
+        fired = [a for a in evaluation.score_trace.adjustments if a.fired]
+        assert {a.rule_id for a in fired} == {"boost_core_stack", "boost_llm_ownership"}
+        assert all(a.evidence for a in fired)
+
+    async def test_trace_reaches_the_scored_job_through_the_evaluator(self, profile):
+        results = await evaluate_jobs(
+            [_make_scored_job("trace-1")], profile, _mock_client(), model="mock-model", top_n=25
+        )
+
+        assert results[0].evaluation is not None
+        assert results[0].evaluation.score_trace is not None
+        assert results[0].trace_warnings == ()
+
+    def test_an_unrecognised_extra_field_is_still_ignored(self):
+        """Adding score_trace must not turn EvaluationResult strict — it validates
+        Haiku's JSON, and a provider adding a response field must not break the run."""
+        evaluation = EvaluationResult.model_validate({
+            "match_score": 7,
+            "matching_skills": [],
+            "gaps": [],
+            "explanation": "x",
+            "some_future_field": 1,
+        })
+
+        assert evaluation.match_score == 7
+
+
+class TestCheckScoreTrace:
+    def test_reconciling_trace_reports_nothing(self):
+        evaluation = _evaluation(4, _trace(6, {"penalty_remote": -3, "boost_core_stack": 1}))
+        assert check_score_trace(evaluation) == []
+
+    def test_arithmetic_mismatch_is_reported(self):
+        # The D2/D3/D4 shape: the rule is named in the trace, and the score ignores it.
+        evaluation = _evaluation(6, _trace(6, {"penalty_remote": -3}))
+
+        problems = check_score_trace(evaluation)
+
+        assert len(problems) == 1
+        assert "arithmetic mismatch" in problems[0]
+        assert "penalty_remote-3" in problems[0]
+        assert "match_score is 6" in problems[0]
+
+    def test_total_below_the_floor_is_not_reported(self):
+        """D6's shape — several hard blockers at once — sums below 1, and match_score
+        cannot go there. Flagging it would fire on correctly scored rows every run."""
+        evaluation = _evaluation(
+            SCORE_FLOOR, _trace(2, {"penalty_remote": -3, "penalty_ramp_up_risk": -3})
+        )
+        assert check_score_trace(evaluation) == []
+
+    def test_total_above_the_cap_is_reported(self):
+        """Unreachable under the rubric's own maxima, so a trace that gets there
+        invented an adjustment — and the cap does not excuse it."""
+        evaluation = _evaluation(
+            10, _trace(9, {"boost_core_stack": 1})
+        )
+        problems = check_score_trace(evaluation)
+
+        assert len(problems) == 1
+        assert f"bounded {SCORE_CAP}" in problems[0]
+
+    def test_reported_total_that_does_not_match_the_deltas_is_reported(self):
+        """A wrong `total` is the model failing at addition; a right `total` that
+        match_score disagrees with is the model overriding its own sum. Different
+        faults, and the digest should not present them as one."""
+        trace = _trace(6, {"penalty_remote": -3})
+        trace["total"] = 5                                   # 6 - 3 is 3, not 5
+
+        problems = check_score_trace(_evaluation(3, trace))
+
+        assert problems == ["reported total 5 is not start 6 plus the deltas (3)"]
+
+    def test_an_absent_total_is_not_itself_a_problem(self):
+        """The sum is recomputed regardless — `total` is a cross-check, not the source
+        of truth, so a response that omits it is still fully verifiable."""
+        trace = _trace(6, {"penalty_remote": -3})
+        del trace["total"]
+
+        assert check_score_trace(_evaluation(3, trace)) == []
+
+    def test_missing_trace_is_reported(self):
+        problems = check_score_trace(_evaluation(7, None))
+
+        assert len(problems) == 1
+        assert "no score_trace" in problems[0]
+
+    @pytest.mark.parametrize("evidence", [None, "", "   "])
+    def test_fired_rule_without_evidence_is_reported(self, evidence):
+        trace = _trace(6, {"penalty_remote": -3})
+        for adj in trace["adjustments"]:
+            if adj["rule_id"] == "penalty_remote":
+                adj["evidence"] = evidence
+
+        problems = check_score_trace(_evaluation(3, trace))
+
+        assert problems == ["penalty_remote fired with no evidence"]
+
+    def test_fired_rule_contributing_nothing_is_reported(self):
+        """The handoff's worked example for D3 verbatim: the model reports the remote
+        penalty as fired and then moves the score by zero. The arithmetic reconciles,
+        so this is the only check that sees it."""
+        trace = _trace(6)
+        for adj in trace["adjustments"]:
+            if adj["rule_id"] == "penalty_remote":
+                adj.update(fired=True, delta=0, evidence="two days a week in Munich")
+
+        problems = check_score_trace(_evaluation(6, trace))
+
+        assert problems == ["penalty_remote fired but contributed 0"]
+
+    def test_unfired_rule_contributing_a_delta_is_reported(self):
+        """The mirror image: an adjustment with no rule behind it. Also sums correctly."""
+        trace = _trace(6)
+        for adj in trace["adjustments"]:
+            if adj["rule_id"] == "penalty_remote":
+                adj["delta"] = -3
+        trace["total"] = 3      # consistent with the deltas, to isolate the fired flag
+
+        problems = check_score_trace(_evaluation(3, trace))
+
+        assert problems == ["penalty_remote did not fire but contributed -3"]
+
+    def test_every_problem_is_reported_not_just_the_first(self):
+        trace = _trace(6, {"penalty_remote": -3, "boost_core_stack": 1})
+        for adj in trace["adjustments"]:
+            if adj["rule_id"] == "boost_core_stack":
+                adj["evidence"] = None
+
+        problems = check_score_trace(_evaluation(9, trace))
+
+        assert len(problems) == 2
+        assert any("arithmetic mismatch" in p for p in problems)
+        assert "boost_core_stack fired with no evidence" in problems
+
+
+class TestTraceCheckRunsOutsideTheSwallowingExcept:
+    """The check must not be able to delete the row it is flagging.
+
+    `_evaluate_one`'s bare `except Exception` returns the job unevaluated, and
+    `format_digest` filters unevaluated rows out entirely — so a check raising in there
+    would do the opposite of #95's "keep the row, flag it". These pin the placement by
+    its consequence rather than by where the call happens to sit.
+    """
+
+    @staticmethod
+    def _mismatched_client() -> MagicMock:
+        payload = {
+            "match_score": 6,
+            "matching_skills": ["LangChain"],
+            "gaps": ["onsite presence"],
+            "explanation": "Two days a week onsite in Munich.",
+            "score_trace": _trace(6, {"penalty_remote": -3}),   # 6 - 3 = 3, not 6
+        }
+        client = MagicMock()
+        client.messages.create = AsyncMock(
+            return_value=SimpleNamespace(content=[SimpleNamespace(text=json.dumps(payload))])
+        )
+        return client
+
+    async def test_failing_check_still_yields_a_row_in_the_digest(self, profile):
+        results = await evaluate_jobs(
+            [_make_scored_job("mismatch-1")], profile, self._mismatched_client(),
+            model="mock-model", top_n=25, reeval_below=0,
+        )
+
+        assert results[0].llm_score == pytest.approx(0.6)     # scored, not dropped
+        assert results[0].trace_warnings                      # and flagged
+
+        digest = format_digest(results)
+        assert "mismatch-1" in digest
+        assert "**UNVERIFIED SCORE:**" in digest
+
+    async def test_mismatch_logs_at_warning_with_the_listing_id(self, profile, caplog):
+        with caplog.at_level(logging.WARNING, logger="jobscout.evaluation.evaluator"):
+            await evaluate_jobs(
+                [_make_scored_job("mismatch-2")], profile, self._mismatched_client(),
+                model="mock-model", top_n=25, reeval_below=0,
+            )
+
+        records = [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert len(records) == 1
+        assert "mismatch-2" in records[0].getMessage()
+        assert "arithmetic mismatch" in records[0].getMessage()
+
+    async def test_missing_trace_flags_rather_than_drops(self, profile):
+        """A response with no trace at all still parses — making score_trace required
+        would raise inside the swallowing except and cost the row."""
+        payload = {
+            "match_score": 7,
+            "matching_skills": [],
+            "gaps": [],
+            "explanation": "No trace returned.",
+        }
+        client = _mock_client(response_payload=payload)
+
+        results = await evaluate_jobs(
+            [_make_scored_job("no-trace-1")], profile, client, model="mock-model", top_n=25
+        )
+
+        assert results[0].llm_score == pytest.approx(0.7)
+        assert any("no score_trace" in w for w in results[0].trace_warnings)
+
+    async def test_a_failed_evaluation_is_not_also_flagged(self, profile):
+        """Nothing came back to check, and _evaluate_one has already logged it. A second
+        warning would read as a scoring fault rather than an API one."""
+        client = _mock_client(raise_exc=Exception("API error"))
+
+        results = await evaluate_jobs(
+            [_make_scored_job("failed-1")], profile, client, model="mock-model", top_n=25
+        )
+
+        assert results[0].evaluation is None
+        assert results[0].trace_warnings == ()
+
+    async def test_the_kept_sample_is_the_one_checked(self, profile):
+        """Re-evaluation keeps the higher of two samples. The check runs on the survivor,
+        so a bad trace on a discarded first draw must not flag the row that shipped."""
+        bad_first = {
+            "match_score": 3,
+            "matching_skills": [],
+            "gaps": [],
+            "explanation": "Weak.",
+            "score_trace": _trace(4, {"penalty_remote": -3}),   # 4 - 3 = 1, not 3
+        }
+        good_second = {
+            "match_score": 7,
+            "matching_skills": ["RAG"],
+            "gaps": [],
+            "explanation": "Good.",
+            "score_trace": _trace(6, {"boost_core_stack": 1}),  # 6 + 1 = 7
+        }
+        client = MagicMock()
+        client.messages.create = AsyncMock(side_effect=[
+            SimpleNamespace(content=[SimpleNamespace(text=json.dumps(bad_first))]),
+            SimpleNamespace(content=[SimpleNamespace(text=json.dumps(good_second))]),
+        ])
+
+        results = await evaluate_jobs(
+            [_make_scored_job("reeval-trace-1")], profile, client,
+            model="mock-model", top_n=25, reeval_below=4,
+        )
+
+        assert results[0].evaluation is not None
+        assert results[0].evaluation.match_score == 7
+        assert results[0].trace_warnings == ()
+
+
+# ---------------------------------------------------------------------------
 # prompt tests
 # ---------------------------------------------------------------------------
 
@@ -435,3 +742,81 @@ class TestBuildPrompt:
         # The bands must be exclusive: without this a C1+ listing that also declares a
         # working language reads as 2+1, restoring over-firing through a third door.
         assert "The bands are exclusive" in SYSTEM_PROMPT
+
+
+class TestSystemPromptAsksForTheScoreTrace:
+    """#95. The Python check is only as good as what the model is asked to return."""
+
+    def test_score_trace_is_a_required_field(self):
+        assert "- score_trace:" in SYSTEM_PROMPT
+        assert "Score trace" in SYSTEM_PROMPT
+
+    def test_the_trace_is_asked_for_before_the_score(self):
+        """Field order is generation order, and that is the difference between an
+        instrument that measures the arithmetic and one that only decorates it.
+
+        Asked for after match_score, the trace can only rationalise a score already
+        written: measured 15 of 16 parseable responses failing the arithmetic check,
+        the model scoring above its own total nearly every time. Asked for first, the
+        score is read off a total the model has already committed to.
+        """
+        assert SYSTEM_PROMPT.index("- score_trace:") < SYSTEM_PROMPT.index("- match_score:")
+        assert "IN THIS ORDER" in SYSTEM_PROMPT
+        assert "Emit it FIRST, before match_score" in SYSTEM_PROMPT
+
+    def test_every_rule_carries_a_stable_id(self):
+        """One id per boost and per penalty. The count is asserted so a rule added
+        without a tag — which would leave it un-traceable and un-checkable — fails
+        here rather than going quiet."""
+        assert len(RULE_IDS) == 12
+        assert len(set(RULE_IDS)) == len(RULE_IDS)
+        # The two the handoff wrote its worked examples against, by name.
+        assert "boost_core_stack" in RULE_IDS
+        assert "penalty_remote" in RULE_IDS
+
+    def test_the_id_list_handed_to_the_model_is_derived_from_the_tags(self):
+        """RULE_IDS is read back out of the rubric's own tags, so a renamed rule cannot
+        leave the trace spec asking for the old id.
+
+        Each id appears at least twice — once tagging its rule, once in the list the
+        trace spec interpolates. The two used in the worked example appear a third
+        time, which is why this is a floor rather than an equality.
+        """
+        for rule_id in RULE_IDS:
+            assert f"[{rule_id}]" in SYSTEM_PROMPT
+            assert SYSTEM_PROMPT.count(rule_id) >= 2, (
+                f"{rule_id} tags a rule but is missing from the trace-spec id list"
+            )
+        # The list itself is interpolated, never hand-written — the guard against the
+        # drift this whole arrangement exists to prevent.
+        assert ", ".join(RULE_IDS) in SYSTEM_PROMPT
+
+    def test_the_total_is_asked_for_as_an_integer_and_the_floor_is_stated(self):
+        """Both pin a live parse failure, not a hypothetical.
+
+        Told to sum the deltas with nowhere to put the answer, Haiku wrote
+        `"total": 6 + 1 + 1 - 2 - 1 - 3` — an expression, not JSON — on 6 of 25
+        listings. And the rubric's step 3 states a cap but no floor, so a trace
+        totalling 0 was emitted as `match_score: 0`, which `Field(ge=1)` then rejected,
+        costing the row. Asking for one integer, and naming the floor, fixes both.
+        """
+        assert "ONE integer that you have already worked out" in SYSTEM_PROMPT
+        assert "never as an expression" in SYSTEM_PROMPT
+        assert "below 1 report 1, above 9 report 9" in SYSTEM_PROMPT
+
+    def test_the_arithmetic_and_evidence_contracts_are_stated(self):
+        """These are what check_score_trace enforces; asking for something else in the
+        prompt would make every response a false positive."""
+        assert '"delta" is SIGNED' in SYSTEM_PROMPT
+        assert 'MUST carry non-empty "evidence"' in SYSTEM_PROMPT
+        assert 'match_score is "total" bounded into 1–9' in SYSTEM_PROMPT
+        assert 'Never report "fired": true with "delta": 0.' in SYSTEM_PROMPT
+
+    def test_the_rubric_wording_is_untouched_by_the_tags(self):
+        """#95 must not reword or re-weight a rule — that is C1/C2/C3. The tags sit at
+        the head of each bullet for exactly this reason: every rule sentence still
+        starts at its original first word."""
+        assert "[penalty_remote] REDUCE by 3 pts: the role is not fully remote" in SYSTEM_PROMPT
+        assert "[boost_core_stack] BOOST by 1 pt: stack explicitly mentions" in SYSTEM_PROMPT
+        assert "[penalty_german_language] REDUCE by 0–2 pts" in SYSTEM_PROMPT
+        assert "[penalty_ramp_up_risk] REDUCE by 0–3 pts" in SYSTEM_PROMPT

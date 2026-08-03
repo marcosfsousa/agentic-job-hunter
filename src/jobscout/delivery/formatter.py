@@ -51,6 +51,15 @@ def _format_job(rank: int, job: ScoredJob) -> str:
         f"**Matching skills:** {skills}",
         f"**Gaps:** {gaps}",
         f"**Summary:** {ev.explanation}",
+    ]
+
+    # The flag half of #95's "keep the row, flag it". The row is rendered exactly as
+    # any other - the point is that a score whose own trace does not add up is visible
+    # where the score is read, not only to whoever greps the run log.
+    if job.trace_warnings:
+        lines.append(f"**UNVERIFIED SCORE:** {'; '.join(job.trace_warnings)}")
+
+    lines += [
         f"[Apply]({listing.url})",
         "\n---\n",
     ]

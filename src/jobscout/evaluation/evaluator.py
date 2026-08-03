@@ -11,6 +11,21 @@ from jobscout.models import EvaluationResult, ScoredJob, UserProfile
 
 logger = logging.getLogger(__name__)
 
+# The rubric's own bounds on the final number, and the reason the check compares
+# against a bounded total rather than the bare sum. Step 3 of SYSTEM_PROMPT says
+# "Cap at 9", and match_score is declared 1-10 with anything below 5 called a poor
+# fit, so 1 is the floor Pydantic already enforces.
+#
+# The floor is the one that bites. A listing that starts at 2 and takes the remote
+# (-3) and ramp-up (-3) penalties sums to -4, which is exactly D6's shape - several
+# hard blockers at once. Comparing the raw sum there would flag a correctly scored
+# row on every run, and a check that cries wolf on its most important cases is a
+# check somebody switches off. The cap is unreachable by the rubric's own maxima
+# (start 6 plus three 1-pt boosts = 9) and is applied only because step 3 states it;
+# a trace summing above 9 means a boost was invented, which is worth flagging.
+SCORE_FLOOR = 1
+SCORE_CAP = 9
+
 
 async def evaluate_jobs(
     jobs: list[ScoredJob],
@@ -27,6 +42,10 @@ async def evaluate_jobs(
 
     Jobs whose first score falls below reeval_below are evaluated a second time;
     the higher of the two scores is kept.
+
+    The score each job comes back with is checked against the trace the model returned
+    for it (`check_score_trace`). A job whose arithmetic does not reconcile is logged at
+    WARNING and carries the reasons in `trace_warnings` - it is never dropped for it.
 
     Args:
         jobs: Ranked ScoredJobs (embedding_score populated, sorted descending).
@@ -64,7 +83,14 @@ async def evaluate_jobs(
                     second.evaluation.match_score,
                 )
                 evaluated = second
-        results.append(evaluated)
+        # Deliberately here, and not inside _evaluate_one. That function's bare
+        # `except Exception` returns the job unevaluated, and format_digest then drops
+        # unevaluated rows entirely - so an arithmetic check that raised in there would
+        # delete the row it was meant to flag, which is the opposite of what #95 asks
+        # for. Here the response has already been parsed and kept; all this can do is
+        # attach a warning. It also runs on the surviving evaluation after re-eval, so
+        # a discarded first sample is not flagged.
+        results.append(_flag_score_trace(evaluated))
 
     # The stage that produces the score is the stage that orders by it — which makes
     # formatter.py's "assumed sorted by final_score descending" docstring true rather
@@ -87,6 +113,84 @@ async def evaluate_jobs(
     return sorted(results, key=_sort_key)
 
 
+def check_score_trace(evaluation: EvaluationResult) -> list[str]:
+    """Return the reasons a score_trace fails to justify its own match_score.
+
+    An empty list is the healthy case: the arithmetic reconciles, every rule the model
+    reported as fired cites evidence for it, and no entry contradicts itself.
+
+    This is the check D2, D3 and D4 went twelve days without. In all three the model
+    comprehended a rule, named it in its own prose, and then did not move the score -
+    invisible while the score arrived as a bare integer.
+
+    Pure and non-raising by construction. The caller runs it outside the evaluator's
+    swallowing `except`, so it must not need a `try` of its own; the caller's job is to
+    keep the row and attach what comes back.
+    """
+    trace = evaluation.score_trace
+    if trace is None:
+        return ["no score_trace returned, so the score is unverifiable"]
+
+    problems: list[str] = []
+
+    total = trace.start + sum(a.delta for a in trace.adjustments)
+
+    # The model reports its own sum too. Recomputing it here rather than trusting it is
+    # the point of the exercise, but comparing the two separates two different faults:
+    # a wrong `total` is arithmetic the model got wrong, while a right `total` that
+    # match_score disagrees with is the model overriding a sum it had already worked
+    # out - which is the D2/D3/D4 shape.
+    if trace.total is not None and trace.total != total:
+        problems.append(
+            f"reported total {trace.total} is not start {trace.start} plus the deltas ({total})"
+        )
+
+    expected = min(max(total, SCORE_FLOOR), SCORE_CAP)
+    if expected != evaluation.match_score:
+        deltas = ", ".join(f"{a.rule_id}{a.delta:+d}" for a in trace.adjustments if a.delta)
+        problems.append(
+            f"arithmetic mismatch: start {trace.start} with {deltas or 'no adjustments'} "
+            f"gives {total} (bounded {expected}), but match_score is {evaluation.match_score}"
+        )
+
+    for adj in trace.adjustments:
+        if adj.fired and not (adj.evidence or "").strip():
+            problems.append(f"{adj.rule_id} fired with no evidence")
+        # The two halves of a contradiction the arithmetic cannot see: a rule reported
+        # as fired that moved the score by nothing is D3 exactly (the handoff's worked
+        # example is `penalty_remote, fired: true, delta: 0`), and a rule reported as
+        # not fired that moved the score is an adjustment with no rule behind it. Both
+        # sum correctly, so only this catches them.
+        if adj.fired and adj.delta == 0:
+            problems.append(f"{adj.rule_id} fired but contributed 0")
+        if not adj.fired and adj.delta != 0:
+            problems.append(f"{adj.rule_id} did not fire but contributed {adj.delta:+d}")
+
+    return problems
+
+
+def _flag_score_trace(job: ScoredJob) -> ScoredJob:
+    """Log and attach any reason this job's score is not justified by its trace.
+
+    The row is returned either way - flagged, never dropped.
+    """
+    if job.evaluation is None:
+        return job  # already logged by _evaluate_one, and there is nothing to check
+
+    problems = check_score_trace(job.evaluation)
+    if not problems:
+        return job
+
+    logger.warning(
+        "Score trace does not justify score %d/10 for job %s (%s): %s",
+        job.evaluation.match_score,
+        job.listing.id,
+        job.listing.title,
+        "; ".join(problems),
+    )
+    return replace(job, trace_warnings=tuple(problems))
+
+
 async def _evaluate_one(
     job: ScoredJob,
     profile: UserProfile,
@@ -100,8 +204,28 @@ async def _evaluate_one(
             # mid-string on ~76% of a live freelancermap pool (stop_reason=max_tokens),
             # failing the parse. Measured 6/25 parseable at 256 vs 24/25 at 512. The
             # residual overflow still fails loudly and sorts last, it does not crash.
+            #
+            # 2560, not 512: #95's score_trace adds twelve adjustment objects, and the
+            # fired ones carry an evidence quote each, which re-opened exactly the
+            # failure above - completely. Measured on one live freelancermap pool of 25
+            # (2026-08-03), same cached pool for every arm:
+            #
+            #   512   0/25 parseable, 25/25 truncated at the ceiling
+            #   1536  16/25 parseable, 10/25 truncated
+            #   2560  24/25 parseable, 0/25 truncated, output tokens 867/1101/1666
+            #         (min/mean/max)
+            #
+            # So 0/25 at 512 vs 24/25 at 2560 - the same shape as the 6/25-vs-24/25
+            # result above, and 24/25 is the same parseable rate the pre-trace prompt
+            # achieved at 512. The headroom over the 1666 observed maximum is
+            # deliberate: the trace's length scales with how many rules fire, and the
+            # pool that measured 1666 is one day's listings.
+            #
+            # The single residual failure is not truncation - it is one listing whose
+            # adjustment object transposed `fired` and `delta` (`"fired": -3`). It
+            # fails loudly and sorts last, as before; it does not crash.
             model=model,
-            max_tokens=512,
+            max_tokens=2560,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": build_prompt(job.listing, profile)}],
         )
