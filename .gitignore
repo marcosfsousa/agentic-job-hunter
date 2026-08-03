@@ -11,6 +11,27 @@ data/*
 !data/feedback.yaml
 digests/
 
+# The A2 regression corpus's posting text (#96). Same rule as the database above,
+# and for the same reason with one addition: these are third-party copyrighted
+# postings naming real contact persons, and this repo is public. The committed half
+# is tests/fixtures/scored_postings.yaml — the manifest, which carries scores, bands
+# and the rule each case exercises, and no posting text. Kept as a whole-directory
+# rule with no `!` exception: a negation here is one careless pattern away from
+# whitelisting the text back in, which is why the manifest sits outside the directory
+# rather than inside it. Enforced by tests/test_repo_invariants.py.
+#
+# This holds regardless of how little text a fixture ends up carrying. Excerpting to the
+# rule reduces the exposure; it does not make third-party text something a public repo
+# should carry, and "it's only a few clauses now" is not a reason to revisit this line.
+tests/fixtures/scored_postings/
+
+# Per-issue agent briefs. They live in `docs/` for convenience but carry the same
+# third-party posting text the rule above keeps out — `docs/issue_96_agent_brief.md`
+# holds verbatim excerpts from five postings. Untracked today, and one `git add docs/`
+# away from not being. A glob rather than one filename: the exposure recurs with every
+# brief, and the next one should not depend on somebody remembering this line.
+docs/*_agent_brief.md
+
 # Python
 __pycache__/
 *.py[cod]

@@ -1432,3 +1432,204 @@ listings score 1 and twelve score below 4, so re-evaluation fires on roughly hal
 exactly the band the trace just corrected. `reeval_below` is explicitly out of #95's scope.
 
 Suite: 395 → 424 (`/simplify` removed one test already owned by `test_models.py`).
+
+---
+
+## Feature #96 — 2026-08-03 — the A2 regression corpus, split manifest / local text
+
+Wave A's second half. Nothing in the suite asserted anything about *scoring quality*
+before this: `test_evaluation.py` mocks Haiku and checks plumbing, so all eight defects in
+§ 1 of the scoring handoff were found by hand-reading a digest, twelve days after the first
+one shipped.
+
+**The corpus could not be built the way the issue describes it.** #96 asks for
+`tests/fixtures/scored_postings/` holding "posting text, human score, and the specific rule
+each case exercises". The text cannot be committed — this repo is public and linked from a
+CV, and the postings are third-party copyrighted text naming real contact persons, which is
+`data/jobscout.db`'s rule with one degree added. Split accordingly, by the maintainer's
+call:
+
+- `tests/fixtures/scored_postings.yaml` — **committed.** All fourteen § 6 cases: id, human
+  score, band, the rule each exercises, the recorded tool score, and the issue that fixes
+  it. No posting text.
+- `tests/fixtures/scored_postings/` — **gitignored**, local only. Holds the minimal excerpt
+  for each of the five cases marked `live_rescorable`, once the maintainer drops it in; on a
+  fresh clone it does not exist and every live case skips saying so. A rule with no `!`
+  exception, which is why the manifest sits *outside* the directory: a negation is one
+  careless pattern away from whitelisting the text back in. `test_repo_invariants.py` gets a
+  second tripwire, proven to fire by force-adding a probe file.
+
+**The excerpting rule, corrected during the session.** The first version of the format
+said to drop company names — wrong, and wrong in the way that leaves a fixture looking
+healthy. `build_prompt` puts title, company and location in the request
+(`prompt.py:126-128`), and for two cases the identity *is* the input under test: D4
+(#3028920) fired the German penalty on language inferred from the company and the
+location, which is the inference the rule carves out, and #3018325 turns on the client
+being an öffentlicher Auftraggeber. Anonymise either and the case stops exercising its
+rule while still passing. So: keep company and location unanonymised, strip named
+individuals — the real privacy exposure, and nothing in the rubric reads them — and
+excerpt to the *rule*, not to the score, without surrounding paragraphs added so the file
+reads naturally. That last one is how an excerpt drifts back into a full posting. The
+front-matter loader enforces the first half: title, company and location are required and
+deliberately not defaulted, because a defaulted `company: unknown` would anonymise the
+signal silently.
+
+**The fidelity limit, recorded per fixture rather than as a footnote.** An excerpt-scored
+fixture is not the conditions the human score was assigned under: the human read the whole
+posting, the scorer sees a fragment — and the excerpting rule above widens that gap on
+purpose. So a live result on an excerpt is evidence about *the rule* (did the clause fire,
+in the stated direction) and not about *the score*; it does not support "the tool would now
+score this posting correctly", and no rule should be tuned until an excerpt reproduces a
+human number. Removing the limit would mean keeping the full text, which is the thing the
+excerpting rule exists to prevent, so it is recorded rather than engineered away: a
+`text_provenance` field per case (`excerpt` / `full` / `absent`), repeated in each excerpt's
+front matter, checked against the manifest on load, and restated in the live assertion
+message — which is what someone actually reads at the moment they decide what the number
+means. The offline baseline is untouched by all of it: it asserts against a tool score
+produced from the full posting in a real run, and never opens the text.
+
+**The gitignore stands regardless of how little text a fixture carries.** Excerpting to the
+rule reduces the exposure; it does not make third-party text something a public repo should
+carry. Written into the `.gitignore` comment itself, where the argument for revisiting it
+would be made.
+
+**The offline mode asserts against the record, not against the model.** `band(recorded tool
+score) == expected band` needs no network, no API key and no posting text, which is what
+lets it run in CI at all. Live re-scoring (`JOBSCOUT_LIVE_EVAL=1`, one real call per case,
+skips on missing text) is what *measures*; the offline mode records what was measured. Wave
+C runs the first and updates the second.
+
+**Eight failures, six of them band-visible.** #96 says "the eight current failures are
+recorded as an expected baseline", and band-level assertions — which the same issue
+mandates — see six. D1 (#3004625, tool 6 / human 6.5) and D4 (#3028920, tool 5 / human 6)
+move the score by less than a band, so no band assertion can ever catch them. They are
+recorded as `pass_with_known_defect` with the defect stated, and a test asserts that state
+explicitly, so a green run cannot read as "all eight are covered" — #97 and #98 catch those
+two against the `gaps` field and the trace instead.
+
+**`baseline: fail` is a ratchet.** The six xfail *strictly*, so a Wave C fix turns the XPASS
+red until someone re-records the score and flips the flag. A silent improvement and a silent
+regression are equally impossible. Verified by temporarily editing #3003311's recorded score
+into its band: both the strict XPASS and the explicit `test_every_baseline_failure_really_
+does_miss_its_band` fired, each naming the row.
+
+**`reeval_below` is pinned to 0**, per § 9's unlisted constraint: production re-evaluates
+anything below 4 and keeps the higher of two draws, and six of the eight cases target
+`hard_skip`, which sits inside that range. Unpinned they are scored by max-of-two and the
+band assertions flake on the second draw. Pinned twice — as a constant, and behaviourally
+against the real `evaluate_jobs` with a mocked client, because asserting the constant only
+proves the constant.
+
+**One discrepancy recorded rather than reconciled.** `digests/2026-07-23.md` scores
+#3025628 at 5/10 where § 6 says 6. The manifest transcribes § 6 and notes the disagreement;
+both are `marginal`, so the baseline verdict is identical either way, and max-of-two is one
+candidate explanation. Same treatment for the digest scores that exist for two of the six
+`unrecorded` controls — leads for the next re-recording, deliberately not adopted, since
+nothing establishes the human score was assigned to that run's posting.
+
+**Not done, and why.** Nine of the fourteen have no local posting text, so they are
+metadata-only and cannot be live re-scored. Synthesising text was considered and rejected:
+it severs the human score from what it was assigned to, and a synthetic fixture that passes
+tells you nothing. #3030519 — a fifteenth case the maintainer is supplying, covering D6,
+which the § 6 set has no dedicated case for — is not in the manifest yet; it needs a human
+score and a band, and is then one row.
+
+Suite: 395 → 423 collected — 16 passed, 6 xfailed and 5 skipped from the new module, plus
+one new invariant. The five skips are the live cases, which never run in CI.
+
+---
+
+## Feature #96 — 2026-08-03 — the brief's corrections, and five fixtures land
+
+`docs/issue_96_agent_brief.md` (untracked, maintainer-supplied) settled the manifest
+corrections and delivered posting text for five of the fourteen cases. Applied as written;
+four claims verified against the repo first, per the brief's own standing constraint.
+
+**#3030519 was never in the manifest**, so there was nothing to remove — it entered this
+session as a sixth text candidate and was already excluded from the corpus for the reason
+the brief gives independently: not a § 6 case, and it never reached the evaluator
+(published 31.07 15:40, inside the ingestion window, dropped before scoring), so no correct
+`tool_score` exists for it. The manifest now records *why* it is absent, with the human 3.5
+/ `hard_skip` reference for **#107**, so it does not get re-added by the next reader.
+
+**The two same-band cases are xfailed non-strictly.** #3004625 (6 / 6.5) and #3028920
+(5 / 6) both land tool and human in `marginal`, so the band assertion passes today and
+would pass with D1 and D4 unfixed — D1 is a defect in the *contents* of `gaps`, D4 in the
+*provenance label* on a language penalty, and neither moves magnitude. Both carry
+`reason="band assertion cannot detect this defect; needs score_trace (#95)"` verbatim, as a
+shared constant so it stays greppable. They report **XPASS**, which is the honest signal:
+the assertion runs, passes, and decides nothing. `xfail_strict` is unset in
+`pyproject.toml`, checked, so XPASS does not fail the suite — which is the intended
+behaviour here and the opposite of the strict ratchet on the six real failures.
+
+**#3028920 is `provenance: full`, not `excerpt`** — the one case where excerpting is not
+merely lossy but invalidating. D4 fires on an *absence*: German inferred from location,
+relabelled "declared", penalised on a posting that declares no German requirement. A scorer
+handed two paragraphs finds no declared requirement *because* it was handed two paragraphs,
+so an excerpt would manufacture the pass. The row stays, the fixture body is absent, and
+the live test skips until the full text lands. The recovered prose in the brief was
+deliberately not committed as the fixture, as instructed.
+
+**Three findings from verification, none of which refute the brief:**
+
+- **The card-vs-body divergence cannot be reproduced inside the evaluator, and this is not
+  a gap in the fixture.** `build_prompt` (`prompt.py:126-129`) sends title, company,
+  location and description — no percentage. The model has never seen the card. #3025628's
+  front matter carries `remote_percentage: 100` so the row records the card state, but the
+  divergence is real at the *filter* (which passed the row on a metadata field that was
+  true) and invisible at the *evaluator*, which sees prose alone. That is precisely why § 9
+  calls the −3 prose rule the sole detector for the class.
+- **`20 % Auslastung` cannot reach the fixture at all.** `JobListing` has no workload field
+  — not in the model, not in the adapter, not in the prompt. Testing the Wave D
+  `Auslastung` dimension is a `JobListing` change and belongs to its own issue, not to
+  #2999393's row. Filed as **#110** (`discovered`, `size-s`), scoped to expressibility and
+  explicitly not to scoring: whether low `Auslastung` should move a score is a Wave D
+  question and Wave D is unscoped. Its first task is a verification that may refute it —
+  the trimmed search-payload fixture carries no such key on any row, and
+  `projectContractType` holds only `{type, remoteInPercent}`, so the value may live on the
+  project detail page rather than in the search payload. Confirm against a live payload
+  before writing code.
+- **Two fixtures have reconstructed titles.** #3018325 and #2999393 came without a
+  headline, and the title reaches the model. Both files carry a `title_provenance` line
+  saying so; #3025628's title is verbatim from `digests/2026-07-23.md` and #3004625's is
+  the first line of the supplied excerpt.
+
+**Coverage is marked partial in the manifest**, with the outstanding items and who holds
+each, so a green suite cannot read as full coverage. The **C3 sufficiency gate** went onto
+#96's acceptance criteria rather than staying a side note: every case in the corpus is an
+over-scoring failure or a same-band defect, so at least two `apply`-band positive controls
+must be *scorable* before C3's rebalancing is validated against it — three such rows exist
+and none has text or a recorded score, so the usable count is zero today.
+
+`REEVAL_BELOW=0` is now documented for pipeline comparison runs in dev-notes, not just
+pinned in the harness — the max-of-two draw inflates the bottom of the distribution, which
+is exactly where the `hard_skip` rows a before/after run is watching live.
+
+Suite: 425 collected — 412 passed, 6 xfailed, 2 xpassed, 5 skipped. The four excerpt files
+load and parse (verified against the loader directly, since a live run needs a key); the
+fifth skips pending text.
+
+(Both counts above were taken against the pre-#95 base. This branch merged `main` after #95
+landed; the merged floor is **460 collected — 447 passed, 6 xfailed, 2 xpassed, 5 skipped**.
+The 425 was also the tally at this entry, and three later commits on the branch added tests
+after it. The 6 xfailed and 2 xpassed are unchanged, which is the number that matters here —
+see the module's `BAND_BLIND_REASON`, whose issue pointer moved from #95 to #97/#98 in the
+same merge, `score_trace` now being built rather than pending.)
+
+---
+
+## Chore — 2026-08-03 — gitignore the agent briefs
+
+`docs/issue_96_agent_brief.md` is untracked but sits in `docs/`, carrying verbatim excerpts
+from five postings plus the recovered Bosch prose. One `git add docs/` publishes it, which
+is a likelier accident than the database — that at least lives behind its own ignore rule
+in a directory nobody stages by hand.
+
+Ignored as a glob, `docs/*_agent_brief.md`, not as one filename: the exposure recurs with
+every brief, and the next one should not depend on somebody remembering this line. Third
+tripwire in `test_repo_invariants.py`, which is why that module was written as a category
+rather than as one special case — verified by force-adding a probe brief and watching it
+fail, then unstaging.
+
+The rule lands on `main` when this branch merges. Until then the file is untracked in the
+main checkout and unprotected there, so do not stage `docs/` wholesale before the merge.

@@ -90,6 +90,42 @@ gh run list --limit 5 --workflow=daily_run.yml
 gh run view <RUN_ID> --log | awk -F'\t' '$2=="Run pipeline" {print $3}' | grep "jobscout\."
 ```
 
+### Re-score the hand-scored corpus (#96)
+
+`pytest` alone runs the corpus **offline**, from the recorded tool scores in
+`tests/fixtures/scored_postings.yaml` — no network, no API key. That is the mode CI runs,
+and the mode that reports the six recorded baseline failures as `xfailed`.
+
+Live re-scoring calls Haiku once per posting and is opt-in:
+
+```bash
+JOBSCOUT_LIVE_EVAL=1 pytest tests/test_scored_postings.py -q   # needs ANTHROPIC_API_KEY
+```
+
+Set `REEVAL_BELOW=0` on any baseline or comparison run of the **pipeline** too —
+`REEVAL_BELOW=0 python -m jobscout.run` — not just in the harness, which pins it already.
+Unpinned, the max-of-two draw issues a second evaluation for anything under 4 and keeps the
+higher, which inflates the bottom of the distribution and confounds exactly the `hard_skip`
+rows a before/after comparison is looking at.
+
+It skips any case whose posting text is missing. That text is **gitignored** —
+`tests/fixtures/scored_postings/<id>.md`, third-party posting content that does not go in
+a public repo, guarded by `tests/test_repo_invariants.py`. On a fresh clone the directory
+does not exist and every live case skips with that reason; the format for re-creating it
+is in the manifest's header comment.
+
+Run this before and after a `SYSTEM_PROMPT` change — the five `live_rescorable` cases are
+real listings hand-scored against the real `profile.yaml`, which is exactly what CLAUDE.md's
+"test with at least 5 real job listings" gate is asking for.
+
+**Read a live result as evidence about the rule, not about the score.** Those five are
+scored against *excerpts* — the clauses the rule reads — and the human scored the whole
+posting, so the two are not the same conditions. Watch whether the clause fires and in
+which direction; do not tune a rule until an excerpt reproduces a human number. Each case
+records its `text_provenance` and the excerpt repeats it in front matter, so a full posting
+behind a case declared `excerpt` fails rather than quietly upgrading the claim. The offline
+baseline is unaffected — it never reads the text.
+
 ### Check GH Actions queue delay trend
 ```bash
 gh run list --limit 10 --workflow=daily_run.yml --json startedAt,createdAt | python scripts/check_run_delays.py

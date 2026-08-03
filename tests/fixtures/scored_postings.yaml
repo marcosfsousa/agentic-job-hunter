@@ -1,0 +1,437 @@
+# Hand-scored postings — the A2 regression corpus (#96).
+#
+# WHAT THIS IS
+# The fourteen labelled cases from docs/jobscout_scoring_handoff.md § 6: for each, the
+# id of a posting, the score a human gave it, the band that score falls in, and the
+# specific scoring rule the case exercises. Eight of them are the confirmed defects of
+# § 1 (D1–D6); six are controls the tool has never scored.
+#
+# WHY THE POSTING BODIES ARE NOT HERE
+# This repository is public and linked from a CV, and the postings are third-party
+# copyrighted text naming real contact persons. `tests/fixtures/scored_postings/` is
+# therefore gitignored and holds the text locally only; this manifest is the committed
+# half. That is the same rule `data/jobscout.db` lives under, for the same reason, and
+# it has the same mechanical tripwire — see `test_no_scored_posting_text_is_tracked`
+# in tests/test_repo_invariants.py. `contract_evaluation_log.md`, the source the human
+# scores come from, stays out of the repo entirely (handoff § 8).
+#
+# WHAT THIS MANIFEST CARRIES — and it is a short list
+# Per case: the id, the human score, the band, the rule it exercises, and the tool
+# score, plus the harness metadata that hangs off those. Nothing else.
+#
+# NO POSTING TEXT. Not a quoted clause, not a paraphrase, and not a description of
+# what a body contains. The last two are the ones worth spelling out, because they
+# look harmless: B2's test turns on the word `oder`, and a described disjunction is
+# not a disjunction. A manifest that summarised the clause would read as though it
+# documented the case while testing nothing — worse than the silence, because the
+# silence is honest about where the input lives.
+#
+# The verbatim clauses live in the gitignored fixture bodies under
+# `tests/fixtures/scored_postings/`, contact persons stripped. Guidance for
+# building those bodies lives there too (`HOW-TO-BUILD.local.md`, also gitignored),
+# because that guidance is itself a description of posting content.
+#
+# This is a rule about the committed file, not about the fixtures: the excerpts may
+# and must quote whatever their rule reads. It is the manifest that stays clean.
+#
+# Enforced, not merely stated: `test_the_manifest_carries_no_posting_text` allows only
+# a fixed set of per-case keys, so the field that would carry a description back in —
+# some helpful `excerpt_must_keep` — fails the suite rather than passing review.
+#
+# THE TWO SHAPES, AND WHAT EACH BUYS
+#   * metadata-only (all fourteen) — drives the offline baseline. The assertion is
+#     `band(tool_score) == expected_band` against the score the tool *recorded*, so it
+#     needs no posting text, no network and no API key. This is what runs in CI.
+#   * live-rescorable (`live_rescorable: true`) — five cases. Four hold excerpt text today;
+#     #3028920 is waiting on its full posting and skips until it lands.
+#     `JOBSCOUT_LIVE_EVAL=1 pytest tests/test_scored_postings.py` re-scores those
+#     through the real evaluator and asserts the same bands against a fresh draw.
+#     This is the mode Wave C measures its calibration changes with — subject to the
+#     fidelity limit below, which is what an excerpt costs.
+#
+# EXCERPT FILE FORMAT — `tests/fixtures/scored_postings/<id>.md`, gitignored:
+#
+#     ---
+#     title: <the real one>
+#     company: <the real one — unanonymised>
+#     location: <the real one — unanonymised>
+#     url: https://www.freelancermap.de/projekt/...
+#     remote_percentage: 100        # optional; omit if the posting states none
+#     provenance: excerpt           # required; must match the case's text_provenance
+#     ---
+#     Only the clauses the case's rule reads. Nothing else.
+#
+# What to keep and what to strip is a description of posting content, so it lives
+# with the fixtures rather than here — `scored_postings/HOW-TO-BUILD.local.md`,
+# gitignored, per case. The two rules worth restating without any case attached:
+# keep the company and the location unanonymised (`build_prompt` sends both, and
+# for some cases the identity IS the signal under test), and strip named
+# individuals — contact persons, recruiter names, signatures — which are the real
+# privacy exposure and which no scoring rule reads.
+#
+# FIDELITY LIMIT — what a live re-score against an excerpt is and is not
+# An excerpt-scored fixture is NOT the conditions the human score was assigned under.
+# The human read the whole posting; the scorer sees a fragment. So a live result on a
+# `provenance: excerpt` fixture is evidence about **the rule** — did the clause fire,
+# in the direction and roughly the magnitude the rule says — and not about **the
+# score**. Do not read a passing excerpt as "the tool would now score this posting
+# correctly", and do not tune a rule until an excerpt reproduces a human number.
+# This is a real limit and not a caveat to be engineered away: the fix for it would be
+# keeping the full text, which is what the excerpting rule above exists to prevent.
+# `text_provenance` records the shape per case, the excerpt file repeats it in its front
+# matter, and the harness fails if the two disagree.
+# The offline baseline is unaffected — it asserts against the recorded tool score, which
+# was produced from the full posting in a real run, and it never reads the text at all.
+#
+# UPDATING AFTER A FIX LANDS
+# `baseline: fail` is a ratchet. The band test xfails those cases *strictly*, so once
+# C1/C3 move a case into its band the xfail turns into an XPASS and the suite goes red
+# until someone re-records `tool_score` and flips `baseline` to `pass`. Do not fix a
+# score by editing `expected_band` — the band is the human's judgement, not the tool's.
+#
+# `pass_with_known_defect` is the other marking, and it is NOT a ratchet. Those two
+# assertions are xfailed *non-strictly* with `BAND_BLIND_REASON`, so they report XPASS:
+# the assertion runs, passes, and decides nothing, because the defect does not move
+# magnitude. Do not "fix" the XPASS by removing the marker — that would restore a green
+# tick that means nothing. It comes off when #97 and #98 add assertions that can see the
+# defect, and not before.
+#
+# COVERAGE IS PARTIAL — a green suite is not full coverage
+# § 6 lists fourteen cases and this manifest carries all fourteen, but only five hold
+# posting text, and one of those five is still waiting for it. Everything else is a
+# metadata-only row driving the offline baseline. Outstanding, and who holds each:
+#
+#   #3028920 full text (the Skills block)         maintainer — retrieval
+#   DSGVO-RAG / MCP-Wissensserver (7.5, apply)    maintainer — retrieval
+#   iBSC Senior AI Platform Eng. (7, apply)       maintainer — retrieval
+#   Hays 886891/1-en (8, apply)                   maintainer — from materials kept 27 Jul;
+#                                                 the provider closed the posting
+#   #3008147, #3003311, #3027041                  maintainer — retrieval
+#   #3028352, Stuttgart Python cut, #3027789      maintainer — retrieval
+#
+# NOT SUFFICIENT TO VALIDATE C3 (#103)
+# Every case here is an over-scoring failure or a same-band defect. At least two
+# `apply`-band positive controls must be *scorable* before C3's rebalancing is validated
+# against this corpus — otherwise a scorer that scores everything low passes it. Three
+# such rows exist (Hays, DSGVO-RAG, iBSC) and none of them has text or a recorded tool
+# score, so today the count of usable positive controls is zero. This is an acceptance
+# criterion on #96, not a footnote.
+#
+# WHY #3030519 IS NOT HERE
+# It is not a § 6 case and it never reached the evaluator — published 31.07 15:40, inside
+# the ingestion window, dropped before scoring — so no correct `tool_score` exists for it
+# and any value in that column would be invented. It belongs to #107 (drop observability),
+# where the drop reason would be observable. Reference for that issue: human **3.5**, band
+# `hard_skip`. No posting text is held. Do not add it back as a case here.
+#
+# PROVENANCE: § 6 of the handoff, which lives on branch `docs-scoring-handoff-verification`
+# and is not merged to main at the time of writing. Tool scores are § 6's, transcribed
+# verbatim, including where a digest disagrees (see #3025628's note).
+
+# Band cut points, per #96's scope. Read by the harness — defined here and nowhere
+# else, so the numbers the issue specifies are visible as data rather than buried in
+# a test module. Note the deliberate gaps: 4.5–5.0 and 6.5–7.0 belong to no band.
+# `match_score` is an integer (models.py:106), so no tool score can land in one; a
+# human score that does is a transcription error and the manifest self-check says so.
+bands:
+  hard_skip:
+    max: 4.5
+  marginal:
+    min: 5.0
+    max: 6.5
+  apply:
+    min: 7.0
+
+cases:
+  # --- § 1 confirmed defects (D1–D6) ------------------------------------------
+  # All eight carry a recorded tool score. Six miss their band and are the recorded
+  # baseline failures; two miss by less than a band and are marked
+  # `pass_with_known_defect` — see `sub_band_defect`.
+
+  - id: "3018325"
+    posting_id: "3018325"
+    label: nemensis
+    human_score: 4.0
+    human_score_approximate: false
+    expected_band: hard_skip
+    tool_score: 7
+    baseline: fail
+    defects: [D2, D5]
+    exercises: ownership band (C1) + disjunctive language (B2)
+    rules: [C1, B2]
+    issues: [101, 98]
+    live_rescorable: true
+    text_provenance: excerpt
+    notes: >-
+      Two defects on one posting, both recorded against the tool's output rather than
+      the posting. D2: platform-ownership language named in the model's own prose and
+      then not penalised — #101 finds the `ownership` deprioritise entry is not merely
+      unweighted but contradicted by a +1 `end-to-end ownership` boost, so a fix has to
+      move both. D5: the posting's language clause scored as a German requirement, which
+      is the disjunction carve-out #98 adds. The clause itself is in the fixture body;
+      it is not restated here, because B2 turns on its exact wording.
+
+  - id: "3025628"
+    posting_id: "3025628"
+    label: Connectly
+    human_score: 3.0
+    human_score_approximate: false
+    expected_band: hard_skip
+    tool_score: 6
+    baseline: fail
+    defects: [D3, D6]
+    exercises: remote prose backstop (B4)
+    rules: [B4, C3]
+    issues: [99, 103]
+    live_rescorable: true
+    text_provenance: excerpt
+    notes: >-
+      D3: the card metadata and the posting body disagree, and only the body carries the
+      disqualifying fact — what it says is in the fixture, not here. The metadata filter
+      passed the row correctly on a true card field, so the divergence is real at the
+      filter and invisible at the evaluator: `build_prompt` (prompt.py:126-129) sends
+      title, company, location and description only, so the model has never seen the
+      card. That is not a gap in this fixture — it is why § 9 calls the `REDUCE by 3`
+      prose rule the sole detector for the class. The rule did not fire; the model
+      returned a dismissive one-liner instead. #99 asserts `fired: true` with `delta: 0`
+      is an error once #95's trace exists. Also the closest thing the corpus has to a
+      dedicated D6 case: four stacked blockers still returned a 6.
+      Score discrepancy, deliberately not reconciled — digests/2026-07-23.md records
+      **5/10** for this id where § 6 says 6. Both bands are `marginal`, so the baseline
+      verdict is identical either way. Worth resolving when the score is next re-recorded;
+      `reeval_below`'s max-of-two draw (see the harness pin) is one candidate explanation.
+
+  - id: "3008147"
+    posting_id: "3008147"
+    label: percision AgentCore
+    human_score: 3.0
+    human_score_approximate: true
+    expected_band: hard_skip
+    tool_score: 7
+    baseline: fail
+    defects: []
+    exercises: two must-have zeros in the core deliverable
+    rules: [C2]
+    issues: [102]
+    live_rescorable: false
+    text_provenance: absent
+
+  - id: "3003311"
+    posting_id: "3003311"
+    label: Ronwell
+    human_score: 1.5
+    human_score_approximate: true
+    expected_band: hard_skip
+    tool_score: 5
+    baseline: fail
+    defects: [D6]
+    exercises: multiple stacked blockers -> floor (C3)
+    rules: [C3]
+    issues: [103]
+    live_rescorable: false
+    text_provenance: absent
+
+  - id: "3027041"
+    posting_id: "3027041"
+    label: radtke
+    human_score: 1.0
+    human_score_approximate: true
+    expected_band: hard_skip
+    tool_score: 5
+    baseline: fail
+    defects: [D6]
+    exercises: tail behaviour
+    rules: [C3]
+    issues: [103]
+    live_rescorable: false
+    text_provenance: absent
+
+  - id: "3004625"
+    posting_id: "3004625"
+    label: 1st solution
+    human_score: 6.5
+    human_score_approximate: false
+    expected_band: marginal
+    tool_score: 6
+    baseline: pass_with_known_defect
+    defects: [D1]
+    exercises: false gaps (B1)
+    rules: [B1]
+    issues: [97]
+    live_rescorable: true
+    text_provenance: excerpt
+    sequencing_constraint: >-
+      Record this baseline BEFORE #100 lands. If #100 adds `React` / `TypeScript` to
+      `working_knowledge`, this fixture's expected `gaps` changes — and a baseline that
+      moves on a config change rather than a code change loses the attribution that makes
+      it worth having.
+    sub_band_defect: >-
+      Three of four stated `gaps` were false — skills present in the CV reported as
+      absent. The defect is in the `gaps` field, not in the number: 6 and the human's
+      6.5 are both `marginal`, so no band assertion can see it. Kept in the corpus
+      because #97 needs the case; asserted by #97 against the field, not the band.
+
+  - id: "3028920"
+    posting_id: "3028920"
+    label: Bosch
+    human_score: 6.0
+    human_score_approximate: false
+    expected_band: marginal
+    tool_score: 5
+    baseline: pass_with_known_defect
+    defects: [D4]
+    exercises: inferred vs. declared language (B2)
+    rules: [B2]
+    issues: [98]
+    live_rescorable: true
+    # `full`, not `excerpt`, and this is the one case where that is not negotiable:
+    # D4 fires on an ABSENCE — German inferred from the location, relabelled "declared",
+    # and penalised on a posting that declares no German requirement. An excerpt cannot
+    # demonstrate an absence. A scorer handed two paragraphs finds no declared
+    # requirement because it was handed two paragraphs, so an excerpt would manufacture
+    # the pass. Text not yet retrieved; the row stays and the live test skips until it
+    # lands. Do not substitute an excerpt.
+    text_provenance: full
+    sub_band_defect: >-
+      German was inferred from the location and then relabelled "declared" and penalised —
+      an adherence failure against a rule that already carves out location-inferred German.
+      Costs 1–2 points, and 5 and the human's 6 are both `marginal`, so the band cannot
+      see it. #98 asserts it through the trace.
+
+  - id: "2999393"
+    posting_id: "2999393"
+    label: MSIT
+    human_score: 6.5
+    human_score_approximate: false
+    expected_band: marginal
+    tool_score: 7
+    baseline: fail
+    defects: []
+    # `wave-d`, not `D2`: the D-numbers elsewhere in this file are § 1's defect ids,
+    # and "Wave D2" in § 6 means the second Wave D item. Two numbering schemes, one
+    # letter — do not collapse them.
+    exercises: non-engineering deliverable (Wave D2)
+    rules: [wave-d]
+    issues: []
+    live_rescorable: true
+    text_provenance: excerpt
+    expressibility_gap: >-
+      The workload figure this case turns on is a card field, and it cannot reach the
+      fixture today: `JobListing` (models.py) has no workload field at all — not the
+      adapter, not the model, not the prompt. Testing the Wave D dimension here is a
+      `JobListing` change and belongs to a new issue, not to this fixture. Filed as
+      **#110** (`discovered`), scoped to making the value expressible and explicitly
+      not to scoring it.
+    notes: >-
+      Crosses `apply` -> `marginal`, so it asserts normally and is a genuine baseline
+      failure. But the rule it exercises is Wave D2, which is UNFILED and UNSCOPED —
+      nothing in Waves A-C will move it. Record it; do not treat it as a target and do
+      not fix it in passing. Wave D is where the scope discussion happens, and this case
+      is the evidence that discussion will need.
+
+  # --- controls: no recorded tool score ---------------------------------------
+  # § 6 leaves the Tool column empty for these six. Four are not freelancermap rows
+  # at all, so no run has ever produced a score for them. They are `unrecorded`, not
+  # `pass` — the offline band test skips them with that reason, and live mode is the
+  # only thing that can score them. Three of the six are the corpus's only positive
+  # controls: without them a change that drives every score down looks like progress.
+
+  - id: hays-886891-1-en
+    posting_id: null
+    label: Hays 886891/1-en
+    human_score: 8.0
+    human_score_approximate: false
+    expected_band: apply
+    tool_score: null
+    baseline: unrecorded
+    defects: []
+    exercises: zero-blocker positive control
+    rules: []
+    issues: []
+    live_rescorable: false
+    text_provenance: absent
+
+  - id: dsgvo-rag-mcp-wissensserver
+    posting_id: null
+    label: DSGVO-RAG / MCP-Wissensserver
+    human_score: 7.5
+    human_score_approximate: false
+    expected_band: apply
+    tool_score: null
+    baseline: unrecorded
+    defects: []
+    exercises: direct client, Werkvertrag shape
+    rules: []
+    issues: []
+    live_rescorable: false
+    text_provenance: absent
+
+  - id: ibsc-senior-ai-platform-engineer
+    posting_id: null
+    label: iBSC Senior AI Platform Eng.
+    human_score: 7.0
+    human_score_approximate: false
+    expected_band: apply
+    tool_score: null
+    baseline: unrecorded
+    defects: []
+    exercises: thin posting, no language gate
+    rules: []
+    issues: []
+    live_rescorable: false
+    text_provenance: absent
+    notes: >-
+      digests/2026-07-30.md scores an "iBSC ltd — Senior AI Platform Engineer 100% Remote
+      (EU)" at 8/10 under id 3029650. Deliberately NOT adopted as `tool_score`: § 6 marks
+      this row "—", and nothing establishes that the human's 7 was assigned to that run's
+      posting rather than a sibling. Recorded here so the next re-recording starts from
+      a lead rather than from nothing.
+
+  - id: "3028352"
+    posting_id: "3028352"
+    label: percision #3028352
+    human_score: 6.5
+    human_score_approximate: false
+    expected_band: marginal
+    tool_score: null
+    baseline: unrecorded
+    defects: []
+    exercises: strong content vs. structural gate
+    rules: []
+    issues: []
+    live_rescorable: false
+    text_provenance: absent
+
+  - id: stuttgart-python-cut
+    posting_id: null
+    label: Stuttgart Python cut
+    human_score: 6.5
+    human_score_approximate: false
+    expected_band: marginal
+    tool_score: null
+    baseline: unrecorded
+    defects: []
+    exercises: sibling-posting comparison
+    rules: []
+    issues: []
+    live_rescorable: false
+    text_provenance: absent
+
+  - id: "3027789"
+    posting_id: "3027789"
+    label: BLUECHILLED #3027789
+    human_score: 6.0
+    human_score_approximate: false
+    expected_band: marginal
+    tool_score: null
+    baseline: unrecorded
+    defects: []
+    exercises: strong AI content, weak profile match
+    rules: []
+    issues: []
+    live_rescorable: false
+    text_provenance: absent
+    notes: >-
+      digests/2026-07-30.md records 5/10 for this id. Not adopted, for the same reason as
+      the iBSC row: § 6 marks the Tool column "—" and this manifest transcribes § 6. Note
+      the band would be `marginal` either way, so adopting it would not change the baseline.
