@@ -1,0 +1,25 @@
+# Line endings are normalised: LF in the object store, LF in the working tree,
+# on every platform.
+#
+# This exists because files here silently flip their endings wholesale, and none
+# of it is visible in a diff. `docs/build-log.md` oscillated across single-day
+# commits — all-CRLF at `f0224fb`, mixed 740 CRLF / 1411 lines at `d643137`,
+# mixed again at `14e3fc2`, all-CRLF at `9f128e9` — and `src/jobscout/run.py`
+# had to be restored to LF by hand in `9211d9b`, where a 12-line change landed
+# as a 335-line rewrite. The give-away is always the diff stat, and by the time
+# it shows up the real change is unreviewable inside the churn.
+#
+# `core.autocrlf` is `false` here and there was no `.gitattributes`, so Git took
+# whatever bytes an editor happened to write.
+#
+# `text=auto` marks what Git detects as text and leaves binaries alone; `eol=lf`
+# checks those files back out as LF rather than deferring to the platform, so a
+# Windows working tree holds the same bytes CI reads on Ubuntu.
+#
+# Scope is the whole repo, deliberately. An earlier version of this file covered
+# `*.md` only and deferred everything else to its own review; within four days
+# three non-markdown files — `tests/test_evaluation.py`,
+# `tests/fixtures/scored_postings.yaml`, `data/feedback.yaml` — had drifted to
+# CRLF against all-LF siblings, which would have needed a second renormalisation
+# commit carrying the same surprise churn this one exists to avoid.
+* text=auto eol=lf
