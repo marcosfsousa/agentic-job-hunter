@@ -25,6 +25,13 @@ digests/
 # should carry, and "it's only a few clauses now" is not a reason to revisit this line.
 tests/fixtures/scored_postings/
 
+# Per-issue agent briefs. They live in `docs/` for convenience but carry the same
+# third-party posting text the rule above keeps out — `docs/issue_96_agent_brief.md`
+# holds verbatim excerpts from five postings. Untracked today, and one `git add docs/`
+# away from not being. A glob rather than one filename: the exposure recurs with every
+# brief, and the next one should not depend on somebody remembering this line.
+docs/*_agent_brief.md
+
 # Python
 __pycache__/
 *.py[cod]

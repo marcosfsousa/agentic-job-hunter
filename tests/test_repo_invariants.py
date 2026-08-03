@@ -66,6 +66,23 @@ def test_no_scored_posting_text_is_tracked():
     )
 
 
+def test_no_agent_brief_is_tracked():
+    """Per-issue agent briefs carry posting text too, and they sit in a tracked directory.
+
+    `docs/issue_96_agent_brief.md` holds verbatim excerpts from five postings. It lives
+    in `docs/` for convenience, which means it is one `git add docs/` from being
+    published — a likelier accident than the database, which at least sits behind its own
+    ignore rule in a directory nobody stages by hand.
+    """
+    tracked = _tracked("docs/*_agent_brief.md")
+    assert tracked == "", (
+        f"an agent brief is tracked by git:\n{tracked}\n"
+        "Briefs carry third-party posting text and must stay local. Untrack it with "
+        "`git rm --cached <path>` and check the `docs/*_agent_brief.md` rule in "
+        ".gitignore."
+    )
+
+
 def test_feedback_file_is_still_tracked():
     """Guards the guard: proves `git ls-files` actually reports tracked paths here.
 

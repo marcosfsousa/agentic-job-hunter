@@ -339,7 +339,8 @@ cases:
       body. It also cannot reach the fixture today: `JobListing` (models.py) has no
       workload field at all — not the adapter, not the model, not the prompt. If the
       Wave D `Auslastung` dimension is to be tested here, that is a `JobListing` change
-      and belongs to a new issue, not to this fixture.
+      and belongs to a new issue, not to this fixture. Filed as **#110** (`discovered`),
+      scoped to making the value expressible and explicitly not to scoring it.
     notes: >-
       Crosses `apply` -> `marginal`, so it asserts normally and is a genuine baseline
       failure. But the rule it exercises is Wave D2, which is UNFILED and UNSCOPED —

@@ -1446,7 +1446,13 @@ deliberately not committed as the fixture, as instructed.
 - **`20 % Auslastung` cannot reach the fixture at all.** `JobListing` has no workload field
   — not in the model, not in the adapter, not in the prompt. Testing the Wave D
   `Auslastung` dimension is a `JobListing` change and belongs to its own issue, not to
-  #2999393's row. Recorded on the case.
+  #2999393's row. Filed as **#110** (`discovered`, `size-s`), scoped to expressibility and
+  explicitly not to scoring: whether low `Auslastung` should move a score is a Wave D
+  question and Wave D is unscoped. Its first task is a verification that may refute it —
+  the trimmed search-payload fixture carries no such key on any row, and
+  `projectContractType` holds only `{type, remoteInPercent}`, so the value may live on the
+  project detail page rather than in the search payload. Confirm against a live payload
+  before writing code.
 - **Two fixtures have reconstructed titles.** #3018325 and #2999393 came without a
   headline, and the title reaches the model. Both files carry a `title_provenance` line
   saying so; #3025628's title is verbatim from `digests/2026-07-23.md` and #3004625's is
@@ -1466,3 +1472,21 @@ is exactly where the `hard_skip` rows a before/after run is watching live.
 Suite: 425 collected — 412 passed, 6 xfailed, 2 xpassed, 5 skipped. The four excerpt files
 load and parse (verified against the loader directly, since a live run needs a key); the
 fifth skips pending text.
+
+---
+
+## Chore — 2026-08-03 — gitignore the agent briefs
+
+`docs/issue_96_agent_brief.md` is untracked but sits in `docs/`, carrying verbatim excerpts
+from five postings plus the recovered Bosch prose. One `git add docs/` publishes it, which
+is a likelier accident than the database — that at least lives behind its own ignore rule
+in a directory nobody stages by hand.
+
+Ignored as a glob, `docs/*_agent_brief.md`, not as one filename: the exposure recurs with
+every brief, and the next one should not depend on somebody remembering this line. Third
+tripwire in `test_repo_invariants.py`, which is why that module was written as a category
+rather than as one special case — verified by force-adding a probe brief and watching it
+fail, then unstaging.
+
+The rule lands on `main` when this branch merges. Until then the file is untracked in the
+main checkout and unprotected there, so do not stage `docs/` wholesale before the merge.
