@@ -52,18 +52,22 @@ While working:
 - `Acceptance criteria` bound the work. Nothing beyond them ships.
 
 Validation for scoring changes:
-- If `tests/fixtures/scored_postings.yaml` exists, run
-  `pytest tests/test_scored_postings.py` and comment the band-accuracy
-  result before and after on the issue. **A change that moves scores
-  without moving band accuracy is not an improvement.**
+- ✅ The manifest `tests/fixtures/scored_postings.yaml` **already exists** —
+  landed 2026-08-03 by #96, PR #111. Run `pytest tests/test_scored_postings.py`
+  and comment the band-accuracy result before and after on the issue.
+  **A change that moves scores without moving band accuracy is not an
+  improvement.**
 - **Key this on the manifest, not on `tests/fixtures/scored_postings/`.**
   That directory holds the posting excerpts, is gitignored by design, and
   exists only on the maintainer's machine — a gate keyed to it would never
   fire in CI, in a fresh clone, or for a cloud agent, which is every case
   the gate exists for.
-- Until the manifest exists, the ≥5-listing validation gate below applies.
-  Once it exists, the fixture set supersedes that gate for any change
-  to `SYSTEM_PROMPT`, `profile.yaml`, or the filter predicates.
+- The fixture set **now supersedes** the ≥5-listing validation gate below for
+  any change to `SYSTEM_PROMPT`, `profile.yaml`, or the filter predicates.
+  (These two bullets previously read "if the manifest exists …" and "until the
+  manifest exists, the ≥5-listing gate applies", which was true when written
+  and has since gone stale — same failure mode the tag paragraphs below warn
+  about.)
 
 **The private evaluation log stays out of the repo.** A finding from it becomes an issue
 only when it can be stated as a reproducible behaviour with a posting ID attached;
