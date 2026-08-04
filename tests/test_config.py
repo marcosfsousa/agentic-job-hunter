@@ -130,6 +130,7 @@ GERMAN_CARVE_OUTS = [
     ("German stated at B2 or below",    "B2 or below"),
     ("no level stated",                 "no level stated"),
     ("PRECEDENCE",                      "optional qualifier wins"),
+    ("DISJUNCTION",                     "ALTERNATIVE to a language already held"),
 ]
 
 # #54 graded the penalty, so the clause now carries two magnitudes. These are *fire*
