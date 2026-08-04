@@ -131,6 +131,48 @@ def _case_id(case: dict) -> str:
     return f"{case['id']}-{case['label'].replace(' ', '-')}"
 
 
+# A listing whose every field is fixed, used only to render `build_prompt` for the
+# fingerprint below. Its contents are irrelevant and deliberately carry no posting text
+# — it is a constant, so anything that moves the fingerprint moved on the *profile* or
+# `SYSTEM_PROMPT` side, which is the whole point.
+_FINGERPRINT_STUB = JobListing(
+    id="fingerprint-stub", source="none", title="stub", company="stub",
+    description="stub", location="stub", url="", posted_date=None,
+    fetched_at=datetime(2026, 1, 1), raw_data={},
+)
+
+
+def _input_fingerprint() -> str:
+    """Hash of everything `build_prompt` sends the model — not just `SYSTEM_PROMPT`.
+
+    A `SYSTEM_PROMPT`-only fingerprint would have missed #100 entirely. That PR changed
+    `skills.strong` in profile.yaml, `build_prompt` sends `skills.strong` on every call
+    (prompt.py), and it silently invalidated an in-flight baseline on another branch —
+    the second time a merge to main has done that. #117's draft convention does not
+    catch this class: #100 had no open decision, it simply changed an input a different
+    branch was measuring against.
+
+    So the fingerprint is taken over the *rendered* prompt rather than an enumerated
+    list of fields. Anything `build_prompt` starts sending later is covered without
+    anyone remembering to add it here — which is the failure mode an enumerated list
+    would eventually have.
+
+    Reads profile.yaml directly rather than through `get_config`, because that requires
+    a non-empty ANTHROPIC_API_KEY and this has to work in CI with no key at all.
+    """
+    import hashlib
+
+    from jobscout.evaluation.prompt import SYSTEM_PROMPT, build_prompt
+    from jobscout.models import UserProfile
+
+    profile_path = Path(__file__).resolve().parent.parent / "profile.yaml"
+    with profile_path.open(encoding="utf-8") as f:
+        profile = UserProfile.model_validate(yaml.safe_load(f))
+
+    rendered = SYSTEM_PROMPT + "\n" + build_prompt(_FINGERPRINT_STUB, profile)
+    return hashlib.sha256(rendered.encode("utf-8")).hexdigest()[:12]
+
+
 # Every key a case may carry. The manifest records the score and the case's identity;
 # the posting itself lives only in the gitignored fixture directory. Adding a key here
 # is a deliberate act — see `test_the_manifest_carries_no_posting_text`.
@@ -144,6 +186,10 @@ _ALLOWED_CASE_KEYS = frozenset({
     "exercises", "rules", "issues", "sequencing_constraint",
     # where the text is, and whether it can be re-scored
     "text_provenance", "live_rescorable",
+    # what the rules did on the excerpt, under a named prompt (#96 amendment)
+    "live_baseline",
+    # rules that must NOT fire on this case once its issues' fixes have landed
+    "must_not_fire",
     # why a case cannot be expressed yet (see #110)
     "expressibility_gap",
     # commentary on the tool's behaviour and on score provenance — never on the posting
@@ -274,16 +320,175 @@ class TestCorpusIntegrity:
         """
         assert {c["text_provenance"] for c in _CASES} <= {"excerpt", "full", "absent"}
 
-    def test_provenance_and_live_rescorability_agree(self):
-        """A case is live-rescorable exactly when there is text to score it against.
+    def test_live_rescorable_rows_have_text(self):
+        """One direction: a row promising a live run must have text to score.
 
-        The two are separate fields because they answer different questions — "is
-        there a local file" and "what is in it" — and a row where they disagree either
-        silently skips a case that has text, or promises a live run that cannot happen.
+        This was an equivalence until the #96 amendment (2026-08-04). The reverse
+        direction — text present therefore in rotation — had to go, because a row can
+        now be withdrawn from live rotation for a reason that has nothing to do with
+        whether its text exists: #2999393 exercises Wave D2, which is unfiled, so
+        nothing in Waves A-C will move it and a live draw on it measures nothing.
+        Forcing that row to declare `text_provenance: absent` to leave rotation would
+        have made the manifest lie about a file that is sitting on disk.
         """
         for case in _CASES:
-            has_text = case["text_provenance"] != "absent"
-            assert bool(case.get("live_rescorable")) == has_text, case["id"]
+            if case.get("live_rescorable"):
+                assert case["text_provenance"] != "absent", case["id"]
+
+    def test_withdrawn_rows_say_why(self):
+        """The compensating assertion for the direction dropped above.
+
+        What the equivalence used to guarantee is that a row with text could not sit
+        idle unnoticed. Losing that silently is worse than the lie it replaced: an
+        unexplained `live_rescorable: false` on a row that HAS text is indistinguishable
+        from a row someone disabled to quiet a failure. So it must say why, and the
+        reason is a key rather than a comment — which is what finally makes the harness
+        read `expressibility_gap`, an allowed key that until now no test consumed.
+        """
+        for case in _CASES:
+            withdrawn = not case.get("live_rescorable")
+            if withdrawn and case["text_provenance"] != "absent":
+                assert case.get("expressibility_gap"), (
+                    f"{case['id']} has posting text but is out of live rotation, and "
+                    "does not say why. Record the reason in `expressibility_gap` — a "
+                    "row withdrawn without one is indistinguishable from a failure "
+                    "someone silenced."
+                )
+
+    def test_live_baselines_are_well_formed_and_name_real_rules(self):
+        """`live_baseline` is data, so its shape is asserted rather than trusted.
+
+        `fired` holds INTEGERS against a stated `n`, not "9/10" strings: `n` is recorded
+        once on the row, so a k/n string would encode the denominator twice and let the
+        two drift — and a string cannot be compared to a threshold without parsing it.
+
+        Rule ids are checked against `RULE_IDS`, which the rubric derives from its own
+        `[tag]`s. A typo'd id would otherwise sit in the manifest forever, matching
+        nothing and quietly asserting nothing.
+        """
+        from jobscout.evaluation.prompt import RULE_IDS
+
+        required = ("n", "prompt_commit", "input_fingerprint", "temperature", "recorded",
+                    "fired", "scores")
+        for case in _CASES:
+            recorded = case.get("live_baseline")
+            if not recorded:
+                continue
+            cid = case["id"]
+            missing = [k for k in required if recorded.get(k) is None]
+            assert not missing, f"{cid}: live_baseline missing {missing}"
+
+            n = recorded["n"]
+            assert len(recorded["scores"]) == n, (
+                f"{cid}: live_baseline records {len(recorded['scores'])} scores but "
+                f"claims n={n}. The score list IS the sample; a mismatch means one of "
+                "the two was edited by hand."
+            )
+            for rule, k in recorded["fired"].items():
+                assert isinstance(k, int) and 0 <= k <= n, (
+                    f"{cid}: live_baseline fired[{rule}] is {k!r}, which is not an "
+                    f"integer in 0..{n}. Frequencies are k-of-n integers, not strings."
+                )
+            unknown = sorted(set(recorded["fired"]) - set(RULE_IDS))
+            assert not unknown, (
+                f"{cid}: live_baseline names rules that no longer exist in the "
+                f"rubric: {unknown}. Either the id is a typo, or the rule was renamed "
+                "and this baseline needs re-recording under the current prompt."
+            )
+
+    def test_must_not_fire_lists_are_coherent(self):
+        """`must_not_fire` is a standing guard, and it must not contradict its own row.
+
+        WHY THE KEY EXISTS. The live comparison asserts on rules the baseline saw fire
+        on every draw, which cannot express "this rule must be ABSENT". #98 drives
+        `penalty_german_language` from firing to not firing — so after the fix it leaves
+        the fired set entirely and nothing would assert on it again. The issue would
+        ship with a one-time verdict and no regression guard: the rule could come back
+        at 6/10 next month and the suite would stay green.
+
+        Excluding partial-frequency rules from the *positive* assertions stays correct —
+        asserting on `penalty_cloud_core` at 4/10 would fail on the sampler, not the
+        rubric. But "not asserted because unstable" and "asserted to be absent" are
+        different states, and only the first had a representation.
+
+        POPULATED BY THE FIX, NOT BY THIS SCHEMA. Every list is empty today, because no
+        fix has landed: declaring `penalty_german_language` must-not-fire while it still
+        fires 10/10 would be a red the schema commit has no business creating. #98 and
+        #101 each add their own rule here in their own PR, at the same time as they
+        re-record `live_baseline` — so the guard becomes real exactly when the behaviour
+        does. The assertion below is what stops those two facts from drifting apart.
+        """
+        from jobscout.evaluation.prompt import RULE_IDS
+
+        for case in _CASES:
+            forbidden = case.get("must_not_fire") or []
+            unknown = sorted(set(forbidden) - set(RULE_IDS))
+            assert not unknown, (
+                f"{case['id']}: must_not_fire names rules not in the rubric: {unknown}"
+            )
+            recorded = case.get("live_baseline")
+            if not recorded:
+                continue
+            contradicted = sorted(
+                rule for rule in forbidden
+                if recorded["fired"].get(rule, 0) == recorded["n"]
+            )
+            assert not contradicted, (
+                f"{case['id']}: {contradicted} are declared must-not-fire, but this "
+                f"row's own `live_baseline` records them firing on all "
+                f"{recorded['n']} draws. Either the fix has not landed and the guard is "
+                "premature, or it has and the baseline was never re-recorded. Both are "
+                "the same bug: a guard and the evidence under it disagreeing."
+            )
+
+    def test_live_baselines_declare_the_temperature_they_were_taken_at(self):
+        """A baseline taken at a temperature other than the pinned default says so.
+
+        Recorded per baseline rather than assumed, because the whole reason these exist
+        is that the pipeline spent its life at an unpinned 1.0 and nothing said so. A
+        measurement of the sampler and a measurement of the rubric are different things
+        and must not be confusable after the fact.
+        """
+        from jobscout.config import AppConfig
+
+        pinned = AppConfig.model_fields["llm_temperature"].default
+        for case in _CASES:
+            recorded = case.get("live_baseline")
+            if not recorded:
+                continue
+            assert recorded["temperature"] == pinned, (
+                f"{case['id']}: live_baseline was taken at temperature "
+                f"{recorded['temperature']}, not the pinned {pinned}. That is allowed — "
+                "the harness raises it deliberately to measure spread — but such a "
+                "baseline measures the sampler and must not be used as a rubric "
+                "before/after. Record it elsewhere or re-take it pinned."
+            )
+
+    def test_live_baselines_are_not_stale(self):
+        """A baseline recorded against different model inputs announces itself.
+
+        This is the guard, and it is the point of the fingerprint. Twice now a merge to
+        main has invalidated measurement in flight on another branch — #111, then #100,
+        which changed `skills.strong` while this corpus was being measured against it.
+        Neither was blocked on a decision, so #117's draft convention does not catch the
+        class: the merge was legitimate and simply moved an input.
+
+        Before, catching it depended on somebody noticing. Now the suite does.
+        """
+        current = _input_fingerprint()
+        stale = [
+            (c["id"], c["live_baseline"]["input_fingerprint"])
+            for c in _CASES
+            if c.get("live_baseline")
+            and c["live_baseline"]["input_fingerprint"] != current
+        ]
+        assert not stale, (
+            f"live_baseline is stale for {[s[0] for s in stale]} — recorded against "
+            f"model inputs {[s[1] for s in stale]}, current is {current}. "
+            "`SYSTEM_PROMPT` or profile.yaml has changed since these were measured, so "
+            "they describe an input the model is no longer given. Re-measure before "
+            "using them as a before/after; do NOT edit the fingerprint to match."
+        )
 
     def test_unrecorded_cases_carry_no_tool_score_and_scored_cases_do(self):
         """`unrecorded` means § 6 left the Tool column empty. The two must not drift:
@@ -473,11 +678,23 @@ def _stub_profile():
 # Live re-scoring — opt-in, never in CI
 # ---------------------------------------------------------------------------
 
-def _live_cases() -> list:
-    """The cases whose posting text exists locally, xfail-marked as offline."""
+def _live_band_cases() -> list:
+    """Live rows whose text is the WHOLE posting — the only rows a band can judge.
+
+    The #96 amendment (2026-08-04) moved band assertions here and nowhere else. The
+    2026-08-04 baseline measured four excerpt rows and not one band result said anything
+    about the scorer: #3018325 passed its band *before* either fix existed, carried there
+    by `penalty_mlops_core`, `penalty_cloud_core` and `penalty_ramp_up_risk` while both
+    rules under test fired wrongly; #3004625 scored 9 against 6 on the full posting, and
+    #2999393 scored 1 against 7. Starvation runs in both directions — strip the context
+    and there is nothing left to penalise, or nothing left to reward.
+
+    Today this selects nothing: #3028920 is the only `full` row and its text is still
+    outstanding. That is the honest state, not a gap to paper over with excerpt rows.
+    """
     params = []
     for case in _CASES:
-        if not case.get("live_rescorable"):
+        if not case.get("live_rescorable") or case["text_provenance"] != "full":
             continue
         marks = []
         if case["baseline"] == "fail":
@@ -489,6 +706,33 @@ def _live_cases() -> list:
             )
         params.append(pytest.param(case, marks=marks, id=_case_id(case)))
     return params
+
+
+def _live_trace_cases() -> list:
+    """Live rows scored against an excerpt — judged on which rules fired, not the score.
+
+    A rule either fires on a clause or it does not, so this survives the starvation
+    above in both directions. No xfail marks: these do not assert correctness, they
+    assert *unchanged*, against `live_baseline`. See the test.
+    """
+    return [
+        pytest.param(case, id=_case_id(case))
+        for case in _CASES
+        if case.get("live_rescorable") and case["text_provenance"] == "excerpt"
+    ]
+
+
+def _fired_rules(evaluation) -> set[str]:
+    """The rule ids the model reported as firing, as a set.
+
+    Read off `score_trace`, which #95 added. A rule reporting `fired: true` with
+    `delta: 0` is still counted as fired — the rubric forbids that combination, and
+    swallowing it here would hide the very non-adherence the trace exists to expose.
+    """
+    trace = evaluation.score_trace
+    if trace is None:
+        return set()
+    return {adj.rule_id for adj in trace.adjustments if adj.fired}
 
 
 # Required in every excerpt's front matter, and deliberately not defaulted.
@@ -550,11 +794,15 @@ def _read_posting(case: dict) -> tuple[dict, str]:
     ),
 )
 class TestLiveRescoring:
-    """Re-score the six postings whose text exists locally, through the real evaluator.
+    """Re-score the postings whose text exists locally, through the real evaluator.
 
     One real API call per case, `reeval_below` pinned so it is exactly one. The offline
     baseline records what this measured; this is what does the measuring — and it is
     what Wave C runs before and after a prompt change.
+
+    Since the #96 amendment the two assertions below judge different things, because
+    the two kinds of fixture support different claims. A full posting can be judged on
+    its band. An excerpt can only be judged on which rules fired.
     """
 
     @pytest.fixture(scope="class")
@@ -569,8 +817,8 @@ class TestLiveRescoring:
         finally:
             reset_config()
 
-    @pytest.mark.parametrize("case", _live_cases())
-    async def test_posting_scores_in_band(self, case, config):
+    async def _score(self, case, config):
+        """One real evaluation of one fixture. Returns (front_matter, evaluation)."""
         import anthropic
 
         front_matter, body = _read_posting(case)
@@ -596,25 +844,104 @@ class TestLiveRescoring:
             model=config.llm_model,
             top_n=1,
             reeval_below=HARNESS_REEVAL_BELOW,
+            temperature=config.llm_temperature,
         )
 
         assert results[0].evaluation is not None, (
             f"{case['id']}: the model returned nothing parseable — that is an evaluator "
             "failure, not a scoring one"
         )
-        score = results[0].evaluation.match_score
-        # The caveat travels with the result rather than living only in the docstring:
-        # this message is what someone reads at the moment they are deciding what the
-        # number means, which is the moment the fidelity limit is easiest to forget.
-        fidelity = (
-            "Scored against an EXCERPT — the clauses the rule reads, not the posting "
-            "the human scored. Read this as evidence about the rule, not about the "
-            "score."
-            if front_matter["provenance"] == "excerpt"
-            else "Scored against the full posting text."
-        )
+        return front_matter, results[0].evaluation
+
+    @pytest.mark.parametrize("case", _live_band_cases())
+    async def test_posting_scores_in_band(self, case, config):
+        """Full-posting rows only. See `_live_band_cases` for why."""
+        _front_matter, evaluation = await self._score(case, config)
+        score = evaluation.match_score
         assert band_of(score) == case["expected_band"], (
             f"{case['id']} ({case['label']}): live score {score} -> {band_of(score)}, "
             f"human scored {case['human_score']} -> {case['expected_band']}. "
-            f"Exercises: {case['exercises']}. {fidelity}"
+            f"Exercises: {case['exercises']}. Scored against the full posting text."
+        )
+
+    @pytest.mark.parametrize("case", _live_trace_cases())
+    async def test_excerpt_fires_the_rules_it_did_before(self, case, config):
+        """Excerpt rows: which rules fired, against `live_baseline`'s recorded set.
+
+        This asserts UNCHANGED, not CORRECT. It is a change detector, and going red is
+        how a prompt edit announces which rules it moved — which is the measurement
+        #98 and #101 need and the band could not give them. Read the diff, decide
+        whether the change is the one you intended, then re-record `live_baseline`
+        with the new prompt's SHA.
+
+        The recorded set is not a verdict and carries no enum: `tool_score` and
+        `baseline` remain the immutable record of what the scorer did on *real*
+        postings, which is the evidence base all six § 1 defects were diagnosed from.
+        """
+        recorded = case.get("live_baseline")
+        if not recorded:
+            pytest.skip(
+                f"{case['id']} has no `live_baseline` yet. Record one from a live run "
+                "and store per-rule frequencies with the fingerprint they were measured "
+                "under — a comparison needs a stated 'before'."
+            )
+        if recorded["input_fingerprint"] != _input_fingerprint():
+            pytest.skip(
+                f"{case['id']}: `live_baseline` predates the current prompt or profile "
+                "— re-measure it before comparing. "
+                "`test_live_baselines_are_not_stale` reports this as a failure; here it "
+                "is a skip, because a live comparison against a stale 'before' is worse "
+                "than no comparison."
+            )
+
+        _front_matter, evaluation = await self._score(case, config)
+        fired = _fired_rules(evaluation)
+        n = recorded["n"]
+        drift = {
+            rule: (k, rule in fired)
+            for rule, k in recorded["fired"].items()
+            # Only rules the baseline saw fire on EVERY draw are stable enough for one
+            # post-change draw to say anything about. #3018325 measured
+            # `penalty_cloud_core` at 4/10 and then 0/10 across two pinned-temperature
+            # runs with no rule change between them, so asserting on a partial rule
+            # would fail on the sampler rather than on the rubric.
+            if k == n and rule not in fired
+        }
+        assert not drift, (
+            f"{case['id']} ({case['label']}): rules that fired on all {n} baseline "
+            f"draws did not fire here: {sorted(drift)}. Baseline {recorded['recorded']} "
+            f"at commit {recorded['prompt_commit']}. Exercises: {case['exercises']}. "
+            "ONE draw — if this is the change you intended, confirm it against the "
+            "issue's pre-registered decision rule before re-recording, and do not read "
+            "a single draw as the verdict."
+        )
+
+    @pytest.mark.parametrize("case", _live_trace_cases())
+    async def test_excerpt_does_not_fire_its_forbidden_rules(self, case, config):
+        """The standing guard for rules a landed fix removed. See `must_not_fire`.
+
+        The symmetric half of the test above: that one catches a rule that stopped
+        firing, this one catches a rule that started again. Without it a fix's verdict
+        is a one-time measurement — #98 drives `penalty_german_language` out of the
+        fired set, and nothing would ever look at it again.
+
+        Skips rather than passes vacuously when the list is empty, so a case whose fix
+        has not landed reads as "no guard here yet" instead of as a green tick.
+        """
+        forbidden = case.get("must_not_fire") or []
+        if not forbidden:
+            pytest.skip(
+                f"{case['id']} declares no must_not_fire rules. Populated by the PR that "
+                "lands the fix, alongside re-recording `live_baseline`."
+            )
+
+        _front_matter, evaluation = await self._score(case, config)
+        fired = _fired_rules(evaluation)
+        violated = sorted(set(forbidden) & fired)
+        assert not violated, (
+            f"{case['id']} ({case['label']}): {violated} fired, and this case declares "
+            "they must not. ONE draw, so this is a signal rather than a verdict — read "
+            "it against the pre-registered decision rule on the issue that added them "
+            f"(issues {case.get('issues') or 'unrecorded'}) before concluding the fix "
+            "has regressed."
         )
