@@ -403,6 +403,16 @@ cases:
       # exactly the right amount until the fix exists. #139 also owns adding the
       # pre-registration this row lacked — its absence is why the defect went unseen
       # through #98's validation.
+      #
+      # ⚠️ THIS IS THE ROW THAT FLAKES, AND IT IS THE ONE TO WATCH. `penalty_ramp_up_risk`
+      # and `penalty_remote` are both recorded at 10/10, so both are asserted every-draw by
+      # `test_excerpt_fires_the_rules_it_did_before`'s `k == n` rule. Measured in review:
+      # 12 consecutive live draws gave 3 FAILURES here, against 12/12 clean on #3004625.
+      # So the ~80%-rule-at-the-ceiling problem is real and it bites HERE, not on the row
+      # #97's own analysis was about. Recorded as drawn rather than rounded down — see the
+      # matching note on #3004625 — but a live run going red on this row is the known
+      # threshold problem (#130) rather than a regression, and should be read that way
+      # before anyone re-measures the rubric looking for a cause.
       n: 10
       prompt_commit: aff3d28
       input_fingerprint: f871dd69729e
@@ -518,6 +528,14 @@ cases:
       # correctly excluded it. An ~80% rule asserted every-draw will flake. Not rounded
       # down to dodge that — inventing a number to manage a threshold is the failure this
       # whole block exists to prevent, and #130 owns the threshold question.
+      #
+      # THIS ROW IS NOT THE ONE THAT ACTUALLY FLAKES, AND SAYING SO HERE ALONE WAS WRONG.
+      # `penalty_ramp_up_risk` is recorded 10/10 on #3025628 as well, and measurement puts
+      # the failures there: 12 consecutive live draws of that test gave 3 failures on
+      # #3025628 against 12/12 clean on this row. See the same warning on that block; it
+      # carries the numbers. The first version of this comment named only this row, which
+      # pointed the reader at the wrong risk — found in review, corrected here rather than
+      # deferred, because a disclosure that names the wrong row is worse than none.
       n: 10
       prompt_commit: aff3d28
       input_fingerprint: f871dd69729e
