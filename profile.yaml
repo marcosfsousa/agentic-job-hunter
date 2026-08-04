@@ -76,6 +76,30 @@ target_roles:
   - "Python Backend Developer"
   - "Backend Engineer"
 
+# `skills.strong` feeds BOTH the ranking query (_build_profile_text, embedder.py:56)
+# and the eval prompt (build_prompt, prompt.py:118), so adding a skill changes which 25
+# rows reach the model at all, not merely how they are judged. #100 added the last three
+# entries below — all held, all previously invisible to the evaluator, all implicated in
+# D1 (#3004625), where they were reported as gaps.
+#
+# MEASURED (2026-08-04, 131-listing live freelancermap fetch → 54 past the hard filter,
+# ranking stage only, no LLM calls) rather than argued, on the same terms as the
+# target_roles measurement above: the query vector moves 0.9936 cosine, and 24 of the
+# top 25 are the same listings.
+#
+# The one swap is NOT noise, and is recorded rather than averaged away. Entering:
+# `3030521` "Fullstack Development – AI/Cloud Anwendungen" (BLUECHILLED), 0.8666 →
+# 0.8773 — a +0.0107 move, an order of magnitude above the +0.0004 of the listing it
+# displaced (`3028965` "Data Engineer – Machine Learning", which rose too and was simply
+# overtaken). So the three additions pulled in a FULLSTACK seat, which is the exact
+# targeting cost the handoff flagged for the React/TypeScript question — arriving here
+# instead, at one row. Rank 23–28 sit at 0.8772/0.8756/0.8748/0.8741/0.8718/0.8709, so
+# the cut is not the flat plateau target_roles found; adjacent ranks differ by ~0.001.
+#
+# LIMIT: measured without the feedback centroid. `data/jobscout.db` is empty locally, so
+# `get_interested_descriptions()` returns nothing and `feedback_weight: 0.2` contributes
+# zero in both arms. It is identical across arms and cannot bias the delta, but it can
+# move which listings sit near the rank-25 boundary in production.
 skills:
   strong:
     - Python
@@ -92,6 +116,9 @@ skills:
     - HuggingFace ecosystem
     - "NLP pipelines"
     - "OpenAI API, Groq, Cohere embeddings & rerank"
+    - MLflow
+    - "EU AI Act Art. 50 / AI compliance implementation"
+    - "adversarial and prompt-exposure testing"
   working_knowledge:
     - Docker / Docker Compose
     - "GitHub Actions CI/CD"
@@ -111,8 +138,8 @@ location:
 # deriving one from the other would fabricate it.
 rate:
   minimum_hourly: 50 # Stundensatz floor (EUR/hour)
-  target_hourly: 70 # hourly negotiation target
-  minimum_daily: 450 # Tagessatz floor — STATED, never derived
+  target_hourly: 100 # hourly negotiation target
+  minimum_daily: 800 # Tagessatz floor — STATED, never derived
   target_daily: 600 # daily negotiation target
   currency: "EUR"
 
