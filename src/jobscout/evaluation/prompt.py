@@ -31,7 +31,20 @@ specific job particularly values or emphasises. Prefer distinctive skills \
 (e.g. RAG systems, LangChain, domain-specific frameworks) over generic ones \
 (e.g. Docker, SQL). When both strong and working-knowledge skills match, \
 prefer skills from the strong list. Only include a skill the job explicitly calls for — no padding. Return at most 5. \
-- gaps: list of strings — skills or requirements the job needs that the profile lacks
+- gaps: list of strings — requirements this job states that the CANDIDATE PROFILE ABOVE \
+does not cover. Every entry is a statement about the profile, never about the \
+candidate: the profile is a summary, and its silence is not evidence of inability. \
+Ground each one against a named profile section — Target roles, Background, Ideal \
+role, Strong skills, or Working knowledge — in one of exactly two shapes: \
+ABSENT, where the section does not mention it ("Kubernetes: not in Strong skills or \
+Working knowledge"); or CONFLICT, where the section states something this job \
+contradicts ("German C1 required: Background states B2", "2 days onsite: Ideal role \
+states fully remote"). Ground against the PROFILE either way — a gap justified only \
+by quoting the job posting is not grounded. If you can do neither, do not emit it at \
+all. These two shape names are for your reasoning — do not prefix the entries with \
+them; each entry is read directly by a human. Return at most 5 IN TOTAL: first every gap a scoring rule \
+below tells you to put in gaps, then fill any slots left with the most \
+decision-relevant of the rest.
 - explanation: one or two sentences summarising the fit and calling out any \
 score-affecting factors
 

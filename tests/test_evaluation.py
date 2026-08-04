@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -855,6 +856,106 @@ class TestBuildPrompt:
         # The bands must be exclusive: without this a C1+ listing that also declares a
         # working language reads as 2+1, restoring over-firing through a third door.
         assert "The bands are exclusive" in SYSTEM_PROMPT
+
+
+class TestSystemPromptConstrainsTheGapsField:
+    """#97 / B1. `gaps` carried no constraint at all while `matching_skills` carried
+    four, so all the discipline went to the field that cannot mislead. It is also the
+    ONLY durable record a human reads: `storage/db.py` persists no evaluation field,
+    and `score_trace` never reaches the digest — only `trace_warnings` do.
+    """
+
+    def test_gaps_are_capped_at_five_in_total(self):
+        assert "Return at most 5 IN TOTAL" in SYSTEM_PROMPT
+
+    def test_every_gap_must_name_the_profile_section_it_is_absent_from(self):
+        """A gap that cannot be grounded is not emitted. The sections named here are
+        exactly the labelled lines `build_prompt` emits, so "name the section" is a
+        closed choice rather than an open-ended instruction."""
+        assert (
+            "Target roles, Background, Ideal role, Strong skills, or Working knowledge"
+            in SYSTEM_PROMPT
+        )
+        assert "do not emit it at all" in SYSTEM_PROMPT
+
+    def test_a_gap_may_be_an_absence_or_a_conflict(self):
+        """Measured, not assumed. The first draft asked only for the section a gap is
+        ABSENT from — but `penalty_german_language`, `penalty_remote` and
+        `penalty_ramp_up_risk` fire when the profile STATES something the job
+        contradicts (B2 German, a remote preference), which is not an absence.
+
+        Live, the model resolved that by grounding those gaps against the JOB instead
+        ("stated explicitly as a non-optional alternative in 'Sprachen'") — the exact
+        profile-relative framing this issue exists to establish, inverted. So the rule
+        names both shapes, and insists both point at the profile.
+        """
+        assert "ABSENT" in SYSTEM_PROMPT and "CONFLICT" in SYSTEM_PROMPT
+        assert "Background states B2" in SYSTEM_PROMPT
+        assert (
+            "a gap justified only by quoting the job posting is not grounded"
+            in SYSTEM_PROMPT
+        )
+
+    def test_the_framing_is_about_the_profile_not_the_candidate(self):
+        """#100 is why this is not pedantry: three entries on #3004625 were skills the
+        candidate held and had simply not listed, and they read as deficiencies."""
+        assert "never about the candidate" in SYSTEM_PROMPT
+        assert "silence is not evidence of inability" in SYSTEM_PROMPT
+
+    def test_rule_mandated_gaps_outrank_discretionary_ones(self):
+        """The cap has to say which entries lose when it binds, or the field it drops
+        is arbitrary — and a dropped rule-mandated gap deletes the only human-visible
+        record that the rule fired on an absence."""
+        assert "first every gap a scoring rule below tells you to put in gaps" in SYSTEM_PROMPT
+
+    def test_rule_mandated_gaps_cannot_overflow_the_cap(self):
+        """The structural half of the precedence decision, and the reason `5` is safe.
+
+        Six rules mandate a gap, which is one more than the cap — but
+        `penalty_degree_mandatory` ("hard mandatory requirement with no alternative
+        path") and `penalty_degree_preferred` ("preferred but comparable experience is
+        explicitly accepted") describe mutually exclusive states of one listing, so at
+        most five can fire together.
+
+        This asserts that arithmetic rather than trusting it. A seventh gaps-mandating
+        rule, or a change that makes the degree pair co-fireable, breaks this test and
+        forces the cap to be revisited instead of silently dropping evidence.
+
+        Detection is on the bare phrase "in gaps", NOT on a list of marker strings.
+        The first draft of this test looked for "include in gaps" or "name it in
+        gaps" and missed `penalty_ramp_up_risk`, which says "Name the missing
+        deliverable in gaps" — a third phrasing. The prompt's own precedence sentence
+        had the same bug for the same reason and was reworded to be phrasing-
+        independent alongside this.
+        """
+        from jobscout.evaluation.prompt import _RUBRIC
+
+        bullets = re.split(r"\n\s*- (?=\[)", _RUBRIC)
+        mandating = {
+            match.group(1)
+            for bullet in bullets
+            if (match := re.match(r"\[([a-z][a-z0-9_]*)\]", bullet.strip()))
+            and "in gaps" in bullet.lower()
+        }
+
+        assert mandating == {
+            "penalty_degree_mandatory",
+            "penalty_degree_preferred",
+            "penalty_german_language",
+            "penalty_ramp_up_risk",
+            "penalty_cloud_core",
+            "penalty_remote",
+        }, (
+            "the set of gaps-mandating rules changed; the cap of 5 was justified "
+            "against this exact set — see the docstring"
+        )
+
+        mutually_exclusive = {"penalty_degree_mandatory", "penalty_degree_preferred"}
+        max_simultaneous = len(mandating - mutually_exclusive) + 1
+        assert max_simultaneous <= 5, (
+            f"{max_simultaneous} rule-mandated gaps can fire at once against a cap of "
+            "5, so the cap can now drop one. Raise the cap or re-scope the rules."
+        )
 
 
 class TestSystemPromptAsksForTheScoreTrace:
