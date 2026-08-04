@@ -777,6 +777,27 @@ def _fired_adjustment(evaluation, rule_id: str):
 _NAMES_THE_DECLARATION = re.compile(r"projektsprache|arbeitssprache", re.IGNORECASE)
 
 
+def _live_cases_unmarked() -> list:
+    """Every live case, carrying NO xfail marks.
+
+    Sibling of `_live_trace_cases()` above, and deliberately a WIDER set: that one is
+    excerpt-only because a rule-firing comparison is only meaningful against the text
+    the baseline was recorded from, whereas the `gaps` shape assertions below hold on
+    any posting the model can read. Not merged into one helper — the filters differ
+    because the properties differ.
+
+    Unmarked for the same reason it names: `_live_cases()`'s strict `baseline: fail`
+    xfail is a statement about the **score band** — "this posting is recorded as
+    landing in the wrong band". It says nothing about `gaps`. Reusing it inverts the
+    meaning, and the three recorded band failures all PASS the gaps checks, which the
+    strict marker then reports as XPASS — a red suite for four correct results.
+    """
+    return [
+        pytest.param(case, id=_case_id(case))
+        for case in _CASES
+        if case.get("live_rescorable")
+    ]
+
 # Required in every excerpt's front matter, and deliberately not defaulted.
 # `build_prompt` puts title, company and location in the request (prompt.py:126-128),
 # so an absent company would be scored as "unknown" — and for #3028920 that is the
@@ -785,6 +806,22 @@ _NAMES_THE_DECLARATION = re.compile(r"projektsprache|arbeitssprache", re.IGNOREC
 # there would silently anonymise the signal and leave a case that passes without
 # testing anything. Fail instead.
 _REQUIRED_FRONT_MATTER = ("title", "company", "location", "provenance")
+
+
+# The labelled lines `build_prompt` emits for the profile. A grounded gap names one of
+# them, which is what makes it a statement about the PROFILE rather than the candidate.
+# Kept in lockstep with SYSTEM_PROMPT's own list by the test in test_evaluation.py.
+_PROFILE_SECTIONS = (
+    "target roles",
+    "background",
+    "ideal role",
+    "strong skills",
+    "working knowledge",
+)
+
+
+def _names_a_profile_section(gap: str) -> bool:
+    return any(section in gap.lower() for section in _PROFILE_SECTIONS)
 
 
 def _read_posting(case: dict) -> tuple[dict, str]:
@@ -1084,4 +1121,67 @@ class TestLiveRescoring:
             "it against the pre-registered decision rule on the issue that added them "
             f"(issues {case.get('issues') or 'unrecorded'}) before concluding the fix "
             "has regressed."
+        )
+
+    @pytest.mark.parametrize("case", _live_cases_unmarked())
+    async def test_gaps_are_capped_and_grounded_in_the_profile(self, case, config):
+        """#97 / B1 — the field-level assertion #96 deferred here.
+
+        D1 is invisible to the band assertion above by construction (6 vs 6.5, both
+        `marginal`), so `gaps` needs checking against the field itself or not at all.
+        Two properties, both of which #97's SYSTEM_PROMPT edit asks for directly:
+
+        - at most 5 entries. NOT vacuous: on a 25-listing live pool the pre-#97 prompt
+          returned more than 5 on **8 of 25**, running to 9.
+        - every entry names the profile section it is absent from, or conflicts with.
+          Grounding on the same pool went 5% -> 83%; on the four fixtures here, 3% -> 90%.
+
+        Deliberately NOT an exact-gap-contents assertion. Which gaps a posting yields
+        varies between draws of an identical prompt, so pinning the strings would flake
+        for the reason #96 gives for asserting bands over exact scores. These two
+        properties hold across every draw measured.
+
+        The 83% is why grounding is asserted per-case rather than globally: a single
+        ungrounded entry is within observed behaviour, so this requires a MAJORITY per
+        posting and reports the stragglers rather than failing on one.
+        """
+        import anthropic
+
+        front_matter, body = _read_posting(case)
+        listing = JobListing(
+            id=case["id"],
+            source="freelancermap",
+            title=front_matter["title"],
+            company=front_matter["company"],
+            description=body,
+            location=front_matter["location"],
+            url=front_matter.get("url", ""),
+            posted_date=None,
+            fetched_at=datetime.now(),
+            raw_data={},
+            remote_percentage=front_matter.get("remote_percentage"),
+        )
+        client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
+        results = await evaluate_jobs(
+            [ScoredJob(listing=listing, embedding_score=0.0)],
+            config.profile,
+            client,
+            model=config.llm_model,
+            top_n=1,
+            reeval_below=HARNESS_REEVAL_BELOW,
+        )
+        evaluation = results[0].evaluation
+        assert evaluation is not None, f"{case['id']}: nothing parseable returned"
+
+        gaps = evaluation.gaps
+        assert len(gaps) <= 5, (
+            f"{case['id']}: {len(gaps)} gaps returned against a cap of 5 — "
+            f"{gaps}"
+        )
+
+        ungrounded = [g for g in gaps if not _names_a_profile_section(g)]
+        assert len(ungrounded) * 2 <= len(gaps), (
+            f"{case['id']}: {len(ungrounded)} of {len(gaps)} gaps name no profile "
+            f"section, so they read as claims about the CANDIDATE rather than about "
+            f"the profile: {ungrounded}"
         )

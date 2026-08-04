@@ -40,6 +40,12 @@ def _format_job(rank: int, job: ScoredJob) -> str:
     ev = job.evaluation  # guaranteed non-None (caller filters)
 
     skills = ", ".join(ev.matching_skills) if ev.matching_skills else "none"
+    # Rendered under "Not represented in profile", not "Gaps". The field records what
+    # `profile.yaml` does not claim, which is a statement about the PROFILE - and
+    # "Gaps" gets read as a statement about the CANDIDATE. #100 is why the distinction
+    # is not pedantic: three entries here were skills held and simply unlisted, and
+    # they read as deficiencies until the profile was corrected. The model field keeps
+    # the name `gaps` (#97 scopes the rename out); only the label a human reads moves.
     gaps = ", ".join(ev.gaps) if ev.gaps else "none"
 
     lines = [
@@ -49,7 +55,7 @@ def _format_job(rank: int, job: ScoredJob) -> str:
         f"**Location:** {listing.location}",
         f"**Remote:** {listing.remote_policy}",
         f"**Matching skills:** {skills}",
-        f"**Gaps:** {gaps}",
+        f"**Not represented in profile:** {gaps}",
         f"**Summary:** {ev.explanation}",
     ]
 

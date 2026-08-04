@@ -404,6 +404,16 @@ cases:
       absent. The defect is in the `gaps` field, not in the number: 6 and the human's
       6.5 are both `marginal`, so no band assertion can see it. Kept in the corpus
       because #97 needs the case; asserted by #97 against the field, not the band.
+      RESOLVED IN TWO PARTS, both landed. The three false entries were `MLflow`,
+      `EU AI Act Art. 50` and `adversarial and prompt-exposure testing` — held skills
+      that `profile.yaml` did not list, so they were false about the CANDIDATE and true
+      about the PROFILE, which is the only thing the model is shown. #100 added them
+      and they are gone from all three live draws; #97 then capped the field at 5 and
+      required each entry to name the profile section it is absent from or conflicts
+      with. `tool_score: 6` is the ORIGINAL pre-#95 recording and is deliberately not
+      re-recorded here — the band it implies is still `marginal`, and re-recording it
+      is a separate act from fixing the defect. `test_gaps_are_capped_and_grounded_in_
+      the_profile` is the assertion this row was kept for.
 
   - id: "3028920"
     label: inferred-vs-declared-language

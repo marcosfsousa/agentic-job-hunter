@@ -120,6 +120,18 @@ class TestFormatDigest:
         assert "MLOps" in result
         assert "Strong match on core LLM skills." in result
 
+    def test_gaps_render_under_the_profile_relative_label(self):
+        """#97: the field states what `profile.yaml` does not claim — a fact about the
+        PROFILE — and "Gaps" reads as a fact about the CANDIDATE.
+
+        The old label was pinned by nothing: the test above asserts the gap VALUE
+        ("MLOps") appears and never touched the heading, so renaming it kept 447 tests
+        green. This pins the label itself, in both directions.
+        """
+        result = format_digest([_make_scored_job()], run_date=_RUN_DATE)
+        assert "**Not represented in profile:** MLOps" in result
+        assert "**Gaps:**" not in result
+
     def test_job_section_contains_apply_link(self):
         result = format_digest([_make_scored_job("j1")], run_date=_RUN_DATE)
         assert "[Apply](https://example.com/job/j1)" in result
