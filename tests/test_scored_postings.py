@@ -970,6 +970,12 @@ class TestLiveRescoring:
         draw here, which is a signal rather than a verdict — the same caveat every
         other single-draw live assertion carries.
 
+        The STRENGTHENED form below was then measured the same way, also 2026-08-04:
+        10/10 draws pass all three assertions, so the band holds at -1 and the evidence
+        names the declaration every time. That second measurement is the point — a new
+        assertion that passed once could still be flaky, and a flaky standing control is
+        worse than none, because it trains whoever sees it red to re-run rather than read.
+
         WHY THIS ASSERTS ON THE TRACE ENTRY AND NOT ON THE FIRED SET. The listing is
         German throughout — Berlin location, GmbH company, German prose — because a
         realistic conjunction posting is. Those are precisely the three cues the 0-pt
