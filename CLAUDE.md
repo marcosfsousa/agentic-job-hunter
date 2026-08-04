@@ -52,18 +52,30 @@ While working:
 - `Acceptance criteria` bound the work. Nothing beyond them ships.
 
 Validation for scoring changes:
-- If `tests/fixtures/scored_postings.yaml` exists, run
-  `pytest tests/test_scored_postings.py` and comment the band-accuracy
-  result before and after on the issue. **A change that moves scores
-  without moving band accuracy is not an improvement.**
+- ✅ The manifest `tests/fixtures/scored_postings.yaml` **already exists** — landed
+  2026-08-03 by #96, PR #111. Run
+  `git ls-files tests/fixtures/scored_postings.yaml` before concluding otherwise.
+- **`pytest tests/test_scored_postings.py` on its own does not measure a
+  calibration change.** Offline is the default mode: it asserts the *recorded*
+  tool scores and never calls the model, so it cannot see a `SYSTEM_PROMPT` or
+  `profile.yaml` edit at all. Measuring one needs `JOBSCOUT_LIVE_EVAL=1`, which
+  in turn needs `ANTHROPIC_API_KEY` and the gitignored posting text. A green
+  offline run is not validation of a prompt change.
+- Comment the band accuracy before and after on the issue. The suite reports
+  xfail/xpass counts rather than a percentage, and six of the eight known
+  defects are band-visible — derive the number from those. **A change that moves
+  scores without moving band accuracy is not an improvement.**
 - **Key this on the manifest, not on `tests/fixtures/scored_postings/`.**
   That directory holds the posting excerpts, is gitignored by design, and
   exists only on the maintainer's machine — a gate keyed to it would never
   fire in CI, in a fresh clone, or for a cloud agent, which is every case
   the gate exists for.
-- Until the manifest exists, the ≥5-listing validation gate below applies.
-  Once it exists, the fixture set supersedes that gate for any change
-  to `SYSTEM_PROMPT`, `profile.yaml`, or the filter predicates.
+- The fixture set **now supersedes** the ≥5-listing validation gate below for
+  any change to `SYSTEM_PROMPT`, `profile.yaml`, or the filter predicates.
+  (This section previously stated both as conditionals — "If
+  `tests/fixtures/scored_postings.yaml` exists, run" and "Until the manifest
+  exists, the ≥5-listing validation gate below applies" — which was true when
+  written and has since gone stale.)
 
 **The private evaluation log stays out of the repo.** A finding from it becomes an issue
 only when it can be stated as a reproducible behaviour with a posting ID attached;
