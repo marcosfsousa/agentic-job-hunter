@@ -136,11 +136,26 @@ location:
 # single source of truth for preferences. Hourly and daily are stated separately
 # and never converted: a Tagessatz records what you would actually quote, and
 # deriving one from the other would fabricate it.
+#
+# "NO PIPELINE CONSUMER ... deliberate" is now an OPEN QUESTION, not a settled one —
+# see #128. The absence of a consumer is what made #100's corrections provably free,
+# and also what let a floor sit above its target through a full green test run. A
+# field nothing reads has no way to be wrong, and therefore no way to be right.
+# The ordering guard that would have caught it is #127.
+#
+# All four values were resolved together in #100, as a unit, because correcting
+# minimum_daily alone produced minimum_daily > target_daily. 800 was the intended
+# TARGET and had been typed into the floor field; 700 is a NEW floor, not a
+# restoration of the 450 that stood before — a hard walk-away at 800 is wrong for a
+# first engagement, where a reference outweighs the margin, and an offer at 750 would
+# be taken. That 800 matches target_hourly over a standard day is evidence about what
+# was meant when it was typed, NOT a derivation: the rule above governs what the code
+# may compute, and says nothing about what the maintainer may recall.
 rate:
   minimum_hourly: 50 # Stundensatz floor (EUR/hour)
   target_hourly: 100 # hourly negotiation target
-  minimum_daily: 800 # Tagessatz floor — STATED, never derived
-  target_daily: 600 # daily negotiation target
+  minimum_daily: 700 # Tagessatz floor — STATED, never derived
+  target_daily: 800 # daily negotiation target
   currency: "EUR"
 
 dealbreakers:
