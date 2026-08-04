@@ -221,6 +221,46 @@ class TestEvaluateJobs:
         assert results[0].llm_score == pytest.approx(0.7)
         assert results[1].llm_score is None
 
+    async def test_temperature_reaches_the_api_and_defaults_to_zero(self, profile):
+        """The sampling temperature is sent, and defaults to 0 when nobody passes one.
+
+        Asserted because the defect was an ABSENCE: `messages.create` never carried a
+        `temperature` at all, so the API default of 1.0 applied silently — to the daily
+        digest as much as to the eval harness. Nothing failed, nothing logged, and the
+        pipeline's "same day = same digest" requirement was quietly unmeetable.
+        A regression here would look exactly the same, so the assertion is that the
+        keyword is PRESENT, not merely that some value is right.
+        """
+        payload = {"match_score": 6, "matching_skills": [], "gaps": [], "explanation": "Fine."}
+        client = _mock_client(response_payload=payload)
+
+        await evaluate_jobs(
+            [_make_scored_job("temp-1")], profile, client, model="mock-model", top_n=25
+        )
+
+        kwargs = client.messages.create.call_args.kwargs
+        assert "temperature" in kwargs, (
+            "messages.create was called without a temperature — the API default of 1.0 "
+            "then applies, which is the defect this test exists for"
+        )
+        assert kwargs["temperature"] == 0.0
+
+    async def test_temperature_is_passed_through_when_set(self, profile):
+        """A caller-supplied temperature reaches the API unchanged.
+
+        The harness deliberately raises it to measure the spread, so the pin must be a
+        default rather than a hardcode.
+        """
+        payload = {"match_score": 6, "matching_skills": [], "gaps": [], "explanation": "Fine."}
+        client = _mock_client(response_payload=payload)
+
+        await evaluate_jobs(
+            [_make_scored_job("temp-2")], profile, client, model="mock-model", top_n=25,
+            temperature=1.0,
+        )
+
+        assert client.messages.create.call_args.kwargs["temperature"] == 1.0
+
     async def test_reeval_fires_when_score_below_threshold(self, profile):
         """First score 3 < reeval_below=4 triggers a second call; higher score (7) wins."""
         low_payload = {"match_score": 3, "matching_skills": [], "gaps": ["LLMs"], "explanation": "Weak."}

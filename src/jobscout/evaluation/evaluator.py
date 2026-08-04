@@ -47,6 +47,7 @@ async def evaluate_jobs(
     model: str,
     top_n: int,
     reeval_below: int = 4,
+    temperature: float = 0.0,
 ) -> list[ScoredJob]:
     """Evaluate top_n jobs with an Anthropic model and return them with LLM scores attached.
 
@@ -79,7 +80,7 @@ async def evaluate_jobs(
     results: list[ScoredJob] = []
 
     for job in candidates:
-        evaluated = await _evaluate_one(job, profile, client, model)
+        evaluated = await _evaluate_one(job, profile, client, model, temperature)
         if evaluated.evaluation and evaluated.evaluation.match_score < reeval_below:
             logger.debug(
                 "Re-evaluating %s (%s): first score %d < %d",
@@ -88,7 +89,7 @@ async def evaluate_jobs(
                 evaluated.evaluation.match_score,
                 reeval_below,
             )
-            second = await _evaluate_one(job, profile, client, model)
+            second = await _evaluate_one(job, profile, client, model, temperature)
             if second.evaluation and second.evaluation.match_score > evaluated.evaluation.match_score:
                 logger.debug(
                     "Re-eval improved score: %d -> %d",
@@ -227,11 +228,13 @@ async def _evaluate_one(
     profile: UserProfile,
     client: anthropic.AsyncAnthropic,
     model: str,
+    temperature: float = 0.0,
 ) -> ScoredJob:
     try:
         response = await client.messages.create(
             model=model,
             max_tokens=MAX_OUTPUT_TOKENS,
+            temperature=temperature,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": build_prompt(job.listing, profile)}],
         )
