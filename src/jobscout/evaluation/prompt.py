@@ -81,7 +81,16 @@ plus", "Deutsch als Projektsprache von Vorteil"), the optional qualifier WINS an
 penalty does NOT apply: an optional requirement stays optional at any level. The penalty \
 needs a cue AND a non-optional framing. A SECOND declared language is NOT an optional \
 qualifier and does not trigger this precedence rule — see the 1-pt band, which fires on \
-"Projektsprache: Deutsch und Englisch".
+"Projektsprache: Deutsch und Englisch". \
+DISJUNCTION — when German is offered as an ALTERNATIVE to another language, and that \
+other language is one the candidate profile lists, German is NOT a requirement and this \
+penalty does NOT apply, at any level: the candidate already satisfies the requirement \
+with the language they hold ("Englisch (C1) oder Deutsch (C1)", "English or German", \
+"Deutsch oder Englisch"). READ THE CONJUNCTION WORD, not merely the presence of two \
+languages — this is the exact opposite of the case above: "und" joins two languages \
+that are BOTH declared and fires the 1-pt band; "oder" offers a choice between them and \
+fires nothing. If German is offered as an alternative to a language the candidate does \
+NOT hold, the choice gives them nothing and the bands above apply as written.
    - [penalty_ramp_up_risk] REDUCE by 0–3 pts for RAMP-UP RISK (graded — this is the seniority judgement, \
 made on deliverable evidence rather than a year-count). Ask: could the candidate \
 ship THIS project's core deliverable with no onboarding? Weigh what the profile \

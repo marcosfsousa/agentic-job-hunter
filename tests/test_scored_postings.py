@@ -51,6 +51,7 @@ the real evaluator.
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -735,6 +736,47 @@ def _fired_rules(evaluation) -> set[str]:
     return {adj.rule_id for adj in trace.adjustments if adj.fired}
 
 
+def _fired_adjustment(evaluation, rule_id: str):
+    """The `score_trace` entry for one fired rule, or None if it did not fire.
+
+    `_fired_rules` answers "did it fire"; this answers "at what band, and on what
+    evidence". Membership alone cannot tell a rule that fired for the stated reason
+    apart from one that fired for a reason the rubric carves out — see
+    `test_conjunction_still_fires_the_german_penalty`.
+    """
+    trace = evaluation.score_trace
+    if trace is None:
+        return None
+    for adj in trace.adjustments:
+        if adj.rule_id == rule_id and adj.fired:
+            return adj
+    return None
+
+
+# The conjunction control's evidence must ground in the DECLARATION, not in the three
+# cues the 0-pt band carves out (German location, German company name, German prose).
+# Both alternatives are the rubric's OWN 1-pt cues, and that is what makes them safe:
+# each names the declaration itself, and neither can appear in evidence reasoning about
+# a location or a company name.
+#
+# `und` was here and is deliberately gone. A free-standing `und` matches confound-only
+# evidence in almost any German sentence — joining two nouns is what the word is for, so
+# evidence enumerating two carved-out cues ("deutscher Einsatzort und deutsche Firma")
+# contains one nearly every time. That made the pattern fail in precisely the case this
+# control exists to detect: a regression. `delta == -1` does not rescue it, because a
+# confound firing can land on either band. Dropping it costs nothing — the conjunction is
+# already asserted by `delta == -1`, since the 1-pt band IS the conjunction case. Matching
+# the declaration is the right shape; matching the conjunction word never was.
+#
+# Deliberately NOT extended to English paraphrase ("working language", "project
+# language"). That phrasing appears in confound reasoning too — "Berlin location implies
+# German working language" is a string this pattern must reject — so the alternation
+# would reintroduce the same false positive in weaker form. The residual gap, evidence
+# that paraphrases in English instead of quoting the German cue, is real and tracked on
+# #136; it costs a spurious red, where the confound match costs a missed regression.
+_NAMES_THE_DECLARATION = re.compile(r"projektsprache|arbeitssprache", re.IGNORECASE)
+
+
 # Required in every excerpt's front matter, and deliberately not defaulted.
 # `build_prompt` puts title, company and location in the request (prompt.py:126-128),
 # so an absent company would be scored as "unknown" — and for #3028920 that is the
@@ -819,8 +861,6 @@ class TestLiveRescoring:
 
     async def _score(self, case, config):
         """One real evaluation of one fixture. Returns (front_matter, evaluation)."""
-        import anthropic
-
         front_matter, body = _read_posting(case)
         listing = JobListing(
             id=case["id"],
@@ -835,6 +875,16 @@ class TestLiveRescoring:
             raw_data={},
             remote_percentage=front_matter.get("remote_percentage"),
         )
+        _fm, evaluation = await self._score_listing(case, listing, config)
+        return front_matter, evaluation
+
+    async def _score_listing(self, case, listing, config):
+        """One real evaluation of an already-built listing.
+
+        Split from `_score` so the synthetic conjunction control can reach the same
+        evaluator path without inventing a fixture file for text that is not a posting.
+        """
+        import anthropic
 
         client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
         results = await evaluate_jobs(
@@ -851,7 +901,7 @@ class TestLiveRescoring:
             f"{case['id']}: the model returned nothing parseable — that is an evaluator "
             "failure, not a scoring one"
         )
-        return front_matter, results[0].evaluation
+        return None, results[0].evaluation
 
     @pytest.mark.parametrize("case", _live_band_cases())
     async def test_posting_scores_in_band(self, case, config):
@@ -914,6 +964,96 @@ class TestLiveRescoring:
             "ONE draw — if this is the change you intended, confirm it against the "
             "issue's pre-registered decision rule before re-recording, and do not read "
             "a single draw as the verdict."
+        )
+
+    async def test_conjunction_still_fires_the_german_penalty(self, config):
+        """The other direction of #98's carve-out, on a SYNTHETIC listing.
+
+        #98 stopped `penalty_german_language` firing on a DISJUNCTION — German offered
+        as an alternative to a language the candidate holds. The obvious way for that
+        fix to be wrong is to swallow the CONJUNCTION with it: "Projektsprache: Deutsch
+        und Englisch" declares both languages and must still fire the 1-pt band. A
+        carve-out that silently widened to cover `und` would look identical on
+        #3018325 — the disjunction fixture cannot see it.
+
+        The listing below is written here rather than drawn from the corpus, for two
+        reasons. No § 6 case exercises the conjunction, and this text is MINE — a
+        synthetic control is not third-party posting content, so it can live in a
+        committed file where the excerpt fixtures cannot.
+
+        Measured 2026-08-04 at 10 draws: fired 10/10 after the fix. Asserted at one
+        draw here, which is a signal rather than a verdict — the same caveat every
+        other single-draw live assertion carries.
+
+        The STRENGTHENED form below was then measured the same way, also 2026-08-04:
+        10/10 draws pass all three assertions, so the band holds at -1 and the evidence
+        names the declaration every time. That second measurement is the point — a new
+        assertion that passed once could still be flaky, and a flaky standing control is
+        worse than none, because it trains whoever sees it red to re-run rather than read.
+
+        Re-measured a third time, 2026-08-04, after `und` was dropped from
+        `_NAMES_THE_DECLARATION` (see the comment there): 10/10 again. That run also
+        settles a question the pattern could not answer on its own — the model quotes a
+        GERMAN cue (`Projektsprache`/`Arbeitssprache`) rather than paraphrasing in
+        English, in all ten draws. So the English-paraphrase gap left open there is
+        theoretical against this listing rather than live, which is why it is tracked
+        (#136) instead of closed by widening the pattern into confound territory.
+
+        WHY THIS ASSERTS ON THE TRACE ENTRY AND NOT ON THE FIRED SET. The listing is
+        German throughout — Berlin location, GmbH company, German prose — because a
+        realistic conjunction posting is. Those are precisely the three cues the 0-pt
+        band carves out, and D4 (#3028920) is standing evidence that the model fires
+        the German penalty off them anyway. So membership in the fired set is
+        satisfiable by the confound: the conjunction handling could be broken and this
+        test would still pass, on a rule firing for a reason the rubric forbids. The
+        band (`delta == -1`) and the evidence string are what discriminate, and they
+        are the assertion the PR's "safe in both directions" claim actually rests on.
+        """
+        listing = JobListing(
+            id="synthetic-conjunction", source="synthetic",
+            title="AI Engineer (m/w/d)", company="Synthetic Control GmbH",
+            description=(
+                "Projektkontext\n"
+                "Entwicklung von LLM-basierten Anwendungen mit RAG und LangChain.\n\n"
+                "Rahmendaten:\n"
+                "Projektsprache: Deutsch und Englisch\n"
+                "Einsatzort: 100% remote\n"
+            ),
+            location="Berlin, Deutschland", url="", posted_date=None,
+            fetched_at=datetime.now(), raw_data={}, remote_percentage=100,
+        )
+        case = {"id": "synthetic-conjunction", "label": "conjunction-control"}
+        _fm, evaluation = await self._score_listing(case, listing, config)
+
+        adjustment = _fired_adjustment(evaluation, "penalty_german_language")
+        assert adjustment is not None, (
+            "`Projektsprache: Deutsch und Englisch` did not fire "
+            "penalty_german_language. #98's disjunction carve-out has widened to cover "
+            "the conjunction, which it must not: `und` declares both languages and "
+            "still earns the 1-pt band. The disjunction fixture (#3018325) cannot see "
+            "this — it is why this control exists."
+        )
+
+        assert adjustment.delta == -1, (
+            f"penalty_german_language fired at delta {adjustment.delta}, not the 1-pt "
+            "band's -1. `Projektsprache: Deutsch und Englisch` states no level, so it "
+            "earns the 1-pt band and nothing more; -2 means the 2-pt band claimed a "
+            "level the listing never states, and 0 means the rule reported itself "
+            f"fired while contributing nothing. Evidence: {adjustment.evidence!r}"
+        )
+
+        assert _NAMES_THE_DECLARATION.search(adjustment.evidence or ""), (
+            "penalty_german_language fired at the right band but its evidence does not "
+            "name the declaration — it cites neither `Projektsprache` nor "
+            "`Arbeitssprache`, the rubric's own two 1-pt cues: "
+            f"{adjustment.evidence!r}\n"
+            "This listing is deliberately German throughout (Berlin location, GmbH "
+            "company, German prose), which is exactly the trio the 0-pt band carves "
+            "out and exactly what D4 (#3028920) is the standing evidence the model "
+            "still fires on. So a bare membership assertion could pass while the "
+            "conjunction handling was broken and the rule fired off the German "
+            "surroundings instead. This assertion is what makes the control test the "
+            "conjunction rather than the confound."
         )
 
     @pytest.mark.parametrize("case", _live_trace_cases())
