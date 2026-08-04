@@ -33,6 +33,22 @@ class AppConfig(BaseModel):
     # LLM model used for evaluation — change here to swap models pipeline-wide
     llm_model: str = "claude-haiku-4-5-20251001"
 
+    # Sampling temperature for evaluation. NOT previously set at all, which meant the
+    # API default of 1.0 applied — to the daily digest as much as to the test harness.
+    # Two consequences, and the second is the one that made this visible:
+    #   - CLAUDE.md requires "same day = same digest". A pipeline sampling at 1.0
+    #     cannot honour that, and nothing in the repo said so.
+    #   - The #96 corpus compares which rules fired before and after a prompt edit.
+    #     Two runs of #3018325 an hour apart, same prompt SHA, reported six fired
+    #     rules and then four — so the instrument was measuring the sampler as much
+    #     as the rubric (2026-08-04).
+    # 0 is NOT a determinism guarantee — Anthropic's own guidance is that temperature 0
+    # never produced identical outputs on the models that accept the parameter, and
+    # batching and routing still move results. It collapses most of the spread; it does
+    # not remove it, and no test here should assert exact reproduction.
+    # Settable because the harness may want to measure the spread deliberately.
+    llm_temperature: float = Field(default=0.0, ge=0.0, le=1.0)
+
     # Optional email delivery via Resend — all three must be set to enable sending
     resend_api_key: str | None = None
     email_to: str | None = None      # Recipient address
@@ -162,6 +178,7 @@ def _load_config(profile_path: Path | None = None) -> AppConfig:
         profile=profile,
         anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         reeval_below=int(os.environ.get("REEVAL_BELOW", str(DEFAULT_REEVAL_BELOW))),
+        llm_temperature=float(os.environ.get("LLM_TEMPERATURE", "0.0")),
         resend_api_key=os.environ.get("RESEND_API_KEY") or None,
         email_to=os.environ.get("EMAIL_TO") or None,
         email_from=os.environ.get("EMAIL_FROM") or None,

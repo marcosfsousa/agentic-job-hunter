@@ -211,6 +211,7 @@ async def run_pipeline(
         config.llm_model,
         top_n=config.top_n,
         reeval_below=config.reeval_below,
+        temperature=config.llm_temperature,
     )
 
     # ------------------------------------------------------------------
