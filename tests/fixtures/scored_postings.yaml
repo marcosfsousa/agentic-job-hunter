@@ -181,6 +181,31 @@
 # not a nuisance to be re-measured away. Recorded before the run rather than after,
 # because a prediction written afterwards is a story.
 #
+# OUTCOME, measured 2026-08-04 at fingerprint f871dd69729e, n=10 per row. The prediction
+# above is left exactly as written; this is appended, never edited into agreement.
+#
+#   1. HELD.   penalty_german_language absent from all 10 draws on #3018325.
+#   2. HELD.   absent from all 10 draws on #3004625 (predicted <=1/10).
+#   3. MISSED — AND THE BAND WAS WRONG, NOT THE RULE. Measured 10/10 against a predicted
+#      7-9. Fisher exact two-tailed against the 9/10 the band came from: p = 1.0000. A
+#      band drawn as a range around the POINT ESTIMATE of a rule already at 9/10 has no
+#      headroom above it, so a single ordinary draw reads as detection. Thresholds must
+#      be derived from measured VARIANCE. Written up on #130; not an interaction.
+#   4. HELD (cap). 1-3 gaps per draw on every row, never above 5.
+#
+# THE MECHANISM HELD WHERE IT MATTERED. Items 1 and 2 were the reason to pre-register at
+# all — whether #98's carve-out survived #97's gaps spec — and German was absent across
+# twenty draws exactly as predicted. One of four bands was constructed badly; that is not
+# the same as the discipline failing. It is also what made item 3 legible: because the
+# band was public BEFORE the number existed, 10/10 could be checked against it and
+# dismissed as an artefact. Written afterwards, 10/10 reads as clean confirmation and
+# nobody runs the test at all.
+#
+# UNPREDICTED, found because the run recorded everything rather than only what was asked:
+# penalty_german_language fires 2/10 on #3025628 — German named as a PREFERENCE, which is
+# neither a requirement nor the disjunction #98 carved out. A real gap in #98, tracked as
+# #139, and NOT a blocker for #97: the behaviour arrived with #135 and is already on main.
+#
 # A stale baseline is a FAILURE in the offline shape test and a SKIP in the live
 # comparison — comparing a fresh draw against a "before" that describes an input the
 # model is no longer given is worse than not comparing at all. Do not edit a
@@ -297,27 +322,31 @@ cases:
     live_rescorable: true
     text_provenance: excerpt
     live_baseline:
-      # ⚠️ STALE — RE-RECORD BEFORE THIS BRANCH MERGES. See "THIRD OCCURRENCE" in the
-      # header. The values below are #135's and do NOT describe the prompt this branch
-      # ships; they are kept rather than #97's so `must_not_fire` stays coherent, since
-      # #97's recording predates the German fix and still has the rule at 10/10.
-      #
-      # TWO recordings are superseded here, not one, and the next one is a measurement of
-      # a THIRD input rather than a correction of the second:
+      # Re-recorded against the MERGED #97 x #98 prompt — the first input carrying two
+      # independent edits to the same rubric. Superseded recordings, both of them
+      # measurements of DIFFERENT inputs rather than earlier attempts at this one:
       #   #98/#135  eb00281 / f273254967a1  [6,5,6,6,6,5,6,5,5,6]  penalty_cloud_core 4
       #   #97       e9e9e99 / 4b578b5b4acf  [4,4,4,4,4,4,4,4,4,4]  penalty_german_language 10
       #   pre-both  cbfa1a6 / 330573c8d178  [5,4,4,4,4,3,4,4,4,4]  penalty_mlops_core 1
+      #
+      # PRE-REGISTERED AND HELD: `penalty_german_language` 0/10, predicted before the run
+      # (see the header). It is ABSENT from all ten draws, so #98's disjunction carve-out
+      # survives contact with #97's gaps spec. `must_not_fire` below asserts this standing.
+      #
+      # `penalty_cloud_core` 1/10, against #135's 4/10 with nothing touching the rule —
+      # the THIRD unprompted wobble on this row, and the reason this block records
+      # frequencies rather than a set. At 1/10 it asserts nothing, which is correct.
       n: 10
-      prompt_commit: eb00281
-      input_fingerprint: f273254967a1
+      prompt_commit: aff3d28
+      input_fingerprint: f871dd69729e
       temperature: 0.0
       recorded: 2026-08-04
-      scores: [6, 5, 6, 6, 6, 5, 6, 5, 5, 6]
+      scores: [6, 6, 6, 6, 6, 5, 6, 6, 6, 6]
       fired:
         boost_core_stack: 10
         boost_llm_ownership: 10
         penalty_ramp_up_risk: 10
-        penalty_cloud_core: 4
+        penalty_cloud_core: 1
     notes: >-
       Two defects on one posting, both recorded against the tool's output rather than
       the posting. D2: platform-ownership language named in the model's own prose and
@@ -347,30 +376,44 @@ cases:
     live_rescorable: true
     text_provenance: excerpt
     live_baseline:
-      # ⚠️ STALE — RE-RECORD BEFORE THIS BRANCH MERGES. See "THIRD OCCURRENCE" in the
-      # header. Values below are #135's; they do NOT describe the prompt this branch ships.
+      # Re-recorded against the MERGED #97 x #98 prompt, at n=10 where the superseded
+      # recordings were n=3. Those are measurements of DIFFERENT inputs, not earlier
+      # attempts at this one:
+      #   #98/#135  eb00281 / f273254967a1  n=3  [1,1,1]  no boost firing
+      #   #97       e9e9e99 / 4b578b5b4acf  n=3  [2,1,1]  boost_visible_contribution 1/3
+      #   pre-both  cbfa1a6 / 330573c8d178  n=3  [1,1,1]  no boost firing
       #
-      # RESOLVED WHOLE-BLOCK, DELIBERATELY. Only the two provenance lines conflicted here:
-      # #97's patch moved scores [1,1,1] -> [2,1,1] and added `boost_visible_contribution`,
-      # and that hunk applied CLEANLY on top of #135's identical [1,1,1]. Taking the merge
-      # at its word would have left #97's numbers under #135's fingerprint — a recording
-      # that matches no run anyone ever took. A baseline is one measurement of one input,
-      # so it is resolved as a unit, never line by line.
+      # RESOLVED WHOLE-BLOCK WHEN THE BRANCHES MERGED, AND THE NEXT ONE MUST BE TOO. Only
+      # the two provenance lines conflicted: #97's patch moved scores [1,1,1] -> [2,1,1]
+      # and added `boost_visible_contribution`, and that hunk applied CLEANLY on top of
+      # #135's identical [1,1,1]. Accepting git's per-line resolution would have left #97's
+      # numbers under #135's fingerprint — a recording matching no run anyone ever took,
+      # and every coherence check here would have passed it. A baseline is ONE measurement
+      # of ONE input; merge it as a unit, never line by line. Written up on #138.
       #
-      # TWO recordings are superseded here, not one, and the next one is a measurement of
-      # a THIRD input rather than a correction of the second:
-      #   #98/#135  eb00281 / f273254967a1  [1,1,1]  no boost firing
-      #   #97       e9e9e99 / 4b578b5b4acf  [2,1,1]  boost_visible_contribution 1/3
-      #   pre-both  cbfa1a6 / 330573c8d178  [1,1,1]  no boost firing
-      n: 3
-      prompt_commit: eb00281
-      input_fingerprint: f273254967a1
+      # ⚠️ `penalty_german_language` 2/10 IS A KNOWN OPEN DEFECT — see #139. German named
+      # as a PREFERENCE (not a requirement at any level, and not the disjunction #98
+      # carved out) still draws a 1-point reduction. It fires at delta -1, never -2, and
+      # a second independent n=10 run against this same fingerprint measured 3/10 rather
+      # than 2/10 — low-frequency, so a fix cannot be validated at small n.
+      #
+      # DO NOT add `must_not_fire: [penalty_german_language]` here until #139 lands. The
+      # rule genuinely fires today; asserting its absence would turn a known open defect
+      # into a red suite on every live run. At 2/10 the count asserts nothing, which is
+      # exactly the right amount until the fix exists. #139 also owns adding the
+      # pre-registration this row lacked — its absence is why the defect went unseen
+      # through #98's validation.
+      n: 10
+      prompt_commit: aff3d28
+      input_fingerprint: f871dd69729e
       temperature: 0.0
       recorded: 2026-08-04
-      scores: [1, 1, 1]
+      scores: [1, 2, 1, 1, 1, 1, 1, 1, 1, 2]
       fired:
-        penalty_ramp_up_risk: 3
-        penalty_remote: 3
+        boost_visible_contribution: 4
+        penalty_german_language: 2
+        penalty_ramp_up_risk: 10
+        penalty_remote: 10
     notes: >-
       D3: the card metadata and the posting body disagree, and only the body carries the
       disqualifying fact — what it says is in the fixture, not here. The metadata filter
@@ -443,43 +486,49 @@ cases:
     live_rescorable: true
     text_provenance: excerpt
     live_baseline:
-      # ⚠️ STALE — RE-RECORD BEFORE THIS BRANCH MERGES. See "THIRD OCCURRENCE" in the
-      # header. Values below are #135's; they do NOT describe the prompt this branch ships.
-      #
-      # TWO recordings are superseded here, not one, and the next one is a measurement of
-      # a THIRD input rather than a correction of the second:
+      # Re-recorded against the MERGED #97 x #98 prompt, at n=10. Superseded recordings,
+      # each a measurement of a DIFFERENT input rather than an earlier attempt at this one:
       #   #98/#135  eb00281 / f273254967a1  n=3   [9,8,8]  ramp_up 3/3
       #   #97       e9e9e99 / 4b578b5b4acf  n=10  [8,8,8,8,9,8,8,8,9,8]  ramp_up 9/10,
       #                                           penalty_german_language 1/10
       #   pre-both  cbfa1a6 / 330573c8d178  n=3   [9,8,9]  ramp_up 1/3
       #
-      # RE-RECORD THIS ROW AT n=10, NOT 3. That is #97's finding and it survives the
-      # merge intact, because it is a fact about the SAMPLER rather than about either
-      # prompt. An n=3 recording read `penalty_ramp_up_risk` at 1/3 before and 3/3 after
-      # #97's edit, which looks like a gaps-field change reaching into an unrelated rule.
-      # It is not. Measured at n=10 per arm in one process against this same excerpt: the
-      # pre-#97 prompt fires it 7/10 and the post-#97 prompt 9/10 — two draws apart,
-      # Fisher exact two-tailed p=0.58. No effect. #135 then saw the IDENTICAL illusory
-      # 1/3 -> 3/3 on this row from an unrelated German-clause edit: two unrelated prompt
-      # edits, same row, same artifact, same cause. Three draws cannot tell an ~80% rule
-      # from a certainty, and both n=3 recordings above are of that ~80% rule.
+      # n=10, NOT 3 — a fact about the SAMPLER, not about any of the three prompts. An n=3
+      # recording read `penalty_ramp_up_risk` at 1/3 before and 3/3 after #97's edit, which
+      # looks like a gaps-field change reaching into an unrelated rule. It is not: at n=10
+      # per arm in one process, the pre-#97 prompt fires it 7/10 and the post-#97 prompt
+      # 9/10, Fisher exact two-tailed p=0.58. #135 then saw the IDENTICAL illusory
+      # 1/3 -> 3/3 on this row from an unrelated German-clause edit. Three draws cannot
+      # tell an ~80% rule from a certainty, and every n=3 recording above is of that rule.
       #
-      # And do not round the result up. `k == n` is load-bearing:
-      # `test_excerpt_fires_the_rules_it_did_before` asserts only on rules the baseline
-      # saw fire on EVERY draw, so recording 3/3 silently promotes a genuinely ~80% rule
-      # to an every-draw live assertion and makes the suite flake on the sampler. At 9/10
-      # it correctly drops out of the drift check. Record what was drawn.
-      n: 3
-      prompt_commit: eb00281
-      input_fingerprint: f273254967a1
+      # PRE-REGISTERED 7-9 OF 10, MEASURED 10/10 — AND THE BAND WAS THE THING THAT WAS
+      # WRONG. Fisher exact against the 9/10 it was derived from: p = 1.0000. One
+      # discordant draw in twenty; the test cannot separate the arms at all. The band was
+      # drawn as a range around a POINT ESTIMATE of a rule already sitting at 9/10, so it
+      # had no headroom above and one ordinary draw read as detection. Derive a threshold
+      # from the rule's measured VARIANCE instead — written up on #130, with the n=3
+      # discussion it is one order of magnitude up from. So the 10/10 is recorded as what
+      # it is, a draw, and NOT read as the two edits interacting.
+      #
+      # `penalty_german_language` is absent from all ten draws, holding the other half of
+      # the pre-registration.
+      #
+      # HONEST CONSEQUENCE OF RECORDING WHAT WAS DRAWN: at 10/10 this rule re-enters
+      # `test_excerpt_fires_the_rules_it_did_before`'s `k == n` drift check, where 9/10 had
+      # correctly excluded it. An ~80% rule asserted every-draw will flake. Not rounded
+      # down to dodge that — inventing a number to manage a threshold is the failure this
+      # whole block exists to prevent, and #130 owns the threshold question.
+      n: 10
+      prompt_commit: aff3d28
+      input_fingerprint: f871dd69729e
       temperature: 0.0
       recorded: 2026-08-04
-      scores: [9, 8, 8]
+      scores: [8, 8, 7, 8, 8, 8, 8, 7, 8, 8]
       fired:
-        boost_core_stack: 3
-        boost_llm_ownership: 3
-        boost_visible_contribution: 3
-        penalty_ramp_up_risk: 3
+        boost_core_stack: 10
+        boost_llm_ownership: 10
+        boost_visible_contribution: 10
+        penalty_ramp_up_risk: 10
     sequencing_constraint: >-
       Record this baseline BEFORE #100 lands. If #100 adds `React` / `TypeScript` to
       `working_knowledge`, this fixture's expected `gaps` changes — and a baseline that
