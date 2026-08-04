@@ -86,8 +86,94 @@
 # UPDATING AFTER A FIX LANDS
 # `baseline: fail` is a ratchet. The band test xfails those cases *strictly*, so once
 # C1/C3 move a case into its band the xfail turns into an XPASS and the suite goes red
-# until someone re-records `tool_score` and flips `baseline` to `pass`. Do not fix a
-# score by editing `expected_band` — the band is the human's judgement, not the tool's.
+# until someone looks. Do not fix a score by editing `expected_band` — the band is the
+# human's judgement, not the tool's.
+#
+# CORRECTED 2026-08-04 (#96 amendment): this paragraph used to say the fix "re-records
+# `tool_score` and flips `baseline` to `pass`". Both halves were wrong. `pass` is not a
+# legal value — `test_every_baseline_value_is_one_of_the_three` allows only `fail`,
+# `pass_with_known_defect` and `unrecorded` — and the prose was wrong rather than the
+# test: a baseline is a HISTORICAL RECORD and does not flip when a fix lands, because
+# then it stops being a baseline. `tool_score` is likewise immutable. It is the only
+# surviving record of what the scorer did on real postings, and every § 1 defect was
+# diagnosed from it; overwriting it with excerpt scores would destroy the evidence base
+# to make the fixtures tidier. What a fix updates is `live_baseline` — see below.
+#
+# LIVE_BASELINE — the excerpt record, and why it holds FREQUENCIES rather than a draw
+# Live re-scores of `provenance: excerpt` rows are compared on WHICH RULES FIRED, never
+# on the score or the band. Storing a score would make the comparison band-level again
+# under a new name, which is the failure the #96 amendment exists to fix.
+#
+# It records a DISTRIBUTION, not a draw. Recording one draw is known to be wrong: two
+# pinned-temperature runs of #3018325 with no rule change between them put
+# `penalty_cloud_core` at 4/10 and then 0/10. A single-draw "before" would have made
+# the next prompt edit look like it moved a rule it never touched.
+#
+#   n                  draws taken; the denominator for every count in `fired`
+#   fired              rule id -> how many of the n draws it fired in, as an INTEGER.
+#                      Not "9/10": n is stated once on the row, so a k/n string would
+#                      encode the denominator twice and let the two drift, and a string
+#                      cannot be compared to a threshold without parsing it first.
+#   scores             the raw score from each draw, in order. len(scores) == n is
+#                      asserted. Kept raw because which aggregate matters depends on the
+#                      question — #126 asks whether the score moved WITH the fired set,
+#                      #130 asks about the distribution's shape.
+#   temperature        what it was sampled at. Recorded rather than assumed, because the
+#                      pipeline spent its life at an unpinned 1.0 and nothing said so.
+#   prompt_commit         repo HEAD when measured. Human-readable provenance.
+#   input_fingerprint  THE GUARD. A hash of everything `build_prompt` sends the model —
+#                      SYSTEM_PROMPT and profile.yaml together, taken over the rendered
+#                      prompt rather than an enumerated field list, so a field
+#                      `build_prompt` starts sending later is covered without anyone
+#                      remembering. `test_live_baselines_are_not_stale` compares it
+#                      against current and fails when they differ.
+#
+# The fingerprint exists because a prompt SHA is not enough. #100 changed
+# `skills.strong`, `build_prompt` sends `skills.strong` on every call, and it silently
+# invalidated a baseline being measured on another branch — the second time a merge to
+# main has done that (#111 was the first). Neither was blocked on a decision, so #117's
+# draft convention does not catch the class: the merge was legitimate and simply moved
+# an input. Catching it used to depend on somebody noticing. Now the suite does.
+#
+# A stale baseline is a FAILURE in the offline shape test and a SKIP in the live
+# comparison — comparing a fresh draw against a "before" that describes an input the
+# model is no longer given is worse than not comparing at all. Do not edit a
+# fingerprint to match; re-measure.
+#
+# RECORDED `tool_score` VALUES ARE SINGLE DRAWS, NOT MEASUREMENTS
+# The second fidelity limit, and it applies to the OFFLINE baseline — the one the
+# clause above says is unaffected by excerpting. Until the temperature pin (#129),
+# `messages.create` set no `temperature`, so the API default of 1.0 applied to every
+# production run. Every `tool_score` in this file is therefore ONE SAMPLE from a
+# high-variance distribution, and the § 1 defects were diagnosed from those samples.
+#
+# Demonstrated rather than asserted: `penalty_mlops_core` fired 1/1 at temperature 1.0
+# and 0/10 at temperature 0 on #3018325. Something recorded as a rule misfiring was a
+# sample. And pinning does not make a single draw safe either: across two pinned runs
+# of the same fixture with no rule change between them, `penalty_cloud_core` measured
+# 4/10 and then 0/10. Single draws were never going to be stable — the corpus had no
+# way to know, which is why `live_baseline` records n draws rather than one.
+#
+# The diagnoses themselves largely stand: several rest on the model's own prose (it
+# NAMED the platform-ownership problem, it called the onsite week "a minor friction"),
+# not on the number alone. That evidence is unaffected by sampling. What is affected is
+# the numbers — which cases sit how far outside their band, and therefore which defects
+# still reproduce. Re-measurement is #130.
+#
+# This is why `tool_score` is immutable rather than merely stale: it records what the
+# scorer did at the temperature production was actually running, which is the only
+# evidence the original diagnoses were made from. New measurements go in
+# `live_baseline`; they do not overwrite this column.
+#
+# STARVATION RUNS IN BOTH DIRECTIONS — demonstrated 2026-08-04, not merely asserted
+# The fidelity limit above states the excerpt caveat as a caution. The baseline run
+# measured it: #3004625 scored **9** on its excerpt against 6 on the full posting, and
+# #2999393 scored **1** against 7. Strip the context and there is nothing left to
+# penalise, or nothing left to reward — two points, opposite signs, one cause. Worse,
+# a band can be right for unrelated reasons: #3018325 landed in `hard_skip` *before*
+# either fix existed, carried there by penalty_mlops_core, penalty_cloud_core and
+# penalty_ramp_up_risk while both rules under test fired wrongly. This is why band
+# assertions now run on `provenance: full` rows only.
 #
 # `pass_with_known_defect` is the other marking, and it is NOT a ratchet. Those two
 # assertions are xfailed *non-strictly* with `BAND_BLIND_REASON`, so they report XPASS:
@@ -163,6 +249,20 @@ cases:
     issues: [101, 98]
     live_rescorable: true
     text_provenance: excerpt
+    live_baseline:
+      n: 10
+      prompt_commit: cbfa1a6
+      input_fingerprint: 330573c8d178
+      temperature: 0.0
+      recorded: 2026-08-04
+      scores: [5, 4, 4, 4, 4, 3, 4, 4, 4, 4]
+      fired:
+        boost_core_stack: 10
+        boost_llm_ownership: 10
+        penalty_german_language: 10
+        penalty_ramp_up_risk: 10
+        penalty_mlops_core: 1
+        penalty_cloud_core: 0
     notes: >-
       Two defects on one posting, both recorded against the tool's output rather than
       the posting. D2: platform-ownership language named in the model's own prose and
@@ -171,6 +271,12 @@ cases:
       move both. D5: the posting's language clause scored as a German requirement, which
       is the disjunction carve-out #98 adds. The clause itself is in the fixture body;
       it is not restated here, because B2 turns on its exact wording.
+      INSTABILITY IS CONFINED TO THIS CASE. Measured 2026-08-04 at pinned temperature:
+      this row returned several distinct fired-rule sets across 10 draws, while
+      #3025628 and #3004625 each returned a SINGLE distinct set across all of theirs.
+      Do not read their stability as general — this is the one case both #98 and #101
+      turn on, and it is the one that moves. Whether that is bad luck or something
+      about this posting is not established; #130 is where it would be settled.
 
   - id: "3025628"
     label: remote-prose-backstop
@@ -185,6 +291,16 @@ cases:
     issues: [99, 103]
     live_rescorable: true
     text_provenance: excerpt
+    live_baseline:
+      n: 3
+      prompt_commit: cbfa1a6
+      input_fingerprint: 330573c8d178
+      temperature: 0.0
+      recorded: 2026-08-04
+      scores: [1, 1, 1]
+      fired:
+        penalty_ramp_up_risk: 3
+        penalty_remote: 3
     notes: >-
       D3: the card metadata and the posting body disagree, and only the body carries the
       disqualifying fact — what it says is in the fixture, not here. The metadata filter
@@ -256,6 +372,18 @@ cases:
     issues: [97]
     live_rescorable: true
     text_provenance: excerpt
+    live_baseline:
+      n: 3
+      prompt_commit: cbfa1a6
+      input_fingerprint: 330573c8d178
+      temperature: 0.0
+      recorded: 2026-08-04
+      scores: [9, 8, 9]
+      fired:
+        boost_core_stack: 3
+        boost_llm_ownership: 3
+        boost_visible_contribution: 3
+        penalty_ramp_up_risk: 1
     sequencing_constraint: >-
       Record this baseline BEFORE #100 lands. If #100 adds `React` / `TypeScript` to
       `working_knowledge`, this fixture's expected `gaps` changes — and a baseline that
@@ -307,7 +435,7 @@ cases:
     exercises: non-engineering deliverable (Wave D2)
     rules: [wave-d]
     issues: []
-    live_rescorable: true
+    live_rescorable: false
     text_provenance: excerpt
     expressibility_gap: >-
       The workload figure this case turns on is a card field, and it cannot reach the
@@ -316,6 +444,12 @@ cases:
       `JobListing` change and belongs to a new issue, not to this fixture. Filed as
       **#110** (`discovered`), scoped to making the value expressible and explicitly
       not to scoring it.
+      WITHDRAWN FROM LIVE ROTATION 2026-08-04 (#96 amendment). The text is on disk —
+      `text_provenance` stays `excerpt` and does not lie about that — but a live draw
+      here measures nothing: Wave D2 is unfiled, so no change in Waves A-C can move
+      the row, and the 391-character body scored **1** in the 2026-08-04 baseline
+      against 7 on the full posting. That is excerpt starvation, not a Wave D result.
+      It returns to rotation when Wave D is scoped.
     notes: >-
       Crosses `apply` -> `marginal`, so it asserts normally and is a genuine baseline
       failure. But the rule it exercises is Wave D2, which is UNFILED and UNSCOPED —
