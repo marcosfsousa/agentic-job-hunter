@@ -108,6 +108,29 @@ carry was still open and being actively worked (#117), and nothing objected: CI 
 and correct, review had happened, and the decision was open *downstream* of review, which
 is the state no check models.
 
+**Rubric-touching PRs merge ONE AT A TIME, and two must never sit ready simultaneously.**
+A PR that edits `SYSTEM_PROMPT` or `profile.yaml` changes what the model is shown, which
+invalidates every `live_baseline` measured against the old input — so two such PRs in
+flight together mean whichever merges second must re-record before it can merge. That cost
+is inherent and not a defect: two branches touching the rubric cannot both be measured in
+advance. Sequencing is the part that is avoidable. Before marking a rubric-touching PR
+ready, check whether another already is; if so, let it land first and rebase behind it.
+There is no label for this — the check is over the files a PR touches, which cannot go
+stale the way a label can:
+
+```bash
+gh pr list --state open --json number,title,files \
+  --jq '.[] | select(any(.files[].path; test("evaluation/prompt\\.py|^profile\\.yaml$"))) | "\(.number) \(.title)"'
+```
+
+This is a *different* failure from the draft convention above, and that convention does not
+catch it — the merge is legitimate and simply moves an input, with no open decision anywhere.
+It has now happened three times: #111, then #100 (both discovered after the fact), then
+#97 × #98 on 2026-08-04, which `test_live_baselines_are_not_stale` caught **before** the
+merge rather than after. The guard closes the detection half permanently; this rule is about
+not paying the re-record in the first place. Full record in the header of
+`tests/fixtures/scored_postings.yaml` under "THIRD OCCURRENCE".
+
 **Never push to `main` directly, force-push, or merge into `main` by hand.** All work reaches `main`
 through a branch and a reviewed PR — a hotfix is a short-lived branch and a fast PR, not an edit on
 `main`. (This replaces the previous stash → checkout main → edit → push hotfix flow.)
