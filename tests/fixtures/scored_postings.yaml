@@ -237,6 +237,7 @@ cases:
   # `pass_with_known_defect` — see `sub_band_defect`.
 
   - id: "3018325"
+    must_not_fire: [penalty_german_language]
     label: ownership-band-and-disjunctive-language
     human_score: 4.0
     human_score_approximate: false
@@ -251,18 +252,16 @@ cases:
     text_provenance: excerpt
     live_baseline:
       n: 10
-      prompt_commit: cbfa1a6
-      input_fingerprint: 330573c8d178
+      prompt_commit: fa6c59c
+      input_fingerprint: f273254967a1
       temperature: 0.0
       recorded: 2026-08-04
-      scores: [5, 4, 4, 4, 4, 3, 4, 4, 4, 4]
+      scores: [6, 5, 6, 6, 6, 5, 6, 5, 5, 6]
       fired:
         boost_core_stack: 10
         boost_llm_ownership: 10
-        penalty_german_language: 10
         penalty_ramp_up_risk: 10
-        penalty_mlops_core: 1
-        penalty_cloud_core: 0
+        penalty_cloud_core: 4
     notes: >-
       Two defects on one posting, both recorded against the tool's output rather than
       the posting. D2: platform-ownership language named in the model's own prose and
@@ -293,8 +292,8 @@ cases:
     text_provenance: excerpt
     live_baseline:
       n: 3
-      prompt_commit: cbfa1a6
-      input_fingerprint: 330573c8d178
+      prompt_commit: fa6c59c
+      input_fingerprint: f273254967a1
       temperature: 0.0
       recorded: 2026-08-04
       scores: [1, 1, 1]
@@ -374,16 +373,16 @@ cases:
     text_provenance: excerpt
     live_baseline:
       n: 3
-      prompt_commit: cbfa1a6
-      input_fingerprint: 330573c8d178
+      prompt_commit: fa6c59c
+      input_fingerprint: f273254967a1
       temperature: 0.0
       recorded: 2026-08-04
-      scores: [9, 8, 9]
+      scores: [9, 8, 8]
       fired:
         boost_core_stack: 3
         boost_llm_ownership: 3
         boost_visible_contribution: 3
-        penalty_ramp_up_risk: 1
+        penalty_ramp_up_risk: 3
     sequencing_constraint: >-
       Record this baseline BEFORE #100 lands. If #100 adds `React` / `TypeScript` to
       `working_knowledge`, this fixture's expected `gaps` changes — and a baseline that

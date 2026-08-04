@@ -819,8 +819,6 @@ class TestLiveRescoring:
 
     async def _score(self, case, config):
         """One real evaluation of one fixture. Returns (front_matter, evaluation)."""
-        import anthropic
-
         front_matter, body = _read_posting(case)
         listing = JobListing(
             id=case["id"],
@@ -835,6 +833,16 @@ class TestLiveRescoring:
             raw_data={},
             remote_percentage=front_matter.get("remote_percentage"),
         )
+        _fm, evaluation = await self._score_listing(case, listing, config)
+        return front_matter, evaluation
+
+    async def _score_listing(self, case, listing, config):
+        """One real evaluation of an already-built listing.
+
+        Split from `_score` so the synthetic conjunction control can reach the same
+        evaluator path without inventing a fixture file for text that is not a posting.
+        """
+        import anthropic
 
         client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
         results = await evaluate_jobs(
@@ -851,7 +859,7 @@ class TestLiveRescoring:
             f"{case['id']}: the model returned nothing parseable — that is an evaluator "
             "failure, not a scoring one"
         )
-        return front_matter, results[0].evaluation
+        return None, results[0].evaluation
 
     @pytest.mark.parametrize("case", _live_band_cases())
     async def test_posting_scores_in_band(self, case, config):
@@ -914,6 +922,49 @@ class TestLiveRescoring:
             "ONE draw — if this is the change you intended, confirm it against the "
             "issue's pre-registered decision rule before re-recording, and do not read "
             "a single draw as the verdict."
+        )
+
+    async def test_conjunction_still_fires_the_german_penalty(self, config):
+        """The other direction of #98's carve-out, on a SYNTHETIC listing.
+
+        #98 stopped `penalty_german_language` firing on a DISJUNCTION — German offered
+        as an alternative to a language the candidate holds. The obvious way for that
+        fix to be wrong is to swallow the CONJUNCTION with it: "Projektsprache: Deutsch
+        und Englisch" declares both languages and must still fire the 1-pt band. A
+        carve-out that silently widened to cover `und` would look identical on
+        #3018325 — the disjunction fixture cannot see it.
+
+        The listing below is written here rather than drawn from the corpus, for two
+        reasons. No § 6 case exercises the conjunction, and this text is MINE — a
+        synthetic control is not third-party posting content, so it can live in a
+        committed file where the excerpt fixtures cannot.
+
+        Measured 2026-08-04 at 10 draws: fired 10/10 after the fix. Asserted at one
+        draw here, which is a signal rather than a verdict — the same caveat every
+        other single-draw live assertion carries.
+        """
+        listing = JobListing(
+            id="synthetic-conjunction", source="synthetic",
+            title="AI Engineer (m/w/d)", company="Synthetic Control GmbH",
+            description=(
+                "Projektkontext\n"
+                "Entwicklung von LLM-basierten Anwendungen mit RAG und LangChain.\n\n"
+                "Rahmendaten:\n"
+                "Projektsprache: Deutsch und Englisch\n"
+                "Einsatzort: 100% remote\n"
+            ),
+            location="Berlin, Deutschland", url="", posted_date=None,
+            fetched_at=datetime.now(), raw_data={}, remote_percentage=100,
+        )
+        case = {"id": "synthetic-conjunction", "label": "conjunction-control"}
+        _fm, evaluation = await self._score_listing(case, listing, config)
+
+        assert "penalty_german_language" in _fired_rules(evaluation), (
+            "`Projektsprache: Deutsch und Englisch` did not fire "
+            "penalty_german_language. #98's disjunction carve-out has widened to cover "
+            "the conjunction, which it must not: `und` declares both languages and "
+            "still earns the 1-pt band. The disjunction fixture (#3018325) cannot see "
+            "this — it is why this control exists."
         )
 
     @pytest.mark.parametrize("case", _live_trace_cases())
