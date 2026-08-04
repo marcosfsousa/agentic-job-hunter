@@ -120,7 +120,18 @@
 #                      #130 asks about the distribution's shape.
 #   temperature        what it was sampled at. Recorded rather than assumed, because the
 #                      pipeline spent its life at an unpinned 1.0 and nothing said so.
-#   prompt_commit         repo HEAD when measured. Human-readable provenance.
+#   prompt_commit      the commit whose prompt PRODUCED these numbers. Human-readable
+#                      provenance, and the value a reader checks out to reproduce them.
+#                      This is NOT "repo HEAD when measured", which is what it used to
+#                      say and what it collected: a baseline re-measured while writing a
+#                      prompt edit is taken against a working tree, so repo HEAD is the
+#                      commit BEFORE the edit. #135 recorded all three rows that way and
+#                      the result read as a regression — `fa6c59c`'s rubric produces
+#                      10/10 German-penalty draws against rows recording 0/10, so anyone
+#                      reproducing would conclude the fix had failed or the numbers were
+#                      invented. Nothing catches it: the staleness guard reads the
+#                      fingerprint, never this. So record the SHA the edit becomes, once
+#                      it has one — amend after committing rather than before.
 #   input_fingerprint  THE GUARD. A hash of everything `build_prompt` sends the model —
 #                      SYSTEM_PROMPT and profile.yaml together, taken over the rendered
 #                      prompt rather than an enumerated field list, so a field
@@ -252,7 +263,7 @@ cases:
     text_provenance: excerpt
     live_baseline:
       n: 10
-      prompt_commit: fa6c59c
+      prompt_commit: eb00281
       input_fingerprint: f273254967a1
       temperature: 0.0
       recorded: 2026-08-04
@@ -292,7 +303,7 @@ cases:
     text_provenance: excerpt
     live_baseline:
       n: 3
-      prompt_commit: fa6c59c
+      prompt_commit: eb00281
       input_fingerprint: f273254967a1
       temperature: 0.0
       recorded: 2026-08-04
@@ -373,7 +384,7 @@ cases:
     text_provenance: excerpt
     live_baseline:
       n: 3
-      prompt_commit: fa6c59c
+      prompt_commit: eb00281
       input_fingerprint: f273254967a1
       temperature: 0.0
       recorded: 2026-08-04

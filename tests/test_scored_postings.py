@@ -51,6 +51,7 @@ the real evaluator.
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -735,6 +736,32 @@ def _fired_rules(evaluation) -> set[str]:
     return {adj.rule_id for adj in trace.adjustments if adj.fired}
 
 
+def _fired_adjustment(evaluation, rule_id: str):
+    """The `score_trace` entry for one fired rule, or None if it did not fire.
+
+    `_fired_rules` answers "did it fire"; this answers "at what band, and on what
+    evidence". Membership alone cannot tell a rule that fired for the stated reason
+    apart from one that fired for a reason the rubric carves out — see
+    `test_conjunction_still_fires_the_german_penalty`.
+    """
+    trace = evaluation.score_trace
+    if trace is None:
+        return None
+    for adj in trace.adjustments:
+        if adj.rule_id == rule_id and adj.fired:
+            return adj
+    return None
+
+
+# The conjunction control's evidence must ground in the DECLARATION, not in the three
+# cues the 0-pt band carves out (German location, German company name, German prose).
+# `und` is matched on word boundaries deliberately: as a bare substring it hides inside
+# ordinary German and English words ("Kundenprojekt", "Grundlagen", "found", "under"),
+# which would make this pattern match almost any evidence string and leave the assertion
+# looking strict while testing nothing.
+_NAMES_THE_DECLARATION = re.compile(r"projektsprache|\bund\b", re.IGNORECASE)
+
+
 # Required in every excerpt's front matter, and deliberately not defaulted.
 # `build_prompt` puts title, company and location in the request (prompt.py:126-128),
 # so an absent company would be scored as "unknown" — and for #3028920 that is the
@@ -942,6 +969,16 @@ class TestLiveRescoring:
         Measured 2026-08-04 at 10 draws: fired 10/10 after the fix. Asserted at one
         draw here, which is a signal rather than a verdict — the same caveat every
         other single-draw live assertion carries.
+
+        WHY THIS ASSERTS ON THE TRACE ENTRY AND NOT ON THE FIRED SET. The listing is
+        German throughout — Berlin location, GmbH company, German prose — because a
+        realistic conjunction posting is. Those are precisely the three cues the 0-pt
+        band carves out, and D4 (#3028920) is standing evidence that the model fires
+        the German penalty off them anyway. So membership in the fired set is
+        satisfiable by the confound: the conjunction handling could be broken and this
+        test would still pass, on a rule firing for a reason the rubric forbids. The
+        band (`delta == -1`) and the evidence string are what discriminate, and they
+        are the assertion the PR's "safe in both directions" claim actually rests on.
         """
         listing = JobListing(
             id="synthetic-conjunction", source="synthetic",
@@ -959,12 +996,34 @@ class TestLiveRescoring:
         case = {"id": "synthetic-conjunction", "label": "conjunction-control"}
         _fm, evaluation = await self._score_listing(case, listing, config)
 
-        assert "penalty_german_language" in _fired_rules(evaluation), (
+        adjustment = _fired_adjustment(evaluation, "penalty_german_language")
+        assert adjustment is not None, (
             "`Projektsprache: Deutsch und Englisch` did not fire "
             "penalty_german_language. #98's disjunction carve-out has widened to cover "
             "the conjunction, which it must not: `und` declares both languages and "
             "still earns the 1-pt band. The disjunction fixture (#3018325) cannot see "
             "this — it is why this control exists."
+        )
+
+        assert adjustment.delta == -1, (
+            f"penalty_german_language fired at delta {adjustment.delta}, not the 1-pt "
+            "band's -1. `Projektsprache: Deutsch und Englisch` states no level, so it "
+            "earns the 1-pt band and nothing more; -2 means the 2-pt band claimed a "
+            "level the listing never states, and 0 means the rule reported itself "
+            f"fired while contributing nothing. Evidence: {adjustment.evidence!r}"
+        )
+
+        assert _NAMES_THE_DECLARATION.search(adjustment.evidence or ""), (
+            "penalty_german_language fired at the right band but its evidence does not "
+            "name the declaration — it cites neither `Projektsprache` nor `und`: "
+            f"{adjustment.evidence!r}\n"
+            "This listing is deliberately German throughout (Berlin location, GmbH "
+            "company, German prose), which is exactly the trio the 0-pt band carves "
+            "out and exactly what D4 (#3028920) is the standing evidence the model "
+            "still fires on. So a bare membership assertion could pass while the "
+            "conjunction handling was broken and the rule fired off the German "
+            "surroundings instead. This assertion is what makes the control test the "
+            "conjunction rather than the confound."
         )
 
     @pytest.mark.parametrize("case", _live_trace_cases())
