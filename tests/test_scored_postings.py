@@ -755,11 +755,26 @@ def _fired_adjustment(evaluation, rule_id: str):
 
 # The conjunction control's evidence must ground in the DECLARATION, not in the three
 # cues the 0-pt band carves out (German location, German company name, German prose).
-# `und` is matched on word boundaries deliberately: as a bare substring it hides inside
-# ordinary German and English words ("Kundenprojekt", "Grundlagen", "found", "under"),
-# which would make this pattern match almost any evidence string and leave the assertion
-# looking strict while testing nothing.
-_NAMES_THE_DECLARATION = re.compile(r"projektsprache|\bund\b", re.IGNORECASE)
+# Both alternatives are the rubric's OWN 1-pt cues, and that is what makes them safe:
+# each names the declaration itself, and neither can appear in evidence reasoning about
+# a location or a company name.
+#
+# `und` was here and is deliberately gone. A free-standing `und` matches confound-only
+# evidence in almost any German sentence — joining two nouns is what the word is for, so
+# evidence enumerating two carved-out cues ("deutscher Einsatzort und deutsche Firma")
+# contains one nearly every time. That made the pattern fail in precisely the case this
+# control exists to detect: a regression. `delta == -1` does not rescue it, because a
+# confound firing can land on either band. Dropping it costs nothing — the conjunction is
+# already asserted by `delta == -1`, since the 1-pt band IS the conjunction case. Matching
+# the declaration is the right shape; matching the conjunction word never was.
+#
+# Deliberately NOT extended to English paraphrase ("working language", "project
+# language"). That phrasing appears in confound reasoning too — "Berlin location implies
+# German working language" is a string this pattern must reject — so the alternation
+# would reintroduce the same false positive in weaker form. The residual gap, evidence
+# that paraphrases in English instead of quoting the German cue, is real and tracked on
+# #136; it costs a spurious red, where the confound match costs a missed regression.
+_NAMES_THE_DECLARATION = re.compile(r"projektsprache|arbeitssprache", re.IGNORECASE)
 
 
 # Required in every excerpt's front matter, and deliberately not defaulted.
@@ -976,6 +991,14 @@ class TestLiveRescoring:
         assertion that passed once could still be flaky, and a flaky standing control is
         worse than none, because it trains whoever sees it red to re-run rather than read.
 
+        Re-measured a third time, 2026-08-04, after `und` was dropped from
+        `_NAMES_THE_DECLARATION` (see the comment there): 10/10 again. That run also
+        settles a question the pattern could not answer on its own — the model quotes a
+        GERMAN cue (`Projektsprache`/`Arbeitssprache`) rather than paraphrasing in
+        English, in all ten draws. So the English-paraphrase gap left open there is
+        theoretical against this listing rather than live, which is why it is tracked
+        (#136) instead of closed by widening the pattern into confound territory.
+
         WHY THIS ASSERTS ON THE TRACE ENTRY AND NOT ON THE FIRED SET. The listing is
         German throughout — Berlin location, GmbH company, German prose — because a
         realistic conjunction posting is. Those are precisely the three cues the 0-pt
@@ -1021,7 +1044,8 @@ class TestLiveRescoring:
 
         assert _NAMES_THE_DECLARATION.search(adjustment.evidence or ""), (
             "penalty_german_language fired at the right band but its evidence does not "
-            "name the declaration — it cites neither `Projektsprache` nor `und`: "
+            "name the declaration — it cites neither `Projektsprache` nor "
+            "`Arbeitssprache`, the rubric's own two 1-pt cues: "
             f"{adjustment.evidence!r}\n"
             "This listing is deliberately German throughout (Berlin location, GmbH "
             "company, German prose), which is exactly the trio the 0-pt band carves "
