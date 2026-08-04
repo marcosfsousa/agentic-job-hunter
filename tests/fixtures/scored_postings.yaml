@@ -102,19 +102,21 @@
 # metadata-only row driving the offline baseline. Outstanding, and who holds each:
 #
 #   #3028920 full text (the Skills block)         maintainer — retrieval
-#   DSGVO-RAG / MCP-Wissensserver (7.5, apply)    maintainer — retrieval
-#   iBSC Senior AI Platform Eng. (7, apply)       maintainer — retrieval
-#   Hays 886891/1-en (8, apply)                   maintainer — from materials kept 27 Jul;
+#   case10 (7.5, apply)                           maintainer — retrieval
+#   case11 (7, apply)                             maintainer — retrieval
+#   case09 (8, apply)                             maintainer — from materials kept 27 Jul;
 #                                                 the provider closed the posting
 #   #3008147, #3003311, #3027041                  maintainer — retrieval
-#   #3028352, Stuttgart Python cut, #3027789      maintainer — retrieval
+#   #3028352, case13, #3027789                    maintainer — retrieval
 #
 # NOT SUFFICIENT TO VALIDATE C3 (#103)
 # Every case here is an over-scoring failure or a same-band defect. At least two
 # `apply`-band positive controls must be *scorable* before C3's rebalancing is validated
 # against this corpus — otherwise a scorer that scores everything low passes it. Three
-# such rows exist (Hays, DSGVO-RAG, iBSC) and none of them has text or a recorded tool
-# score, so today the count of usable positive controls is zero. This is an acceptance
+# such rows exist (`expected_band: apply` — case09, case10, case11) and none has text or
+# a recorded tool score, so today the count of usable positive controls is zero. Query
+# the band, never the labels: only one of the three ever said "control" in its name, so
+# a label grep matches one row and passes. This is an acceptance
 # criterion on #96, not a footnote.
 #
 # WHY #3030519 IS NOT HERE
@@ -149,8 +151,7 @@ cases:
   # `pass_with_known_defect` — see `sub_band_defect`.
 
   - id: "3018325"
-    posting_id: "3018325"
-    label: nemensis
+    label: ownership-band-and-disjunctive-language
     human_score: 4.0
     human_score_approximate: false
     expected_band: hard_skip
@@ -172,8 +173,7 @@ cases:
       it is not restated here, because B2 turns on its exact wording.
 
   - id: "3025628"
-    posting_id: "3025628"
-    label: Connectly
+    label: remote-prose-backstop
     human_score: 3.0
     human_score_approximate: false
     expected_band: hard_skip
@@ -202,8 +202,7 @@ cases:
       `reeval_below`'s max-of-two draw (see the harness pin) is one candidate explanation.
 
   - id: "3008147"
-    posting_id: "3008147"
-    label: percision AgentCore
+    label: two-must-have-zeros-in-core-deliverable
     human_score: 3.0
     human_score_approximate: true
     expected_band: hard_skip
@@ -211,14 +210,13 @@ cases:
     baseline: fail
     defects: []
     exercises: two must-have zeros in the core deliverable
-    rules: [C2]
-    issues: [102]
+    rules: []
+    issues: []
     live_rescorable: false
     text_provenance: absent
 
   - id: "3003311"
-    posting_id: "3003311"
-    label: Ronwell
+    label: stacked-blockers-to-floor
     human_score: 1.5
     human_score_approximate: true
     expected_band: hard_skip
@@ -232,8 +230,7 @@ cases:
     text_provenance: absent
 
   - id: "3027041"
-    posting_id: "3027041"
-    label: radtke
+    label: tail-behaviour
     human_score: 1.0
     human_score_approximate: true
     expected_band: hard_skip
@@ -247,8 +244,7 @@ cases:
     text_provenance: absent
 
   - id: "3004625"
-    posting_id: "3004625"
-    label: 1st solution
+    label: false-gaps
     human_score: 6.5
     human_score_approximate: false
     expected_band: marginal
@@ -272,8 +268,7 @@ cases:
       because #97 needs the case; asserted by #97 against the field, not the band.
 
   - id: "3028920"
-    posting_id: "3028920"
-    label: Bosch
+    label: inferred-vs-declared-language
     human_score: 6.0
     human_score_approximate: false
     expected_band: marginal
@@ -299,8 +294,7 @@ cases:
       see it. #98 asserts it through the trace.
 
   - id: "2999393"
-    posting_id: "2999393"
-    label: MSIT
+    label: non-engineering-deliverable
     human_score: 6.5
     human_score_approximate: false
     expected_band: marginal
@@ -336,9 +330,8 @@ cases:
   # only thing that can score them. Three of the six are the corpus's only positive
   # controls: without them a change that drives every score down looks like progress.
 
-  - id: hays-886891-1-en
-    posting_id: null
-    label: Hays 886891/1-en
+  - id: case09
+    label: zero-blocker-positive-control
     human_score: 8.0
     human_score_approximate: false
     expected_band: apply
@@ -351,9 +344,8 @@ cases:
     live_rescorable: false
     text_provenance: absent
 
-  - id: dsgvo-rag-mcp-wissensserver
-    posting_id: null
-    label: DSGVO-RAG / MCP-Wissensserver
+  - id: case10
+    label: direct-client-werkvertrag-shape
     human_score: 7.5
     human_score_approximate: false
     expected_band: apply
@@ -366,9 +358,8 @@ cases:
     live_rescorable: false
     text_provenance: absent
 
-  - id: ibsc-senior-ai-platform-engineer
-    posting_id: null
-    label: iBSC Senior AI Platform Eng.
+  - id: case11
+    label: thin-posting-no-language-gate
     human_score: 7.0
     human_score_approximate: false
     expected_band: apply
@@ -381,15 +372,14 @@ cases:
     live_rescorable: false
     text_provenance: absent
     notes: >-
-      digests/2026-07-30.md scores an "iBSC ltd — Senior AI Platform Engineer 100% Remote
-      (EU)" at 8/10 under id 3029650. Deliberately NOT adopted as `tool_score`: § 6 marks
+      digests/2026-07-30.md scores a posting at 8/10 under id 3029650 that may be this
+      case. Deliberately NOT adopted as `tool_score`: § 6 marks
       this row "—", and nothing establishes that the human's 7 was assigned to that run's
       posting rather than a sibling. Recorded here so the next re-recording starts from
       a lead rather than from nothing.
 
   - id: "3028352"
-    posting_id: "3028352"
-    label: percision #3028352
+    label: strong-content-vs-structural-gate
     human_score: 6.5
     human_score_approximate: false
     expected_band: marginal
@@ -402,9 +392,8 @@ cases:
     live_rescorable: false
     text_provenance: absent
 
-  - id: stuttgart-python-cut
-    posting_id: null
-    label: Stuttgart Python cut
+  - id: case13
+    label: sibling-posting-comparison
     human_score: 6.5
     human_score_approximate: false
     expected_band: marginal
@@ -418,8 +407,7 @@ cases:
     text_provenance: absent
 
   - id: "3027789"
-    posting_id: "3027789"
-    label: BLUECHILLED #3027789
+    label: strong-ai-content-weak-profile-match
     human_score: 6.0
     human_score_approximate: false
     expected_band: marginal
@@ -433,5 +421,5 @@ cases:
     text_provenance: absent
     notes: >-
       digests/2026-07-30.md records 5/10 for this id. Not adopted, for the same reason as
-      the iBSC row: § 6 marks the Tool column "—" and this manifest transcribes § 6. Note
+      case11: § 6 marks the Tool column "—" and this manifest transcribes § 6. Note
       the band would be `marginal` either way, so adopting it would not change the baseline.

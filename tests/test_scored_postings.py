@@ -136,7 +136,7 @@ def _case_id(case: dict) -> str:
 # is a deliberate act — see `test_the_manifest_carries_no_posting_text`.
 _ALLOWED_CASE_KEYS = frozenset({
     # identity and the human's judgement
-    "id", "posting_id", "label", "human_score", "human_score_approximate",
+    "id", "label", "human_score", "human_score_approximate",
     "expected_band",
     # what the tool did, and what that makes this case
     "tool_score", "baseline", "defects", "sub_band_defect",
