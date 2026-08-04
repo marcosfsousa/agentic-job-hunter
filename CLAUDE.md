@@ -86,6 +86,16 @@ The daily GitHub Action commits `data/feedback.yaml`, so the local copy may be b
 listing, and republishing ingested source content is not ours to do. It is gitignored, lives
 only on disk locally, and survives between CI runs via an Actions cache.
 `tests/test_repo_invariants.py` fails if it becomes tracked again.
+**A PR with an open maintainer decision on its contents stays in draft.** Mark it
+`needs-maintainer-decision` so the reason is visible and queryable
+(`is:pr label:needs-maintainer-decision`), and keep it a draft until the decision closes —
+GitHub refuses to merge a draft, so the block is native and needs no workflow or ruleset.
+The label alone does not block, and draft alone does not say why; both together cost one
+habit. This exists because #111 merged while the decision about what its manifest should
+carry was still open and being actively worked (#117), and nothing objected: CI was green
+and correct, review had happened, and the decision was open *downstream* of review, which
+is the state no check models.
+
 **Never push to `main` directly, force-push, or merge into `main` by hand.** All work reaches `main`
 through a branch and a reviewed PR — a hotfix is a short-lived branch and a fast PR, not an edit on
 `main`. (This replaces the previous stash → checkout main → edit → push hotfix flow.)
