@@ -146,6 +146,20 @@
 # draft convention does not catch the class: the merge was legitimate and simply moved
 # an input. Catching it used to depend on somebody noticing. Now the suite does.
 #
+# THIRD OCCURRENCE — AND THE FIRST ONE CAUGHT BEFORE THE FACT (#97 x #98, 2026-08-04).
+# #135 landed #98's German clause on main while #97's gaps spec was in flight. Both edit
+# SYSTEM_PROMPT, so each invalidated the other's baselines. Unlike #111 and #100 this did
+# not slip through: the guard fired on the merge attempt, BEFORE the merge, and the merge
+# was stopped rather than discovered later. That moves the class from open to handled,
+# which is why this section now reads as a record rather than a warning.
+#
+# What is NOT fixed, because it cannot be: two branches touching the rubric cannot both
+# be measured in advance, and whichever merges second always pays a re-record. That cost
+# is inherent to measuring against a prompt. The avoidable part is SEQUENCING —
+# rubric-touching PRs merge ONE AT A TIME, and two should never sit ready at once. That
+# is the convention that would have avoided this one; it lives with the merge rules
+# (#117 / CLAUDE.md), not here.
+#
 # A stale baseline is a FAILURE in the offline shape test and a SKIP in the live
 # comparison — comparing a fresh draw against a "before" that describes an input the
 # model is no longer given is worse than not comparing at all. Do not edit a
@@ -262,6 +276,16 @@ cases:
     live_rescorable: true
     text_provenance: excerpt
     live_baseline:
+      # ⚠️ STALE — RE-RECORD BEFORE THIS BRANCH MERGES. See "THIRD OCCURRENCE" in the
+      # header. The values below are #135's and do NOT describe the prompt this branch
+      # ships; they are kept rather than #97's so `must_not_fire` stays coherent, since
+      # #97's recording predates the German fix and still has the rule at 10/10.
+      #
+      # TWO recordings are superseded here, not one, and the next one is a measurement of
+      # a THIRD input rather than a correction of the second:
+      #   #98/#135  eb00281 / f273254967a1  [6,5,6,6,6,5,6,5,5,6]  penalty_cloud_core 4
+      #   #97       e9e9e99 / 4b578b5b4acf  [4,4,4,4,4,4,4,4,4,4]  penalty_german_language 10
+      #   pre-both  cbfa1a6 / 330573c8d178  [5,4,4,4,4,3,4,4,4,4]  penalty_mlops_core 1
       n: 10
       prompt_commit: eb00281
       input_fingerprint: f273254967a1
@@ -302,6 +326,21 @@ cases:
     live_rescorable: true
     text_provenance: excerpt
     live_baseline:
+      # ⚠️ STALE — RE-RECORD BEFORE THIS BRANCH MERGES. See "THIRD OCCURRENCE" in the
+      # header. Values below are #135's; they do NOT describe the prompt this branch ships.
+      #
+      # RESOLVED WHOLE-BLOCK, DELIBERATELY. Only the two provenance lines conflicted here:
+      # #97's patch moved scores [1,1,1] -> [2,1,1] and added `boost_visible_contribution`,
+      # and that hunk applied CLEANLY on top of #135's identical [1,1,1]. Taking the merge
+      # at its word would have left #97's numbers under #135's fingerprint — a recording
+      # that matches no run anyone ever took. A baseline is one measurement of one input,
+      # so it is resolved as a unit, never line by line.
+      #
+      # TWO recordings are superseded here, not one, and the next one is a measurement of
+      # a THIRD input rather than a correction of the second:
+      #   #98/#135  eb00281 / f273254967a1  [1,1,1]  no boost firing
+      #   #97       e9e9e99 / 4b578b5b4acf  [2,1,1]  boost_visible_contribution 1/3
+      #   pre-both  cbfa1a6 / 330573c8d178  [1,1,1]  no boost firing
       n: 3
       prompt_commit: eb00281
       input_fingerprint: f273254967a1
@@ -383,6 +422,14 @@ cases:
     live_rescorable: true
     text_provenance: excerpt
     live_baseline:
+      # ⚠️ STALE — RE-RECORD BEFORE THIS BRANCH MERGES. See "THIRD OCCURRENCE" in the
+      # header. Values below are #135's; they do NOT describe the prompt this branch ships.
+      #
+      # TWO recordings are superseded here, not one, and the next one is a measurement of
+      # a THIRD input rather than a correction of the second:
+      #   #98/#135  eb00281 / f273254967a1  n=3   [9,8,8]  penalty_ramp_up_risk 3/3
+      #   #97       e9e9e99 / 4b578b5b4acf  n=10  [8,8,8,8,9,8,8,8,9,8]  ramp_up 9/10
+      #   pre-both  cbfa1a6 / 330573c8d178  n=3   [9,8,9]  penalty_ramp_up_risk 1/3
       n: 3
       prompt_commit: eb00281
       input_fingerprint: f273254967a1
