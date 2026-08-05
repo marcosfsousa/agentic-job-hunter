@@ -236,17 +236,26 @@ class TestTolerances:
 class TestFillerDoesNotInvertTheCue:
     """Filler width is not free, and round 2 of review found where it stops.
 
-    All three of these were `exclusive` — and therefore silently dropped by the
-    hard filter — when the gap was an unguarded two words. Two of them say the
-    *opposite* of leasing-only, so the classifier was discarding exactly the
-    postings that state the good news. That is not the cheap direction the
-    module's asymmetry licenses, so the widths are bounded rather than uniform.
+    Each of these matches its cue once the negator guard is removed, and each
+    then classifies `exclusive` — and is therefore silently dropped by the hard
+    filter. Two of them say the *opposite* of leasing-only, so the classifier was
+    discarding exactly the postings that state the good news. That is not the
+    cheap direction the module's asymmetry licenses, so the widths are bounded
+    rather than uniform.
+
+    **Every row here must fail against a guard-removed classifier**, which is not
+    something asserting `!= "exclusive"` can show on its own. This PR shipped two
+    rows that asserted nothing before anyone checked — a boundary test built on
+    `Bauüberwachung`, which contains no leasing term, and a negator row built on
+    `ohne ANÜ zwingend`, where the cue is `AÜ zwingend` and `\\baü` cannot reach
+    `anü` on any revision. Both read as convincing and both were inert. Confirm a
+    new row by deleting the guard and watching it go red.
     """
 
     @pytest.mark.parametrize("text", [
         "Eine AÜ ist nicht zwingend erforderlich.",
         "Eine Anstellung erfolgt nicht beim Personaldienstleister, sondern direkt.",
-        "Der Einsatz ist ohne ANÜ zwingend gewünscht.",
+        "Anstellung statt beim Personaldienstleister direkt beim Kunden.",
     ])
     def test_a_negator_in_the_gap_blocks_the_cue(self, text):
         assert classify_employee_leasing(text).state != "exclusive"
