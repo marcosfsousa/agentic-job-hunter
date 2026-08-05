@@ -25,6 +25,14 @@ digests/
 # should carry, and "it's only a few clauses now" is not a reason to revisit this line.
 tests/fixtures/scored_postings/
 
+# Local hand-scored label batches — the maintainer's own extractions from the private
+# evaluation log, one JSON object per posting. They carry `justification` strings that
+# quote posting clauses verbatim and `handle` fields that are the posting title, so they
+# fall under the same rule as the fixture bodies above. First instance was the 28-row
+# batch assessed on #133; a glob rather than one filename because the next batch should
+# not depend on somebody remembering this line.
+*.local.jsonl
+
 # Per-issue agent briefs. They live in `docs/` for convenience but carry the same
 # third-party posting text the rule above keeps out — `docs/issue_96_agent_brief.md`
 # holds verbatim excerpts from five postings. Untracked today, and one `git add docs/`
