@@ -151,19 +151,24 @@ class TestWahlweiseIsQualified:
         ).state == "unknown"
 
     def test_a_leasing_term_inside_a_longer_word_does_not_qualify_it(self):
-        """The word boundary, asserted where its absence would actually show.
+        """The leading word boundary, asserted where its absence would show.
 
-        `Bauüberwachung` contains the letters of the abbreviation `AÜ`. Without
-        `\\b` on the leasing term, this row qualifies `wahlweise` and comes back
-        `optional` — a naive substring test of the kind `_passes_exclude_keywords`
-        uses would do exactly that.
+        `Kameraüberwachung` really does contain the letters of the abbreviation
+        `AÜ` — `Kamera` + `überwachung`. Without the leading `\\b` this row
+        qualifies `wahlweise` and comes back `optional`, which is what a naive
+        substring test of the kind `_passes_exclude_keywords` uses would do.
+
+        The obvious-looking example does not work and is worth naming so it is not
+        reintroduced: `Bauüberwachung` is `Bau` + `überwachung`, whose seam is
+        `uü`, not `aü`. It contains no leasing term at all, so a test built on it
+        passes with or without the boundary and asserts nothing.
         """
         assert classify_employee_leasing(
-            "Wahlweise Unterstützung bei der Bauüberwachung."
+            "Wahlweise Unterstützung bei der Kameraüberwachung."
         ).state == "unknown"
 
     def test_a_compound_of_the_full_term_does_qualify_it(self):
-        """...and the boundary is deliberately one-sided.
+        """...and the absent trailing boundary is what lets compounds through.
 
         German compounds freely, so `Arbeitnehmerüberlassungsvertrag` is the same
         term. A closing `\\b` would have missed every compound of it.
@@ -171,3 +176,57 @@ class TestWahlweiseIsQualified:
         assert classify_employee_leasing(
             "Wahlweise über einen Arbeitnehmerüberlassungsvertrag."
         ).state == "optional"
+
+
+class TestTolerances:
+    """The two ways a real posting says a cue without spelling it the cue's way.
+
+    Both were false negatives before round 1 of review, and both fail in the
+    expensive direction: the posting is leasing-only and the classifier said
+    `unknown` or `optional`, so the row is surfaced as a match.
+    """
+
+    def test_a_compound_after_an_exclusive_cue_still_matches(self):
+        """No trailing `\\b` on cues either, for the same reason as the term."""
+        verdict = classify_employee_leasing(
+            "Wir besetzen ausschließlich Arbeitnehmerüberlassungsverträge."
+        )
+        assert verdict.state == "exclusive"
+        assert verdict.cue == "ausschließlich Arbeitnehmerüberlassung"
+
+    @pytest.mark.parametrize("text", [
+        "Die Position ist nur über ANÜ möglich.",
+        "Die Position ist nur in ANÜ möglich.",
+        "Die Position ist nur im Rahmen ANÜ möglich.",
+    ])
+    def test_filler_words_inside_a_cue_do_not_break_it(self, text):
+        """And these are the rows that prove precedence is load-bearing.
+
+        Each matches the exclusive `nur ANÜ` and the optional `ANÜ möglich` at the
+        same time. Nothing about the cues separates them — only the order the
+        lists are scanned in does.
+        """
+        verdict = classify_employee_leasing(text)
+        assert verdict.state == "exclusive"
+        assert verdict.cue == "nur ANÜ"
+
+    def test_punctuation_bounds_the_filler(self):
+        """`\\w+\\s+` cannot cross a comma, so a filler stays inside its clause.
+
+        Without that, `keine` and `Freiberufler` on opposite sides of a sentence
+        boundary would compose into a cue neither clause states.
+        """
+        assert classify_employee_leasing(
+            "Wir suchen keine Agenturen, sondern Freiberufler."
+        ).state == "unknown"
+
+    def test_a_negated_freelance_cue_is_held_to_a_literal_match(self):
+        """The one cue deliberately given no filler tolerance.
+
+        `nicht nur auf Freelance-Basis` states the opposite of
+        `nicht auf Freelance-Basis` — the single place in either list where a
+        filler would flip the meaning instead of preserving it.
+        """
+        assert classify_employee_leasing(
+            "Das Projekt wird nicht nur auf Freelance-Basis vergeben, ANÜ ist auch möglich."
+        ).state != "exclusive"

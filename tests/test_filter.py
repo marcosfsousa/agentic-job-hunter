@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+import pytest
+
 from jobscout.filters.hard_filter import (
     apply_hard_filter,
     _passes_company,
@@ -523,32 +525,70 @@ class TestRemovedGatesNoLongerReject:
 # invites one later.
 # ---------------------------------------------------------------------------
 
+_FORBIDDEN = ("anthropic", "jobscout.evaluation", "openai", "sentence_transformers")
+
+
+def _model_imports(source: str) -> list[str]:
+    """Every import in `source` that reaches a model, by dotted name.
+
+    Written against `jobscout.filters` — relative imports resolve as if the source
+    sat in that package, which is the only place this is used.
+    """
+    import ast
+
+    found: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            names = [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            # Three spellings, and reading `node.module` alone catches only the
+            # first. `from jobscout import evaluation` puts the module in the
+            # alias, and a relative `from ..evaluation import x` puts nothing
+            # absolute anywhere — the two forms an in-package call would most
+            # naturally use, and the two the first version of this missed.
+            base = node.module or ""
+            if node.level:
+                prefix = ".".join(["jobscout", "filters"][: 2 - (node.level - 1)])
+                base = f"{prefix}.{base}" if base else prefix
+            names = [base] + [f"{base}.{a.name}" for a in node.names]
+        else:
+            continue
+        found += [n for n in names if any(n == f or n.startswith(f + ".") for f in _FORBIDDEN)]
+    return found
+
+
 class TestFilterStageMakesNoLLMCall:
     def test_the_filters_package_imports_no_model_client(self):
-        import ast
         from pathlib import Path
-
-        forbidden = ("anthropic", "jobscout.evaluation", "openai", "sentence_transformers")
-        offences: list[str] = []
 
         package = Path(__file__).resolve().parent.parent / "src" / "jobscout" / "filters"
         modules = sorted(package.glob("*.py"))
         # Guards the guard: a mistyped path would glob nothing and pass silently.
         assert len(modules) >= 3
 
-        for path in modules:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    names = [a.name for a in node.names]
-                elif isinstance(node, ast.ImportFrom):
-                    names = [node.module or ""]
-                else:
-                    continue
-                offences += [
-                    f"{path.name}: {n}"
-                    for n in names
-                    if any(n == f or n.startswith(f + ".") for f in forbidden)
-                ]
-
+        offences = [
+            f"{path.name}: {name}"
+            for path in modules
+            for name in _model_imports(path.read_text(encoding="utf-8"))
+        ]
         assert not offences, f"filter stage reaches a model: {offences}"
+
+    @pytest.mark.parametrize("source", [
+        "import anthropic",
+        "from anthropic import Anthropic",
+        "from jobscout.evaluation.evaluator import evaluate",
+        "from jobscout import evaluation",
+        "from ..evaluation import evaluator",
+        "from . import employee_leasing; from ..evaluation.prompt import SYSTEM_PROMPT",
+    ])
+    def test_the_scan_catches_every_spelling_of_the_import(self, source):
+        """The positive control, without which the scan above proves nothing.
+
+        A detector whose only assertion is `not offences` passes just as green
+        when it has stopped detecting anything at all. Four of these six spellings
+        evaded the first version of this scan.
+        """
+        assert _model_imports(source), f"scan missed: {source}"
+
+    def test_the_scan_leaves_ordinary_imports_alone(self):
+        assert _model_imports("import re\nfrom jobscout.models import JobListing") == []

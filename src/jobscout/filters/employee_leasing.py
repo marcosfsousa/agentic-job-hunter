@@ -22,7 +22,9 @@ the ordering trap below is solved once, in the place that can solve it.
 **The trap: `exclusive` is checked first, always.** `"nur ANÜ möglich"` contains
 `"ANÜ möglich"`, so an optional-first pass reads a hard exclude as a soft pass —
 the single worst outcome this module can produce, since ANÜ is a funding-level
-dealbreaker rather than a preference.
+dealbreaker rather than a preference. Precedence is what closes it, not the shape
+of the cues: `"nur über ANÜ möglich"` matches an exclusive cue and an optional one
+simultaneously, and only the ordering decides which wins.
 
 No LLM call happens here and none may be added: the hard filter is deterministic
 and cheap by design.
@@ -48,22 +50,39 @@ class LeasingClassification:
     cue: str | None
 
 
-def _compile(phrase: str) -> re.Pattern[str]:
-    r"""Turn a cue phrase into a whitespace- and case-tolerant pattern.
+# Up to two words may sit inside a cue's gaps — `nur ANÜ` has to match
+# `nur über ANÜ`, and `AÜ zwingend` has to match `AÜ ist zwingend`. Note what
+# bounds it in practice: `\w+\s+` cannot cross punctuation, so a filler runs out
+# at the first comma or full stop rather than reaching across a clause.
+_FILLER = r"(?:\w+\s+){0,2}"
 
-    Three tolerances, each earned by how German job posts are actually written:
+
+def _compile(phrase: str, *, gap: bool) -> re.Pattern[str]:
+    r"""Turn a cue phrase into a whitespace-, case- and filler-tolerant pattern.
+
+    Four tolerances, each earned by how German job posts are actually written —
+    and every one of them widens what matches, never narrows it. That direction is
+    deliberate and is the module's governing asymmetry: a false `exclusive` costs
+    one listing the maintainer would probably have skipped anyway, while a false
+    `unknown` puts leasing-only work in front of them, which is the funding-level
+    failure this stage exists to prevent.
 
     * `\s+` between tokens, so a cue split across a line break still matches.
-    * `\b` at both ends, so a cue is a phrase and not an accident inside a longer
-      word. This is what keeps the short abbreviation `AÜ` from matching the middle
-      of `Bauüberwachung`, and it is why this module does not reuse
-      `_passes_exclude_keywords`' naive `in` test.
+    * `\b` at the **start** only. A leading boundary is what keeps a cue from
+      matching inside a longer word, and it is why this module does not reuse
+      `_passes_exclude_keywords`' naive `in` test. A *trailing* boundary is the
+      one that must not be there: German compounds freely, so
+      `ausschließlich Arbeitnehmerüberlassungsverträge` is the same statement as
+      `ausschließlich Arbeitnehmerüberlassung`, and a closing `\b` reads it as
+      `unknown` and surfaces the row.
+    * `_FILLER` at each internal gap when `gap` is set — see above.
     * `str.casefold()` on both sides rather than `str.lower()`, which additionally
       folds `ß` to `ss` — so the cue `ausschließlich` matches a posting that spells
       it `ausschliesslich`, for free and without a second cue entry.
     """
     tokens = [re.escape(t) for t in phrase.casefold().split()]
-    return re.compile(r"\b" + r"\s+".join(tokens) + r"\b")
+    joiner = r"\s+" + (_FILLER if gap else "")
+    return re.compile(r"\b" + joiner.join(tokens))
 
 
 @dataclass(frozen=True)
@@ -74,27 +93,34 @@ class _Cue:
     needs_leasing_term: bool = False
 
 
-def _cues(*specs: tuple[str, bool]) -> tuple[_Cue, ...]:
-    return tuple(_Cue(phrase, _compile(phrase), needs) for phrase, needs in specs)
+def _cues(*specs: tuple[str, bool, bool]) -> tuple[_Cue, ...]:
+    return tuple(
+        _Cue(phrase, _compile(phrase, gap=gap), needs) for phrase, gap, needs in specs
+    )
 
 
-# The leasing vocabulary itself, used to qualify cues that do not carry it. No
-# trailing `\b`: `Arbeitnehmerüberlassung` compounds freely in German
-# (`...svertrag`, `...sgesetz`), and a boundary there would miss every compound.
+# The leasing vocabulary itself, used to qualify cues that do not carry it, and to
+# widen the restrictive cues below past whatever noun the posting attaches it to.
 _LEASING_TERM = re.compile(r"\b(?:anü|aü|arbeitnehmerüberlassung)")
 
 # Scanned to exhaustion before the optional list is opened at all — see the trap
 # in the module docstring. Some of these name no engagement form and exclude the
 # candidate anyway (`keine Freiberufler`); the outcome is the same, so the state is.
+#
+# `nicht auf Freelance-Basis` is the one cue held to a literal match. Widening its
+# first gap would make it match `nicht nur auf Freelance-Basis`, which states the
+# opposite — the only place in either list where a filler flips the meaning rather
+# than preserving it.
 _EXCLUSIVE_CUES = _cues(
-    ("nur ANÜ", False),
-    ("ausschließlich ANÜ", False),
-    ("ausschließlich Arbeitnehmerüberlassung", False),
-    ("Anstellung beim Personaldienstleister", False),
-    ("keine Freiberufler", False),
-    ("keine Selbstständigen", False),
-    ("nicht auf Freelance-Basis", False),
-    ("AÜ zwingend", False),
+    #  phrase                                   gap    needs_leasing_term
+    ("nur ANÜ",                                 True,  False),
+    ("ausschließlich ANÜ",                      True,  False),
+    ("ausschließlich Arbeitnehmerüberlassung",  True,  False),
+    ("Anstellung beim Personaldienstleister",   True,  False),
+    ("keine Freiberufler",                      True,  False),
+    ("keine Selbstständigen",                   True,  False),
+    ("nicht auf Freelance-Basis",               False, False),
+    ("AÜ zwingend",                             True,  False),
 )
 
 # `wahlweise` ("either/or") is the one cue here that says nothing about leasing on
@@ -104,11 +130,11 @@ _EXCLUSIVE_CUES = _cues(
 # would put wrong rows in front of the maintainer the moment drop observability
 # surfaces the state. So it fires only alongside a leasing term.
 _OPTIONAL_CUES = _cues(
-    ("ANÜ möglich", False),
-    ("AÜ oder Werkvertrag", False),
-    ("ANÜ oder Freiberuflich", False),
-    ("auch ANÜ", False),
-    ("wahlweise", True),
+    ("ANÜ möglich",                             True,  False),
+    ("AÜ oder Werkvertrag",                     True,  False),
+    ("ANÜ oder Freiberuflich",                  True,  False),
+    ("auch ANÜ",                                True,  False),
+    ("wahlweise",                               False, True),
 )
 
 
