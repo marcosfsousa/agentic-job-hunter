@@ -886,10 +886,21 @@ class TestLiveRescoring:
 
     @pytest.fixture(scope="class")
     def config(self):
-        from jobscout.config import get_config, reset_config
+        from jobscout.config import get_config, load_env, reset_config
 
+        # Before the check, not after: the key normally lives in a gitignored `.env`, and
+        # reading `os.environ` first made this skip for "no key" on every checkout where
+        # nobody had exported it by hand — including every worktree, which does not
+        # inherit the root `.env` at all (#146).
+        load_env()
         if not os.environ.get("ANTHROPIC_API_KEY"):
-            pytest.skip("ANTHROPIC_API_KEY is not set")
+            pytest.skip(
+                "ANTHROPIC_API_KEY is not set, and no .env carries one — neither this "
+                "checkout's nor, if this is a worktree, the main checkout's. Put the key "
+                "in .env at the main checkout root (gitignored, never committed) or "
+                "export it into the shell. This is the key half of live mode only; "
+                "missing posting text skips separately, with its own message."
+            )
         reset_config()  # the singleton may hold a fixture profile from another module
         try:
             yield get_config()

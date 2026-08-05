@@ -39,6 +39,14 @@ or a REPL started inside a worktree still resolves to the main checkout.
 
 ## Environment
 - API keys in `.env` (loaded via python-dotenv, gitignored)
+
+**A worktree inherits the main checkout's `.env`** — nothing to copy, nothing to export.
+`.env` is gitignored (it holds the key), and gitignored untracked files do not follow a
+`git worktree`, so a worktree used to start with no key at all. `config.load_env()` now
+resolves the main checkout's copy through `git rev-parse --git-common-dir` as well as the
+worktree's own (#146). Precedence is shell env var → the worktree's `.env` → the main
+checkout's, so a deliberate local override still wins and CI's repository secrets are
+never overridden by a file.
 - Conda environment: `jobscout` (Python 3.11)
 - No Docker needed for development
 
@@ -101,6 +109,11 @@ Live re-scoring calls Haiku once per posting and is opt-in:
 ```bash
 JOBSCOUT_LIVE_EVAL=1 pytest tests/test_scored_postings.py -q   # needs ANTHROPIC_API_KEY
 ```
+
+The key does not have to be exported for that run — the harness loads `.env` itself, from
+the main checkout if this is a worktree, before it decides whether to skip. The two
+preconditions skip separately and say so: no key names `.env` as the remedy, missing
+posting text names the gitignored fixture directory.
 
 Set `REEVAL_BELOW=0` on any baseline or comparison run of the **pipeline** too —
 `REEVAL_BELOW=0 python -m jobscout.run` — not just in the harness, which pins it already.

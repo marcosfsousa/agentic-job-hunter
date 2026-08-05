@@ -11,6 +11,8 @@ other test in the suite still passes because they build `UserProfile` in code.
 """
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 from typing import Callable
 
@@ -19,7 +21,7 @@ import yaml
 from pydantic import ValidationError
 
 from jobscout.adapters.freelancermap import _ROWS_PER_QUERY
-from jobscout.config import get_config, reset_config
+from jobscout.config import _env_candidates, _git_common_root, get_config, load_env, reset_config
 from jobscout.evaluation.prompt import SYSTEM_PROMPT
 from jobscout.run import DEFAULT_MAX_RESULTS
 
@@ -264,6 +266,139 @@ class TestReevalBelowIsDecoupled:
         monkeypatch.setenv("REEVAL_BELOW", "0")
         config = get_config(profile_path=SHIPPED_PROFILE)
         assert config.reeval_below == 0
+
+
+# ---------------------------------------------------------------------------
+# Where `.env` is resolved from
+# ---------------------------------------------------------------------------
+
+# A name no real `.env` would carry, so a test that reads it is reading the file the test
+# wrote and nothing else. Never `ANTHROPIC_API_KEY`: these tests load real `.env` files
+# from real repositories, and asserting on the key would make the assertion depend on the
+# machine's secret being present — and would put its value in the failure output.
+_PROBE = "JOBSCOUT_ENV_RESOLUTION_PROBE"
+
+
+@pytest.fixture
+def probe(monkeypatch):
+    """Hold `_PROBE` unset, and delete whatever `load_env` sets, at teardown.
+
+    `load_dotenv` writes straight into `os.environ` and there is no undo; `delenv` on an
+    absent name records "was absent" and restores that, which cleans up either way.
+    """
+    monkeypatch.delenv(_PROBE, raising=False)
+    return _PROBE
+
+
+def _git(*args: str, cwd: Path) -> None:
+    subprocess.run(
+        # Identity on the command line, not in a config file: the sandbox running the
+        # suite may have no global git identity, and `commit` refuses without one.
+        ["git", "-c", "user.email=test@example.com", "-c", "user.name=test", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+@pytest.fixture
+def repo_with_worktree(tmp_path: Path) -> tuple[Path, Path]:
+    """A real main checkout with a real linked worktree. Returns (main_root, worktree).
+
+    Real rather than simulated — the behaviour under test is what `git rev-parse
+    --git-common-dir` answers, and a fake `.git` file would be asserting the fake.
+    """
+    main_root = tmp_path / "main"
+    main_root.mkdir()
+    _git("init", "-b", "main", cwd=main_root)
+    _git("commit", "--allow-empty", "-m", "root", cwd=main_root)
+
+    worktree = tmp_path / "linked"
+    _git("worktree", "add", str(worktree), "-b", "linked", cwd=main_root)
+    return main_root, worktree
+
+
+class TestEnvResolvesFromTheMainCheckout:
+    """`.env` holds the API key, is gitignored for that reason, and gitignored untracked
+    files do not follow a `git worktree` — so every worktree started with no key and the
+    root copy had to be hand-copied before any live test would run (#146).
+
+    The failure was invisible from inside the worktree: `git log`, the file listing and
+    the whole offline suite all read healthy, and only live mode noticed.
+    """
+
+    def test_git_common_dir_points_a_worktree_at_the_main_root(self, repo_with_worktree):
+        main_root, worktree = repo_with_worktree
+        assert _git_common_root(worktree) == main_root.resolve()
+
+    def test_a_plain_checkout_resolves_to_itself(self, repo_with_worktree):
+        """The same call in the main checkout answers `.git` — relative — and the parent
+        of that is the checkout it was run in. This is why one code path serves both."""
+        main_root, _worktree = repo_with_worktree
+        assert _git_common_root(main_root) == main_root.resolve()
+
+    def test_outside_a_repository_there_is_no_common_root(self, tmp_path):
+        assert _git_common_root(tmp_path) is None
+
+    def test_worktree_loads_the_main_checkouts_env(self, repo_with_worktree, probe):
+        main_root, worktree = repo_with_worktree
+        (main_root / ".env").write_text(f"{probe}=from-main\n", encoding="utf-8")
+
+        load_env(worktree)
+
+        assert os.environ[probe] == "from-main"
+
+    def test_the_worktrees_own_env_wins_over_the_main_checkouts(
+        self, repo_with_worktree, probe
+    ):
+        """Nearest wins. Inheriting the root's environment must not mean overriding a
+        deliberate local one — a worktree measuring against a different key is a case
+        that has to stay expressible."""
+        main_root, worktree = repo_with_worktree
+        (main_root / ".env").write_text(f"{probe}=from-main\n", encoding="utf-8")
+        (worktree / ".env").write_text(f"{probe}=from-worktree\n", encoding="utf-8")
+
+        load_env(worktree)
+
+        assert os.environ[probe] == "from-worktree"
+
+    def test_shell_env_still_wins_over_every_env_file(self, repo_with_worktree, probe, monkeypatch):
+        """CI reads its key from repository secrets, which arrive as shell env vars. A
+        `.env` reachable from anywhere must not be able to override them."""
+        main_root, worktree = repo_with_worktree
+        (main_root / ".env").write_text(f"{probe}=from-main\n", encoding="utf-8")
+        monkeypatch.setenv(probe, "from-shell")
+
+        load_env(worktree)
+
+        assert os.environ[probe] == "from-shell"
+
+    def test_no_env_anywhere_loads_nothing(self, repo_with_worktree, probe, tmp_path):
+        """The unchanged-behaviour half of the acceptance criteria: no file, no effect,
+        no error — which is the state of a fresh clone and of CI."""
+        _main_root, worktree = repo_with_worktree
+
+        # Filtered to the temp tree on purpose. The walk-up continues past it to the
+        # filesystem root, and whether the machine running this happens to have a `.env`
+        # in some ancestor of the temp directory is not what is under test.
+        found = [p for p in _env_candidates(worktree) if p.is_relative_to(tmp_path)]
+        assert found == []
+
+        load_env(worktree)
+        assert probe not in os.environ
+
+    def test_the_main_checkouts_env_is_not_listed_twice(self, repo_with_worktree):
+        """A worktree parked *inside* the main checkout — which is where this repo parks
+        them, under `.claude/worktrees/` — reaches the root `.env` by the walk-up as well
+        as by the common dir. One file, one entry."""
+        main_root, worktree = repo_with_worktree
+        (main_root / ".env").write_text("X=1\n", encoding="utf-8")
+        inside = main_root / "nested"
+        inside.mkdir()
+
+        assert _env_candidates(inside) == [(main_root / ".env").resolve()]
+        assert _env_candidates(worktree) == [(main_root / ".env").resolve()]
 
 
 # ---------------------------------------------------------------------------
