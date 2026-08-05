@@ -130,8 +130,9 @@ rows a before/after comparison is looking at.
 It skips any case whose posting text is missing. That text is **gitignored** —
 `tests/fixtures/scored_postings/<id>.md`, third-party posting content that does not go in
 a public repo, guarded by `tests/test_repo_invariants.py`. On a fresh clone the directory
-does not exist and every live case skips with that reason; the format for re-creating it
-is in the manifest's header comment.
+does not exist and every case reading it skips with that reason — every case but the
+synthetic control above, which reads nothing and still runs. The format for re-creating
+the text is in the manifest's header comment.
 
 Run this before and after a `SYSTEM_PROMPT` change — the five `live_rescorable` cases are
 real listings hand-scored against the real `profile.yaml`, which is exactly what CLAUDE.md's
