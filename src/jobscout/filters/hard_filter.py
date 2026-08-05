@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 
+from jobscout.filters.employee_leasing import classify_employee_leasing
 from jobscout.models import JobListing, UserProfile
 
 logger = logging.getLogger(__name__)
@@ -25,12 +26,15 @@ def _passes_all(job: JobListing, profile: UserProfile) -> bool:
     # `_passes_contract_type` goes first only because it is the cheapest — one
     # membership test, no string scan — and rejects roughly 19% of the pool, so
     # putting it ahead of the keyword predicates that build and lowercase the
-    # full job text is free.
+    # full job text is free. By the same reasoning `_passes_employee_leasing`
+    # goes behind them: it scans the same full text but rejects a far smaller
+    # share of the pool, being the residue its own metadata gate let through.
     return (
         _passes_contract_type(job, profile)
         and _passes_company(job, profile)
         and _passes_exclude_keywords(job, profile)
         and _passes_require_keywords(job, profile)
+        and _passes_employee_leasing(job, profile)
         and _passes_location(job, profile)
     )
 
@@ -76,6 +80,38 @@ def _passes_contract_type(job: JobListing, profile: UserProfile) -> bool:
     rather than *closed* (a silently empty digest). An empty list rejects nothing.
     """
     return job.contract_type not in profile.dealbreakers.exclude_contract_types
+
+
+def _passes_employee_leasing(job: JobListing, profile: UserProfile) -> bool:
+    """Reject leasing-only work the source's own tag did not declare.
+
+    The prose half of the same gate `_passes_contract_type` implements in
+    metadata, and armed by the same config key rather than by a constant of its
+    own: scanning for leasing prose while the user permits `employee_leasing`
+    would drop rows they asked to see. One switch, both layers — so the day
+    `employee_leasing` leaves `exclude_contract_types`, this stops too.
+
+    Only `exclusive` drops. `optional` and `unknown` pass untouched, and the
+    classification is not carried anywhere — surfacing `optional` needs a field
+    on `JobListing` and a channel to the digest, which is drop-observability work.
+    """
+    if "employee_leasing" not in profile.dealbreakers.exclude_contract_types:
+        return True
+
+    verdict = classify_employee_leasing(_job_text(job))
+    if verdict.state != "exclusive":
+        return True
+
+    # The one place a drop is visible today. `_passes_all` short-circuits and no
+    # predicate returns a reason, so a row already rejected upstream never reaches
+    # here to be logged — the general fix is the drop ledger, not a log line here.
+    # The cue reaches the stream as a value rather than as a literal, which is what
+    # keeps German text out of this module's ASCII-only sink literals.
+    logger.info(
+        "Hard filter drop: job %s is employee-leasing only, matched cue %r",
+        job.id, verdict.cue,
+    )
+    return False
 
 
 def _passes_location(job: JobListing, profile: UserProfile) -> bool:

@@ -5,12 +5,14 @@ no config singleton.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from jobscout.filters.hard_filter import (
     apply_hard_filter,
     _passes_company,
     _passes_contract_type,
+    _passes_employee_leasing,
     _passes_exclude_keywords,
     _passes_location,
     _passes_require_keywords,
@@ -235,6 +237,72 @@ class TestPassesContractType:
 
 
 # ---------------------------------------------------------------------------
+# _passes_employee_leasing
+#
+# The prose half of the gate above. Classification itself is tested in
+# tests/test_employee_leasing.py; what is asserted here is the wiring — that the
+# predicate acts on `exclusive` only, that it is armed by config rather than by a
+# constant, and that the drop is not silent.
+# ---------------------------------------------------------------------------
+
+_ARMED = _gated(contract_types=["employee_leasing"])
+
+# The default description carries a `require_any_keyword` hit, so a leasing job
+# built from it fails on the leasing predicate or not at all. Without that, an
+# `apply_hard_filter` assertion below would pass on the require-keyword gate and
+# read as proof of a predicate that was never reached.
+_CLEAN = "We work on machine learning and AI systems."
+
+
+class TestPassesEmployeeLeasing:
+    def test_exclusive_prose_is_rejected(self):
+        job = _make_job(description=f"{_CLEAN} Bitte beachten: keine Freiberufler.")
+        assert not _passes_employee_leasing(job, _ARMED)
+
+    def test_optional_prose_passes(self):
+        """`optional` is kept, deliberately. Leasing on offer is not leasing imposed."""
+        job = _make_job(description=f"{_CLEAN} Einsatz als Freiberufler oder ANÜ möglich.")
+        assert _passes_employee_leasing(job, _ARMED)
+
+    def test_silent_posting_passes(self):
+        assert _passes_employee_leasing(_make_job(description=_CLEAN), _ARMED)
+
+    def test_the_title_is_read_too(self):
+        """Same text basis as every other text predicate here: title + description.
+
+        A posting that puts the engagement form in its title and nowhere else is
+        not a hypothetical on a German board, and reading only the body would make
+        the gate depend on where the agency chose to type the words.
+        """
+        job = _make_job(title="ML Engineer (nur ANÜ)", description=_CLEAN)
+        assert not _passes_employee_leasing(job, _ARMED)
+
+    def test_outcome_follows_config_not_a_constant(self):
+        """One switch drives both layers of the gate.
+
+        Scanning for leasing prose while the user permits `employee_leasing` would
+        drop rows they asked to see, so the prose backstop reads the same config
+        key the metadata gate does rather than carrying a constant of its own.
+        """
+        job = _make_job(description=f"{_CLEAN} Bitte beachten: keine Freiberufler.")
+        assert _passes_employee_leasing(job, _gated())
+        assert not _passes_employee_leasing(job, _ARMED)
+
+    def test_the_drop_names_the_cue_that_caused_it(self, caplog):
+        """A silent drop is invisible to review, which is the defect underneath.
+
+        This is the whole of the drop's observability today — the predicate logs
+        its own rejection because nothing else in the pipeline carries a reason.
+        The general fix is the drop ledger, and it is a separate issue.
+        """
+        job = _make_job(id="anue-1", description=f"{_CLEAN} AÜ zwingend erforderlich.")
+        with caplog.at_level(logging.INFO, logger="jobscout.filters.hard_filter"):
+            assert not _passes_employee_leasing(job, _ARMED)
+        assert "anue-1" in caplog.text
+        assert "AÜ zwingend" in caplog.text
+
+
+# ---------------------------------------------------------------------------
 # _passes_location
 #
 # Three tickets amended this predicate in sequence — D reshaped it, F added the
@@ -385,6 +453,21 @@ class TestApplyHardFilter:
         remote = _make_job(id="remote", remote_percentage=100, location="Berlin, Germany")
         assert apply_hard_filter([onsite, remote], _gated(remote_floor=100)) == [remote]
 
+    def test_leasing_only_prose_never_reaches_evaluation(self):
+        """The gap this stage exists to close, asserted end to end.
+
+        Both rows carry `contract_type="unknown"` — the adapter's documented
+        fail-open, and the state every posting the source could not tag arrives in.
+        The metadata gate passes both; only the prose separates them.
+        """
+        leasing = _make_job(
+            id="leasing",
+            description=f"{_CLEAN} Die Position wird ausschließlich ANÜ besetzt.",
+        )
+        clean = _make_job(id="clean", description=_CLEAN)
+        assert leasing.contract_type == "unknown" and clean.contract_type == "unknown"
+        assert apply_hard_filter([leasing, clean], _ARMED) == [clean]
+
 
 # ---------------------------------------------------------------------------
 # Gates removed by the contract pivot
@@ -422,3 +505,50 @@ class TestRemovedGatesNoLongerReject:
         """Nothing in the filter reads rate at all — a low day rate is a ranking concern."""
         job = _make_job(rate_min=100.0, rate_max=100.0, rate_unit="daily", rate_currency="EUR")
         assert apply_hard_filter([job], PROFILE) == [job]
+
+
+# ---------------------------------------------------------------------------
+# The filter stage is deterministic
+#
+# A static scan of `src/jobscout/filters/`, in the manner of
+# tests/test_runtime_output_ascii.py, rather than a behavioural assertion that no
+# request went out. Mocking a client proves only that the one path exercised did
+# not call it; an import is what a call needs, and its absence is checkable for
+# every path at once.
+#
+# This is a constraint from CLAUDE.md, not a preference: the hard filter runs over
+# the whole ingested pool, before ranking has cut it to the top 20-30. An LLM call
+# here is a cost multiplied by the pool size, and the ANUE classifier is the first
+# stage in this package that reads prose at all — which is exactly the shape that
+# invites one later.
+# ---------------------------------------------------------------------------
+
+class TestFilterStageMakesNoLLMCall:
+    def test_the_filters_package_imports_no_model_client(self):
+        import ast
+        from pathlib import Path
+
+        forbidden = ("anthropic", "jobscout.evaluation", "openai", "sentence_transformers")
+        offences: list[str] = []
+
+        package = Path(__file__).resolve().parent.parent / "src" / "jobscout" / "filters"
+        modules = sorted(package.glob("*.py"))
+        # Guards the guard: a mistyped path would glob nothing and pass silently.
+        assert len(modules) >= 3
+
+        for path in modules:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    names = [a.name for a in node.names]
+                elif isinstance(node, ast.ImportFrom):
+                    names = [node.module or ""]
+                else:
+                    continue
+                offences += [
+                    f"{path.name}: {n}"
+                    for n in names
+                    if any(n == f or n.startswith(f + ".") for f in forbidden)
+                ]
+
+        assert not offences, f"filter stage reaches a model: {offences}"
