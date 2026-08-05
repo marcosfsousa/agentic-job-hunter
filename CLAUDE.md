@@ -135,16 +135,18 @@ not paying the re-record in the first place. Full record in the header of
 through a branch and a reviewed PR — a hotfix is a short-lived branch and a fast PR, not an edit on
 `main`. (This replaces the previous stash → checkout main → edit → push hotfix flow.)
 
-**During the FTE → freelance pivot (specs #26–#29):** `v2-freelance-pivot` is the long-lived
-integration branch, cut from `main`. Each spec gets its own branch off it — `spec-1-contract-model`,
-`spec-2-profile-filter`, `spec-3-freelancermap-adapter`, `spec-4-e5-ranking-eval` — and PRs *into*
-the integration branch, never into `main`. Review therefore still happens in four normal-sized
-chunks, and the eventual merge to `main` is already-reviewed work.
-
-`main` stays on the last working pipeline until the pivot is whole. This is the reason for the
-integration branch, not a style preference: spec 1 deletes all three FTE adapters and disarms the
-cron, so the pipeline is **deliberately dark** from spec 1 until spec 3 re-arms it, and that state
-must not sit on `main`.
+✅ **The FTE → freelance pivot is complete** (specs #26–#29; integration branch merged 2026-07-23)
+— this paragraph is history, not instruction. It ran on a long-lived integration branch,
+`v2-freelance-pivot`, cut from `main`, with one branch per spec (`spec-1-contract-model`,
+`spec-2-profile-filter`, `spec-3-freelancermap-adapter`, `spec-4-e5-ranking-eval`) PR'd into it, so
+`main` could hold the last working pipeline while the pipeline was deliberately dark from spec 1
+until spec 3 re-armed it. That branch merged in PR #42 and no longer exists on `origin`; `v2.0.0`
+marks the merge point, and the daily run has been live since 2026-07-31. **Branch from `main` and
+PR into `main`, per the rule above.** (This section previously stated the arrangement in the
+imperative present — "PRs *into* the integration branch, never into `main`" — which was true when
+written and has since gone stale. An agent following it would push against a base that cannot be
+resolved, and it sat directly below the `main`-only rule it contradicted. Same failure mode the tag
+paragraphs below already warn about.)
 
 **Tags are semver.** ✅ **`v1.0.0` already exists** — annotated, pushed, at `af51f15` on `main`,
 tagged 2026-07-20. It marks the FTE-era pipeline so it stays recoverable by name, and it
