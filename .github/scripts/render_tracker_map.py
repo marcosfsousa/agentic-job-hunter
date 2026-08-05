@@ -30,7 +30,7 @@ END = "<!-- SEQUENCING:END -->"
 LABEL_MAX = 34
 
 
-def gh_api(path: str) -> object:
+def gh_api(path: str, *, paginate: bool = False) -> object:
     """Return parsed JSON from the GitHub API, or raise with the body attached.
 
     `encoding` is pinned rather than left to `text=True`, which resolves to the locale
@@ -38,9 +38,15 @@ def gh_api(path: str) -> object:
     characters these issues are full of. The runner is UTF-8 so CI would never have
     caught it; a maintainer running this by hand would hit it immediately. Same class
     as the runtime UTF-8 pin in #64/#68.
+
+    `paginate` is required on every *list* endpoint. GitHub's default page is 30 and a
+    truncated page is not an error — the caller just sees a shorter list and renders a
+    confidently wrong map. `gh --paginate` merges the pages of a top-level JSON array
+    into one array, so the result stays a single parseable document.
     """
+    args = ["gh", "api", path] + (["--paginate"] if paginate else [])
     result = subprocess.run(
-        ["gh", "api", path],
+        args,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -64,7 +70,7 @@ def main() -> int:
     issue = os.environ["TRACKER_ISSUE"]
     run_url = os.environ.get("RUN_URL", "")
 
-    children = gh_api(f"repos/{repo}/issues/{issue}/sub_issues")
+    children = gh_api(f"repos/{repo}/issues/{issue}/sub_issues?per_page=100", paginate=True)
     if not isinstance(children, list):
         raise RuntimeError("sub_issues did not return a list")
 
@@ -77,7 +83,10 @@ def main() -> int:
     blockers: dict[int, list[dict]] = {}
     for child in open_children:
         number = child["number"]
-        edges = gh_api(f"repos/{repo}/issues/{number}/dependencies/blocked_by")
+        edges = gh_api(
+            f"repos/{repo}/issues/{number}/dependencies/blocked_by?per_page=100",
+            paginate=True,
+        )
         blockers[number] = [b for b in edges if b["state"] == "open"]
 
     blocked = {n: b for n, b in blockers.items() if b}
@@ -130,10 +139,19 @@ def main() -> int:
     rendered = "\n".join(lines)
 
     body = gh_api(f"repos/{repo}/issues/{issue}")["body"] or ""
-    if START not in body or END not in body:
-        # Refuse rather than append. Appending would put a second map on the issue and
-        # leave the first one lying, which is worse than not rendering at all.
-        print(f"::error::{START} / {END} markers not found in issue #{issue} body")
+    starts, ends = body.count(START), body.count(END)
+    # Membership is not enough, because the splice below keeps everything *before* START
+    # and everything *after* END. If END precedes START, `rest.partition(END)` finds no
+    # END and yields an empty tail — the whole issue body after START is deleted and the
+    # run still prints success. Two pairs are milder but leave a stale second map lying.
+    # Both are unrecoverable-by-the-script states, so require exactly one ordered pair
+    # and refuse: a wrong tracker body is the failure this whole file exists to prevent.
+    if starts != 1 or ends != 1 or body.index(START) > body.index(END):
+        print(
+            f"::error::issue #{issue} body must contain exactly one "
+            f"{START} … {END} pair, in that order "
+            f"(found {starts} start / {ends} end marker(s))"
+        )
         return 1
 
     head, _, rest = body.partition(START)
