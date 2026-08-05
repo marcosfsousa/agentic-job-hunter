@@ -115,6 +115,12 @@ the main checkout if this is a worktree, before it decides whether to skip. The 
 preconditions skip separately and say so: no key names `.env` as the remedy, missing
 posting text names the gitignored fixture directory.
 
+**With the key but no posting text, that run is not free.** Every corpus case skips, but
+`test_conjunction_still_fires_the_german_penalty` is synthetic — its listing is written in
+the test file — so it needs no bodies and spends one real API call. That is the whole live
+result a fresh clone or a worktree can produce, and it is why the case is not gated behind
+a fixture directory it never reads.
+
 Set `REEVAL_BELOW=0` on any baseline or comparison run of the **pipeline** too —
 `REEVAL_BELOW=0 python -m jobscout.run` — not just in the harness, which pins it already.
 Unpinned, the max-of-two draw issues a second evaluation for anything under 4 and keeps the

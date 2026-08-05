@@ -1029,6 +1029,14 @@ class TestLiveRescoring:
         synthetic control is not third-party posting content, so it can live in a
         committed file where the excerpt fixtures cannot.
 
+        Which makes this the ONE live case that needs no posting text, and therefore the
+        only one that runs in a checkout where the gitignored bodies are absent — a fresh
+        clone, or a worktree. `JOBSCOUT_LIVE_EVAL=1` there is not free: every other case
+        skips and this one spends a real API call. That is deliberate and it is worth
+        knowing before you run it. It is also the whole live-mode result such a checkout
+        can produce, which is the reason it is not gated behind the fixture directory it
+        does not read.
+
         Measured 2026-08-04 at 10 draws: fired 10/10 after the fix. Asserted at one
         draw here, which is a signal rather than a verdict — the same caveat every
         other single-draw live assertion carries.
