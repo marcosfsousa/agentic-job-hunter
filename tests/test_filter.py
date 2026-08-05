@@ -526,6 +526,7 @@ class TestRemovedGatesNoLongerReject:
 # ---------------------------------------------------------------------------
 
 _FORBIDDEN = ("anthropic", "jobscout.evaluation", "openai", "sentence_transformers")
+_PACKAGE = ("jobscout", "filters")
 
 
 def _model_imports(source: str) -> list[str]:
@@ -548,8 +549,14 @@ def _model_imports(source: str) -> list[str]:
             # naturally use, and the two the first version of this missed.
             base = node.module or ""
             if node.level:
-                prefix = ".".join(["jobscout", "filters"][: 2 - (node.level - 1)])
-                base = f"{prefix}.{base}" if base else prefix
+                # `node.level` counts leading dots: 1 is this package, 2 its
+                # parent, and anything past that climbs above `jobscout` and does
+                # not resolve at all. Clamping at zero rather than letting the
+                # index go negative — a negative slice wraps round and resolves a
+                # level-4 import against `jobscout`, which is not where it points.
+                keep = max(0, len(_PACKAGE) - (node.level - 1))
+                prefix = ".".join(_PACKAGE[:keep])
+                base = f"{prefix}.{base}" if prefix and base else prefix or base
             names = [base] + [f"{base}.{a.name}" for a in node.names]
         else:
             continue
@@ -585,8 +592,10 @@ class TestFilterStageMakesNoLLMCall:
         """The positive control, without which the scan above proves nothing.
 
         A detector whose only assertion is `not offences` passes just as green
-        when it has stopped detecting anything at all. Four of these six spellings
-        evaded the first version of this scan.
+        when it has stopped detecting anything at all. Three of these six
+        spellings evaded the first version of this scan — the three that put
+        nothing forbidden in `node.module`. (This said "four" until round 2 of
+        review re-derived it against that scan.)
         """
         assert _model_imports(source), f"scan missed: {source}"
 

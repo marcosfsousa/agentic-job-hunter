@@ -50,22 +50,32 @@ class LeasingClassification:
     cue: str | None
 
 
-# Up to two words may sit inside a cue's gaps — `nur ANÜ` has to match
-# `nur über ANÜ`, and `AÜ zwingend` has to match `AÜ ist zwingend`. Note what
-# bounds it in practice: `\w+\s+` cannot cross punctuation, so a filler runs out
-# at the first comma or full stop rather than reaching across a clause.
-_FILLER = r"(?:\w+\s+){0,2}"
+# A filler word may sit inside a cue's gaps — `nur ANÜ` has to match `nur über ANÜ`
+# and `AÜ zwingend` has to match `AÜ ist zwingend`. Two things bound how far that
+# reaches, because a gap that swallows too much stops meaning what the cue means:
+#
+# 1. **No negator may sit in a gap.** A cue asserts something; a negator inside it
+#    asserts the opposite, and the match would read the posting exactly backwards.
+#    `Eine AÜ ist nicht zwingend erforderlich` is a posting saying leasing is *not*
+#    required, and without this it matched `AÜ zwingend` and was dropped.
+# 2. **`\w+\s+` cannot cross punctuation**, so a filler runs out at the first comma
+#    or full stop rather than reaching across a clause.
+#
+# Widths are per cue rather than global — see `_EXCLUSIVE_CUES`.
+_NEGATORS = ("nicht", r"kein\w*", "ohne", "weder", "statt", "sondern", "nie", "niemals")
+_NOT_A_NEGATOR = "(?!(?:" + "|".join(rf"{n}\b" for n in _NEGATORS) + "))"
 
 
-def _compile(phrase: str, *, gap: bool) -> re.Pattern[str]:
+def _compile(phrase: str, *, gap: int) -> re.Pattern[str]:
     r"""Turn a cue phrase into a whitespace-, case- and filler-tolerant pattern.
 
-    Four tolerances, each earned by how German job posts are actually written —
-    and every one of them widens what matches, never narrows it. That direction is
-    deliberate and is the module's governing asymmetry: a false `exclusive` costs
-    one listing the maintainer would probably have skipped anyway, while a false
-    `unknown` puts leasing-only work in front of them, which is the funding-level
-    failure this stage exists to prevent.
+    The tolerances are what make a written cue match how a posting actually spells
+    it. Each is bounded, and the bounds are set by the module's governing
+    asymmetry: a false `exclusive` costs one listing, while a false `unknown` puts
+    leasing-only work in front of the maintainer, which is the funding-level
+    failure this stage exists to prevent. So the default is to widen — but not
+    past the point where the match stops meaning what the cue means, which is what
+    the negator guard and the per-cue width are for.
 
     * `\s+` between tokens, so a cue split across a line break still matches.
     * `\b` at the **start** only. A leading boundary is what keeps a cue from
@@ -75,13 +85,13 @@ def _compile(phrase: str, *, gap: bool) -> re.Pattern[str]:
       `ausschließlich Arbeitnehmerüberlassungsverträge` is the same statement as
       `ausschließlich Arbeitnehmerüberlassung`, and a closing `\b` reads it as
       `unknown` and surfaces the row.
-    * `_FILLER` at each internal gap when `gap` is set — see above.
+    * up to `gap` non-negating words at each internal gap — see above.
     * `str.casefold()` on both sides rather than `str.lower()`, which additionally
       folds `ß` to `ss` — so the cue `ausschließlich` matches a posting that spells
       it `ausschliesslich`, for free and without a second cue entry.
     """
     tokens = [re.escape(t) for t in phrase.casefold().split()]
-    joiner = r"\s+" + (_FILLER if gap else "")
+    joiner = r"\s+" + (rf"(?:{_NOT_A_NEGATOR}\w+\s+){{0,{gap}}}" if gap else "")
     return re.compile(r"\b" + joiner.join(tokens))
 
 
@@ -93,7 +103,7 @@ class _Cue:
     needs_leasing_term: bool = False
 
 
-def _cues(*specs: tuple[str, bool, bool]) -> tuple[_Cue, ...]:
+def _cues(*specs: tuple[str, int, bool]) -> tuple[_Cue, ...]:
     return tuple(
         _Cue(phrase, _compile(phrase, gap=gap), needs) for phrase, gap, needs in specs
     )
@@ -107,20 +117,28 @@ _LEASING_TERM = re.compile(r"\b(?:anü|aü|arbeitnehmerüberlassung)")
 # in the module docstring. Some of these name no engagement form and exclude the
 # candidate anyway (`keine Freiberufler`); the outcome is the same, so the state is.
 #
-# `nicht auf Freelance-Basis` is the one cue held to a literal match. Widening its
-# first gap would make it match `nicht nur auf Freelance-Basis`, which states the
-# opposite — the only place in either list where a filler flips the meaning rather
-# than preserving it.
+# The `gap` column is how many filler words the cue tolerates, and two rows are
+# deliberately narrower than the rest:
+#
+# * `nicht auf Freelance-Basis` takes **none**. Its first word is already a
+#   negator, so the guard above cannot help it: a filler there produces
+#   `nicht nur auf Freelance-Basis`, which states the opposite.
+# * The `keine ...` rows take **one**. Their first word is a negative quantifier
+#   looking for a noun to attach to, and a second filler lets it reach past the one
+#   the cue names to a different one — `keine Kosten für Freiberufler` is a posting
+#   welcoming freelancers, and at width two it matched `keine Freiberufler` and was
+#   dropped. One filler still admits the adjective that motivated the width
+#   (`keine externen Freiberufler`); two is where the noun phrase changes.
 _EXCLUSIVE_CUES = _cues(
-    #  phrase                                   gap    needs_leasing_term
-    ("nur ANÜ",                                 True,  False),
-    ("ausschließlich ANÜ",                      True,  False),
-    ("ausschließlich Arbeitnehmerüberlassung",  True,  False),
-    ("Anstellung beim Personaldienstleister",   True,  False),
-    ("keine Freiberufler",                      True,  False),
-    ("keine Selbstständigen",                   True,  False),
-    ("nicht auf Freelance-Basis",               False, False),
-    ("AÜ zwingend",                             True,  False),
+    #  phrase                                   gap  needs_leasing_term
+    ("nur ANÜ",                                 2,   False),
+    ("ausschließlich ANÜ",                      2,   False),
+    ("ausschließlich Arbeitnehmerüberlassung",  2,   False),
+    ("Anstellung beim Personaldienstleister",   2,   False),
+    ("keine Freiberufler",                      1,   False),
+    ("keine Selbstständigen",                   1,   False),
+    ("nicht auf Freelance-Basis",               0,   False),
+    ("AÜ zwingend",                             2,   False),
 )
 
 # `wahlweise` ("either/or") is the one cue here that says nothing about leasing on
@@ -130,11 +148,11 @@ _EXCLUSIVE_CUES = _cues(
 # would put wrong rows in front of the maintainer the moment drop observability
 # surfaces the state. So it fires only alongside a leasing term.
 _OPTIONAL_CUES = _cues(
-    ("ANÜ möglich",                             True,  False),
-    ("AÜ oder Werkvertrag",                     True,  False),
-    ("ANÜ oder Freiberuflich",                  True,  False),
-    ("auch ANÜ",                                True,  False),
-    ("wahlweise",                               False, True),
+    ("ANÜ möglich",                             2,   False),
+    ("AÜ oder Werkvertrag",                     2,   False),
+    ("ANÜ oder Freiberuflich",                  2,   False),
+    ("auch ANÜ",                                2,   False),
+    ("wahlweise",                               0,   True),
 )
 
 

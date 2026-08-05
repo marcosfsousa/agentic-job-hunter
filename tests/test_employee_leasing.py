@@ -221,12 +221,48 @@ class TestTolerances:
         ).state == "unknown"
 
     def test_a_negated_freelance_cue_is_held_to_a_literal_match(self):
-        """The one cue deliberately given no filler tolerance.
+        """The one cue whose own first word is a negator.
 
         `nicht nur auf Freelance-Basis` states the opposite of
-        `nicht auf Freelance-Basis` — the single place in either list where a
-        filler would flip the meaning instead of preserving it.
+        `nicht auf Freelance-Basis`. The negator guard below cannot help here —
+        the negator is part of the cue, not in the gap — so this row takes no
+        filler at all.
         """
         assert classify_employee_leasing(
             "Das Projekt wird nicht nur auf Freelance-Basis vergeben, ANÜ ist auch möglich."
         ).state != "exclusive"
+
+
+class TestFillerDoesNotInvertTheCue:
+    """Filler width is not free, and round 2 of review found where it stops.
+
+    All three of these were `exclusive` — and therefore silently dropped by the
+    hard filter — when the gap was an unguarded two words. Two of them say the
+    *opposite* of leasing-only, so the classifier was discarding exactly the
+    postings that state the good news. That is not the cheap direction the
+    module's asymmetry licenses, so the widths are bounded rather than uniform.
+    """
+
+    @pytest.mark.parametrize("text", [
+        "Eine AÜ ist nicht zwingend erforderlich.",
+        "Eine Anstellung erfolgt nicht beim Personaldienstleister, sondern direkt.",
+        "Der Einsatz ist ohne ANÜ zwingend gewünscht.",
+    ])
+    def test_a_negator_in_the_gap_blocks_the_cue(self, text):
+        assert classify_employee_leasing(text).state != "exclusive"
+
+    def test_a_quantifier_cue_cannot_reach_past_its_own_noun(self):
+        """`keine Kosten für Freiberufler` welcomes freelancers; it does not exclude them.
+
+        `keine` is a negative quantifier hunting for a noun. At width two it
+        reaches past `Kosten` to the noun the cue names and inverts the sentence.
+        """
+        assert classify_employee_leasing(
+            "Es entstehen keine Kosten für Freiberufler."
+        ).state != "exclusive"
+
+    def test_one_filler_still_admits_the_adjective_it_was_widened_for(self):
+        """The other side of that bound — narrowing must not undo the round-1 fix."""
+        assert classify_employee_leasing(
+            "Wir suchen keine externen Freiberufler."
+        ).state == "exclusive"
