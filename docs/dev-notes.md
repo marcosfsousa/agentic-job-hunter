@@ -113,7 +113,22 @@ JOBSCOUT_LIVE_EVAL=1 pytest tests/test_scored_postings.py -q   # needs ANTHROPIC
 The key does not have to be exported for that run — the harness loads `.env` itself, from
 the main checkout if this is a worktree, before it decides whether to skip. The two
 preconditions skip separately and say so: no key names `.env` as the remedy, missing
-posting text names the gitignored fixture directory.
+posting text names `JOBSCOUT_FIXTURE_DIR`.
+
+**In a worktree or a fresh clone, set `JOBSCOUT_FIXTURE_DIR`.** The posting bodies are
+gitignored, and gitignored files do not follow a `git worktree`, so the default path
+resolves into a checkout that has no copy of them. Point the variable at one copy held
+outside any checkout and every checkout reads it (#122):
+
+```bash
+JOBSCOUT_FIXTURE_DIR=~/jobscout-fixtures JOBSCOUT_LIVE_EVAL=1 pytest tests/test_scored_postings.py -q
+```
+
+Put it in the main checkout's `.env` to set it once for every worktree — that is the same
+`.env` the key lives in, and the harness resolves it from the git common dir either way
+(#146). Unset, the path is exactly what it was before, so CI is unaffected. An override
+pointing at a directory that does not exist skips and says so rather than falling back
+silently, because a silent fallback is indistinguishable from the fix not working.
 
 **With the key but no posting text, that run is not free.** Every corpus case skips, but
 `test_conjunction_still_fires_the_german_penalty` is synthetic — its listing is written in
@@ -129,10 +144,10 @@ rows a before/after comparison is looking at.
 
 It skips any case whose posting text is missing. That text is **gitignored** —
 `tests/fixtures/scored_postings/<id>.md`, third-party posting content that does not go in
-a public repo, guarded by `tests/test_repo_invariants.py`. On a fresh clone the directory
-does not exist and every case reading it skips with that reason — every case but the
-synthetic control above, which reads nothing and still runs. The format for re-creating
-the text is in the manifest's header comment.
+a public repo, guarded by `tests/test_repo_invariants.py`. On a fresh clone with no
+`JOBSCOUT_FIXTURE_DIR` set, the directory does not exist and every case reading it skips
+with that reason — every case but the synthetic control above, which reads nothing and
+still runs. The format for re-creating the text is in the manifest's header comment.
 
 Run this before and after a `SYSTEM_PROMPT` change — the five `live_rescorable` cases are
 real listings hand-scored against the real `profile.yaml`, which is exactly what CLAUDE.md's

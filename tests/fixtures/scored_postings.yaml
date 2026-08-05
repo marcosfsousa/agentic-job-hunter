@@ -49,6 +49,14 @@
 #     This is the mode Wave C measures its calibration changes with — subject to the
 #     fidelity limit below, which is what an excerpt costs.
 #
+# WHERE THE BODIES LIVE, AND HOW A WORKTREE REACHES THEM. Gitignored files do not
+# follow a `git worktree`, so `tests/fixtures/scored_postings/` is absent in every
+# worktree and every fresh clone — the directory resolves *into* the checkout that is
+# running. Set `JOBSCOUT_FIXTURE_DIR` to one copy held outside any checkout and every
+# checkout reads that one (#122); unset, the path is the module-relative default and
+# nothing about CI changes. The main checkout's `.env` is the place to set it, since
+# the harness loads that `.env` even from a worktree (#146).
+#
 # EXCERPT FILE FORMAT — `tests/fixtures/scored_postings/<id>.md`, gitignored:
 #
 #     ---

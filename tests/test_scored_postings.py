@@ -16,8 +16,9 @@ someone has to re-record the score and flip the flag. A silent improvement and a
 regression are equally impossible.
 
 *Live* (`JOBSCOUT_LIVE_EVAL=1`, needs `ANTHROPIC_API_KEY` and the gitignored posting
-text). Re-scores through the real `evaluate_jobs` and asserts the same bands against a
-fresh draw. This is the mode that measures a calibration change; the offline mode
+text — `JOBSCOUT_FIXTURE_DIR` points at the latter from a checkout that has no copy,
+which is every worktree and every fresh clone). Re-scores through the real
+`evaluate_jobs` and asserts the same bands against a fresh draw. This is the mode that measures a calibration change; the offline mode
 records what it measured.
 
 THE FIDELITY LIMIT. An excerpt-scored fixture is **not** the conditions the human score
@@ -67,7 +68,14 @@ _FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures"
 _MANIFEST_PATH = _FIXTURE_DIR / "scored_postings.yaml"
 
 # Gitignored: third-party posting text, held locally only. See the manifest header.
-_POSTING_TEXT_DIR = _FIXTURE_DIR / "scored_postings"
+_DEFAULT_POSTING_TEXT_DIR = _FIXTURE_DIR / "scored_postings"
+
+# The override that lets one copy of the bodies serve every checkout (#122). They are
+# gitignored by design, and gitignored untracked files do not follow a `git worktree`
+# — so the default above resolves *into* whichever worktree is running and finds
+# nothing there. Same cause as `.env` not following a worktree (#146), and this is the
+# path-shaped half of it.
+_FIXTURE_DIR_ENV_VAR = "JOBSCOUT_FIXTURE_DIR"
 
 # 0 disables re-evaluation entirely — no score can be below 0 (`match_score` is
 # `ge=1`). Not `1`: the sibling pin in test_evaluation.py's TestSortOrder uses 1 for
@@ -275,10 +283,13 @@ class TestCorpusIntegrity:
         Anything a maintainer needs in order to *build* a body is a description of
         that body, and lives beside the fixtures in the gitignored directory.
         """
+        # `scored_postings/` literally, not `_posting_text_dir().name`: this is a
+        # statement about where a field belongs in the REPO, and the override (#122)
+        # renames only where the bodies are read from.
         stray = sorted({k for c in _CASES for k in c} - _ALLOWED_CASE_KEYS)
         assert stray == [], (
             f"{stray} are not allowed in the manifest. If a field describes, quotes or "
-            f"summarises a posting body it belongs in {_POSTING_TEXT_DIR.name}/, which "
+            "summarises a posting body it belongs in scored_postings/, which "
             "is gitignored. If it records a tool output or case metadata, add it to "
             "_ALLOWED_CASE_KEYS with a reason."
         )
@@ -824,15 +835,63 @@ def _names_a_profile_section(gap: str) -> bool:
     return any(section in gap.lower() for section in _PROFILE_SECTIONS)
 
 
+def _posting_text_dir() -> Path:
+    """Where the posting bodies live — overridable, so a worktree can reach one copy.
+
+    `JOBSCOUT_FIXTURE_DIR` names a directory outside any checkout. Unset, this is the
+    module-relative default and the behaviour is exactly what it was before #122.
+
+    `load_env()` first, for the same reason the key gate calls it: the place to set this
+    once for every worktree is the main checkout's `.env`, which a worktree does not
+    inherit as a file but which `load_env` knows how to find (#146). A shell value still
+    wins over a `.env` one — `load_dotenv` is called with `override=False`.
+    """
+    from jobscout.config import load_env
+
+    load_env()
+    override = os.environ.get(_FIXTURE_DIR_ENV_VAR, "").strip()
+    if not override:
+        return _DEFAULT_POSTING_TEXT_DIR
+    return Path(override).expanduser().resolve()
+
+
+def _missing_body_reason(path: Path) -> str:
+    """Why a case skipped, in the terms of whoever is about to fix it.
+
+    Three states, because the remedy differs and a single message for all three sends
+    the reader to the wrong place. The last sentence is the same in all three: a reader
+    who solves the bodies and still sees skips needs to know the key is a separate gate
+    with a separate message, or they will read the fixture fix as not having worked.
+    """
+    override = os.environ.get(_FIXTURE_DIR_ENV_VAR, "").strip()
+    if override and not path.parent.is_dir():
+        where = (
+            f"{_FIXTURE_DIR_ENV_VAR} is set to {override}, which is not a directory. "
+            "Nothing was read from the default location either — an override pointing "
+            "nowhere is a typo to fix, not a reason to fall back silently."
+        )
+    elif override:
+        where = f"{path} is missing, under {_FIXTURE_DIR_ENV_VAR}={override}."
+    else:
+        where = (
+            f"{path} is missing. The bodies are gitignored on purpose — third-party "
+            "posting text is not committed to this repo (see the manifest header) — and "
+            "gitignored files do not follow a `git worktree`, so a worktree and a fresh "
+            f"clone both start with none. Point {_FIXTURE_DIR_ENV_VAR} at one copy held "
+            "outside any checkout and every checkout reads that (#122)."
+        )
+    return (
+        f"{where} This is the posting-text half of live mode only. The key half skips "
+        "separately with its own message — and the harness loads `.env` itself, from the "
+        "main checkout if this is a worktree (#146), so a key there needs no export."
+    )
+
+
 def _read_posting(case: dict) -> tuple[dict, str]:
     """Parse `<id>.md`: YAML front matter between `---` fences, then the excerpt."""
-    path = _POSTING_TEXT_DIR / f"{case['id']}.md"
+    path = _posting_text_dir() / f"{case['id']}.md"
     if not path.exists():
-        pytest.skip(
-            f"{path} is missing. It is gitignored on purpose — third-party posting text "
-            "is not committed to this repo (see the manifest header). Live mode needs "
-            "the local copy."
-        )
+        pytest.skip(_missing_body_reason(path))
     text = path.read_text(encoding="utf-8")
     if not text.startswith("---"):
         pytest.fail(f"{path} has no YAML front matter — see the manifest header format")
@@ -844,8 +903,8 @@ def _read_posting(case: dict) -> tuple[dict, str]:
         pytest.fail(
             f"{path} is missing required front matter: {', '.join(missing)}. "
             "Keep the company and the location unanonymised — they reach the model and "
-            f"for some cases they are the signal. Per-case guidance lives beside the "
-            f"fixtures in {_POSTING_TEXT_DIR.name}/HOW-TO-BUILD.local.md, not in the "
+            "for some cases they are the signal. Per-case guidance lives beside the "
+            f"fixtures, in {path.parent / 'HOW-TO-BUILD.local.md'}, not in the "
             "manifest, which carries no posting text."
         )
 
@@ -862,6 +921,128 @@ def _read_posting(case: dict) -> tuple[dict, str]:
             "them is wrong, and which one changes what a live result here means."
         )
     return front_matter, body.strip()
+
+
+class TestFixtureDirOverride:
+    """`JOBSCOUT_FIXTURE_DIR` (#122), asserted OFFLINE and with no posting text.
+
+    Deliberately not part of the live class. The bug being fixed is that live mode
+    cannot run in a worktree at all, so a guard reachable only in live mode would be
+    absent in exactly the checkouts the fix exists for — a worktree, a fresh clone, CI.
+    These read no bodies and make no API call, so they run everywhere.
+
+    The bodies used here are written into `tmp_path` by the tests themselves. They are
+    not posting text: `Ein Beispiel` below is mine, the way the synthetic conjunction
+    control's listing is.
+    """
+
+    _FRONT_MATTER = (
+        "---\n"
+        "title: Beispiel Engineer\n"
+        "company: Beispiel GmbH\n"
+        "location: Berlin\n"
+        "provenance: excerpt\n"
+        "---\n"
+        "Ein Beispiel.\n"
+    )
+
+    def _case(self) -> dict:
+        return {"id": "9999999", "text_provenance": "excerpt"}
+
+    def _write_body(self, directory: Path) -> None:
+        (directory / "9999999.md").write_text(self._FRONT_MATTER, encoding="utf-8")
+
+    @staticmethod
+    def _no_env_file(monkeypatch) -> None:
+        """Neutralise `.env` loading, so "unset" means unset on this machine too.
+
+        Without this, a maintainer who sets the override in the main checkout's `.env`
+        — which is the arrangement this issue recommends — would see the unset tests
+        fail, since the resolver would load it back after `delenv` removed it.
+        """
+        monkeypatch.setattr("jobscout.config.load_env", lambda *a, **k: None)
+
+    def test_unset_resolves_to_the_committed_default(self, monkeypatch):
+        """The byte-identical half of #122's acceptance criteria, asserted not assumed."""
+        self._no_env_file(monkeypatch)
+        monkeypatch.delenv(_FIXTURE_DIR_ENV_VAR, raising=False)
+        assert _posting_text_dir() == _DEFAULT_POSTING_TEXT_DIR
+
+    def test_a_blank_override_counts_as_unset(self, monkeypatch):
+        """`JOBSCOUT_FIXTURE_DIR=` in a `.env` is an empty string, not a path to ''."""
+        self._no_env_file(monkeypatch)
+        monkeypatch.setenv(_FIXTURE_DIR_ENV_VAR, "   ")
+        assert _posting_text_dir() == _DEFAULT_POSTING_TEXT_DIR
+
+    def test_the_env_file_is_loaded_before_the_variable_is_read(self, monkeypatch, tmp_path):
+        """The point of calling `load_env` in the resolver: set it once, in one `.env`.
+
+        A worktree does not inherit the main checkout's `.env` as a file, but `load_env`
+        resolves it from the git common dir (#146). Faked here rather than by writing a
+        real `.env` — that resolution is config.py's behaviour and is tested there; what
+        this asserts is only that the resolver reads the variable *after* it runs.
+        """
+        monkeypatch.delenv(_FIXTURE_DIR_ENV_VAR, raising=False)
+
+        def fake_load_env(*_args, **_kwargs):
+            # Through monkeypatch, so it is undone at teardown rather than leaking
+            # the override into every test that runs after this one.
+            monkeypatch.setenv(_FIXTURE_DIR_ENV_VAR, str(tmp_path))
+
+        monkeypatch.setattr("jobscout.config.load_env", fake_load_env)
+        assert _posting_text_dir() == tmp_path.resolve()
+
+    def test_a_body_outside_the_checkout_is_read(self, monkeypatch, tmp_path):
+        """The criterion itself: bodies found somewhere no checkout contains."""
+        self._no_env_file(monkeypatch)
+        monkeypatch.setenv(_FIXTURE_DIR_ENV_VAR, str(tmp_path))
+        self._write_body(tmp_path)
+
+        front_matter, body = _read_posting(self._case())
+
+        assert front_matter["company"] == "Beispiel GmbH"
+        assert body == "Ein Beispiel."
+
+    def test_the_skip_message_names_the_override_when_it_is_unset(self, monkeypatch):
+        """The reader has never heard of the override — the skip is where they meet it."""
+        self._no_env_file(monkeypatch)
+        monkeypatch.delenv(_FIXTURE_DIR_ENV_VAR, raising=False)
+
+        with pytest.raises(pytest.skip.Exception) as excinfo:
+            _read_posting(self._case())
+
+        assert _FIXTURE_DIR_ENV_VAR in str(excinfo.value)
+
+    def test_the_skip_message_names_the_key_as_a_separate_gate(self, monkeypatch, tmp_path):
+        """A reader who fixes the bodies and still sees skips must know why (#146)."""
+        self._no_env_file(monkeypatch)
+        monkeypatch.setenv(_FIXTURE_DIR_ENV_VAR, str(tmp_path))
+
+        with pytest.raises(pytest.skip.Exception) as excinfo:
+            _read_posting(self._case())
+
+        message = str(excinfo.value)
+        assert str(tmp_path) in message
+        assert ".env" in message and "key half" in message
+
+    def test_a_broken_override_does_not_fall_back_silently(self, monkeypatch, tmp_path):
+        """Falling back would reproduce the confusion this message exists to end.
+
+        Set the override, mistype it, get the same skip as before with no hint that the
+        value is the problem — that reads as "the fix does not work" rather than "the
+        path is wrong".
+        """
+        self._no_env_file(monkeypatch)
+        missing = tmp_path / "typo"
+        monkeypatch.setenv(_FIXTURE_DIR_ENV_VAR, str(missing))
+
+        with pytest.raises(pytest.skip.Exception) as excinfo:
+            _read_posting(self._case())
+
+        message = str(excinfo.value)
+        assert "is not a directory" in message
+        assert str(missing) in message
+        assert str(_DEFAULT_POSTING_TEXT_DIR) not in message
 
 
 @pytest.mark.skipif(
