@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -14,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 # Project root: src/jobscout/config.py → src/jobscout/ → src/ → project root
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# How long to wait on the `git rev-parse` below before giving up. Generous: the point is
+# to bound a hung git, not to time a fast one.
+_GIT_TIMEOUT_SECONDS = 10
 
 # Standalone default for the re-evaluation floor. Deliberately independent of
 # profile.email_min_score (the digest gate): the digest wants quality (~5 on the
@@ -149,14 +154,98 @@ def reset_config() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Environment resolution
+# ---------------------------------------------------------------------------
+
+def _git_common_root(start: Path) -> Path | None:
+    """Root of the checkout that owns the shared `.git`, or None if there isn't one.
+
+    `git rev-parse --git-common-dir` reports the *shared* git directory: `<main>/.git`
+    seen from a linked worktree, and a plain `.git` seen from the main checkout itself.
+    Its parent is therefore the one root that holds the gitignored files a worktree
+    cannot inherit — `.env` among them (#146).
+
+    Returns None when git is unavailable or this is not a repository (an installed
+    package, a tarball). Both are ordinary, so neither is an error here.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=start,
+            capture_output=True,
+            text=True,
+            timeout=_GIT_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+
+    common_dir = Path(result.stdout.strip())
+    if not common_dir.is_absolute():
+        common_dir = start / common_dir  # git answers relatively from the main checkout
+    return common_dir.resolve().parent
+
+
+def _env_candidates(start: Path) -> list[Path]:
+    """The `.env` files to load, nearest first — the order is the precedence.
+
+    Two entries at most:
+
+    1. the nearest `.env` at or above `start`, which is what python-dotenv's
+       `find_dotenv()` used to locate on its own;
+    2. the main checkout's `.env`, when `start` is a linked worktree.
+
+    The second is the point of this function. `.env` holds a secret, so it is gitignored,
+    and gitignored untracked files do not follow a `git worktree` — so every worktree
+    started life with no key at all and the root copy had to be hand-copied (#146). Note
+    the walk-up in (1) does *not* reliably cover this: it finds the main checkout only
+    when the worktree happens to sit inside it (as `.claude/worktrees/<name>/` does), and
+    that is a property of where worktrees are parked, not something to depend on.
+    """
+    candidates: list[Path] = []
+
+    for directory in (start, *start.parents):
+        candidate = directory / ".env"
+        if candidate.is_file():
+            candidates.append(candidate.resolve())
+            break  # nearest wins, as find_dotenv did
+
+    common_root = _git_common_root(start)
+    if common_root is not None:
+        candidate = (common_root / ".env").resolve()
+        if candidate.is_file() and candidate not in candidates:
+            candidates.append(candidate)
+
+    return candidates
+
+
+def load_env(start: Path | None = None) -> None:
+    """Populate `os.environ` from `.env`, worktrees included.
+
+    Shell env vars take precedence over every `.env` (`override=False` is the default,
+    but explicit is better than implicit — GitHub Actions secrets are shell env vars and
+    must not be overridden by a stale `.env` file). For the same reason a nearer `.env`
+    beats the main checkout's: the first value loaded wins.
+
+    Public because the live-evaluation harness needs it. That gate reads
+    `ANTHROPIC_API_KEY` off `os.environ` to decide whether to skip, which it can only do
+    honestly after the `.env` files have been loaded.
+
+    `start` defaults to the project root. Passing it explicitly is for tests, and makes
+    the search deterministic rather than dependent on the calling frame the way bare
+    `load_dotenv()` was.
+    """
+    for path in _env_candidates(Path(start) if start is not None else _PROJECT_ROOT):
+        load_dotenv(path, override=False)
+
+
+# ---------------------------------------------------------------------------
 # Internal loader
 # ---------------------------------------------------------------------------
 
 def _load_config(profile_path: Path | None = None) -> AppConfig:
-    # Shell env vars take precedence over .env (override=False is the default,
-    # but explicit is better than implicit — GitHub Actions secrets are shell
-    # env vars and must not be overridden by a stale .env file)
-    load_dotenv(override=False)
+    load_env()
 
     resolved_profile_path = profile_path or (_PROJECT_ROOT / "profile.yaml")
 

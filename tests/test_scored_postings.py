@@ -886,10 +886,21 @@ class TestLiveRescoring:
 
     @pytest.fixture(scope="class")
     def config(self):
-        from jobscout.config import get_config, reset_config
+        from jobscout.config import get_config, load_env, reset_config
 
+        # Before the check, not after: the key normally lives in a gitignored `.env`, and
+        # reading `os.environ` first made this skip for "no key" on every checkout where
+        # nobody had exported it by hand — including every worktree, which does not
+        # inherit the root `.env` at all (#146).
+        load_env()
         if not os.environ.get("ANTHROPIC_API_KEY"):
-            pytest.skip("ANTHROPIC_API_KEY is not set")
+            pytest.skip(
+                "ANTHROPIC_API_KEY is not set, and no .env carries one — neither this "
+                "checkout's nor, if this is a worktree, the main checkout's. Put the key "
+                "in .env at the main checkout root (gitignored, never committed) or "
+                "export it into the shell. This is the key half of live mode only; "
+                "missing posting text skips separately, with its own message."
+            )
         reset_config()  # the singleton may hold a fixture profile from another module
         try:
             yield get_config()
@@ -1017,6 +1028,14 @@ class TestLiveRescoring:
         reasons. No § 6 case exercises the conjunction, and this text is MINE — a
         synthetic control is not third-party posting content, so it can live in a
         committed file where the excerpt fixtures cannot.
+
+        Which makes this the ONE live case that needs no posting text, and therefore the
+        only one that runs in a checkout where the gitignored bodies are absent — a fresh
+        clone, or a worktree. `JOBSCOUT_LIVE_EVAL=1` there is not free: every other case
+        skips and this one spends a real API call. That is deliberate and it is worth
+        knowing before you run it. It is also the whole live-mode result such a checkout
+        can produce, which is the reason it is not gated behind the fixture directory it
+        does not read.
 
         Measured 2026-08-04 at 10 draws: fired 10/10 after the fix. Asserted at one
         draw here, which is a signal rather than a verdict — the same caveat every

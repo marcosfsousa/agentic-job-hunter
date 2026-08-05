@@ -83,6 +83,22 @@ def test_no_agent_brief_is_tracked():
     )
 
 
+def test_env_file_is_not_tracked():
+    """`.env` holds `ANTHROPIC_API_KEY`. Same class of rule as the two above, different
+    consequence: a leaked key is billable from the moment it is pushed.
+
+    Added with #146, which made the key resolvable *from* a worktree rather than
+    hand-copied *into* one. That removes the reason anybody had to move the file around,
+    and this makes sure no copy of it lands in the index while they still do.
+    """
+    assert _tracked(".env") == "", (
+        ".env is tracked by git. It holds ANTHROPIC_API_KEY. Untrack it with "
+        "`git rm --cached .env`, and treat the key as compromised if the commit was "
+        "ever pushed — rotate it at console.anthropic.com. `.env.example` is the "
+        "committed half and carries placeholders only."
+    )
+
+
 def test_feedback_file_is_still_tracked():
     """Guards the guard: proves `git ls-files` actually reports tracked paths here.
 
