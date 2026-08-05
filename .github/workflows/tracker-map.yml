@@ -1,0 +1,54 @@
+name: Tracker map
+
+# Renders the sequencing block inside the scoring-defect tracker (#105) from GitHub's
+# own sub-issue and dependency graph.
+#
+# This workflow is a VIEW over that graph, never the source of truth. If it is disabled,
+# broken, or silently not running, the graph is still correct and
+# `issue_dependencies_summary.blocked_by` still answers correctly — the only cost is a
+# stale rendering, and the block stamps its own generation time so that is visible.
+#
+# NOTE, because this repo has been bitten by it: a workflow has two independent
+# switches and only one of them is in this file. After merging, confirm the workflow
+# OBJECT is enabled with `gh workflow list --all` — a green file and a green CI run say
+# nothing about whether it is scheduled.
+
+on:
+  issues:
+    # Deliberately NOT `edited`: this workflow edits an issue body, and subscribing to
+    # `edited` would make it retrigger itself.
+    types: [closed, reopened]
+  schedule:
+    # Daily safety net. Sub-issue and dependency changes do not raise an event this
+    # workflow can subscribe to, so the schedule is what keeps the map honest — and it
+    # is what makes a dead workflow visible within a day via an ageing stamp.
+    - cron: "20 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  # One writer at a time. Two runs racing on the same issue body would have one
+  # overwrite the other's splice.
+  group: tracker-map
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Render the sequencing map
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRACKER_REPO: ${{ github.repository }}
+          TRACKER_ISSUE: "105"
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python .github/scripts/render_tracker_map.py
